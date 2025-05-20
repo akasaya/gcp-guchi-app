@@ -1,0 +1,40 @@
+# =====================
+# Flutter (.dart_tool, build, etc)
+# =====================
+**/build/
+**/.dart_tool/
+**/.packages
+**/flutter_*.png
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.idea/
+**/.vscode/
+**/.DS_Store
+
+# iOS/Android
+**/ios/
+**/android/
+**/macos/
+**/windows/
+**/linux/
+
+# =====================
+# Python (Flask backend)
+# =====================
+**/__pycache__/
+**/*.py[cod]
+**/venv/
+**/env/
+**/.env
+
+# =====================
+# General / OS
+# =====================
+*.log
+*.swp
+*~
+Thumbs.db
+ehthumbs.db
+.DS_Store
+*.bak
+*.tmp
