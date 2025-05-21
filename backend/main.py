@@ -4,6 +4,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 import os
 import json
+from flask_cors import CORS
 
 # 環境変数ロード
 load_dotenv()
@@ -16,6 +17,7 @@ RESOURCE_ID = os.getenv("RESOURCE_ID")
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
 app = Flask(__name__)
+CORS(app)
 # Geminiモデルの設定
 model = GenerativeModel(RESOURCE_ID)
 
