@@ -1,9 +1,13 @@
-from flask import flask, request, jsonify
+from flask import Flask, request, jsonify
+from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel
 import os
+import json
 
-
+# 環境変数ロード
+load_dotenv()
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION= os.getenv("REGION", "us-central1")
@@ -11,9 +15,7 @@ RESOURCE_ID = os.getenv("RESOURCE_ID")
 
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-app = flask(__name__)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
+app = Flask(__name__)
 # Geminiモデルの設定
 model = GenerativeModel(RESOURCE_ID)
 
@@ -23,5 +25,10 @@ def analyze_text():
     user_input = data.get("text","")
 
     response = model.generate_content(user_input)
-    return jsonify({"result":response.text})
+    return app.response_class(
+        response=json.dumps({"results":response.text},ensure_ascii=False),
+        mimetype='application/json'
+    )
 
+if __name__=="__main__":
+    app.run(debug=True)
