@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:your_package_name/main.dart'; // ← あなたの pubspec.yaml の name に置き換えてください
+import 'package:frontend/main.dart'; // ← あなたの pubspec.yaml の name に置き換えてください
 
 void main() {
   testWidgets('愚痴アプリのタイトルが表示される', (WidgetTester tester) async {
