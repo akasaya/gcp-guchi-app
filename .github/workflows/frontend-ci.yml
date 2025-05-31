@@ -23,7 +23,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.33.0'  # 適宜、使用中のFlutterバージョンに合わせてください
+          channel: master  # 適宜、使用中のFlutterバージョンに合わせてください
 
       - name: Install dependencies
         run: flutter pub get
