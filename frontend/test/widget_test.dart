@@ -1,30 +1,23 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:frontend/main.dart';
+import 'package:your_package_name/main.dart'; // ← あなたの pubspec.yaml の name に置き換えてください
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('愚痴アプリのタイトルが表示される', (WidgetTester tester) async {
+    await tester.pumpWidget(const GuchiApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // アプリバーのタイトルを確認
+    expect(find.text('愚痴アプリ'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('テキスト入力とボタンが存在する', (WidgetTester tester) async {
+    await tester.pumpWidget(const GuchiApp());
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // テキスト入力
+    expect(find.byType(TextField), findsOneWidget);
+
+    // ボタン
+    expect(find.byType(ElevatedButton), findsOneWidget);
+    expect(find.text('送信'), findsOneWidget);
   });
 }
