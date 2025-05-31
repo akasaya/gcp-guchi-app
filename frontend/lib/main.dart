@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-// ci test
+// ci-test
 
 void main() => runApp(const GuchiApp());
 
