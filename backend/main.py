@@ -6,6 +6,8 @@ import os
 import json
 from flask_cors import CORS
 
+# ciのtest確認用
+
 # 環境変数ロード
 load_dotenv()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
