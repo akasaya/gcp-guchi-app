@@ -38,3 +38,5 @@ ehthumbs.db
 .DS_Store
 *.bak
 *.tmp
+
+credentials/
