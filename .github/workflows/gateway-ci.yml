@@ -89,10 +89,10 @@ jobs:
           --platform managed \
           --quiet \
           --allow-unauthenticated \
-          # --service-account=<Cloud Runが使用するサービスアカウントのメール> \
-          # .env ファイルの内容をCloud Runの環境変数として設定する必要がある
-          --update-env-vars="PROJECT_ID=${{ env.GCP_PROJECT_ID }},REGION=${{ env.GCP_REGION }},DEFAULT_RESOURCE_ID=${{ secrets.DEFAULT_RESOURCE_ID_FOR_RUN }}"
-          # GOOGLE_APPLICATION_CREDENTIALS はCloud Runでは通常不要（サービスアカウントを指定するため）
-          # ただし、Cloud Runサービスがデフォルト以外のSAを使う場合、そのSAにVertex AI Userロールなどが必要
-          # シークレットはSecret Managerに保存し、--set-secretsでマウントするのがベストプラクティス
-          # --set-secrets="DEFAULT_RESOURCE_ID=your-secret-id:latest"
+      # --service-account=<Cloud Runが使用するサービスアカウントのメール> 
+      # .env ファイルの内容をCloud Runの環境変数として設定する必要がある
+        --update-env-vars="PROJECT_ID=${{ env.GCP_PROJECT_ID }},REGION=${{ env.GCP_REGION }},DEFAULT_RESOURCE_ID=${{ secrets.DEFAULT_RESOURCE_ID_FOR_RUN }}"
+      # GOOGLE_APPLICATION_CREDENTIALS はCloud Runでは通常不要（サービスアカウントを指定するため）
+      # ただし、Cloud Runサービスがデフォルト以外のSAを使う場合、そのSAにVertex AI Userロールなどが必要
+      # シークレットはSecret Managerに保存し、--set-secretsでマウントするのがベストプラクティス
+      # --set-secrets="DEFAULT_RESOURCE_ID=your-secret-id:latest"
