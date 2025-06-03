@@ -11,10 +11,10 @@ from vertexai.generative_models import GenerativeModel
 
 # 環境変数ロード
 load_dotenv()
-print(f"DEBUG: GOOGLE_APPLICATION_CREDENTIALS in container: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
-print(f"DEBUG: PROJECT_ID in container: {os.getenv('PROJECT_ID')}")
-print(f"DEBUG: DEFAULT_RESOURCE_ID in container: {os.getenv('DEFAULT_RESOURCE_ID')}")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+# print(f"DEBUG: GOOGLE_APPLICATION_CREDENTIALS in container: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+# print(f"DEBUG: PROJECT_ID in container: {os.getenv('PROJECT_ID')}")
+# print(f"DEBUG: DEFAULT_RESOURCE_ID in container: {os.getenv('DEFAULT_RESOURCE_ID')}")
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION = os.getenv("REGION", "us-central1")
