@@ -1,29 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/api_service.dart'; // 作成したApiServiceをインポート
+import '../services/api_service.dart'; // ApiService と AnalyzeResponse をインポート
 
-// ApiServiceのインスタンスを提供するプロバイダ
-// アプリケーション全体でApiServiceの同じインスタンスを共有できます。
-final apiServiceProvider = Provider<ApiService>((ref) {
-  return ApiService();
-});
+// ApiService のインスタンスを提供するプロバイダ
+final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
 
-// APIに送信するテキストとエージェント名を保持するためのStateProvider
-// これを更新することで、analyzeResultProviderが再実行されます。
-final apiRequestProvider = StateProvider<({String text, String? agentName})?>((ref) => null);
+// ユーザーからのリクエスト（テキストとオプションのエージェント名）を保持するプロバイダ
+final apiRequestProvider = StateProvider<(String text, String? agentName)?>( (ref) => null);
 
-
-// API呼び出しを行い、その結果 (AnalyzeResponse) またはエラーを非同期に提供するFutureProvider
-// .family を使って、リクエスト内容（ここでは文字列のtext）を引数として受け取れるようにします。
-// autoDispose をつけることで、このプロバイダが監視されなくなったら自動的に状態を破棄します。
+// API呼び出しと結果の取得を行うFutureProvider
 final analyzeResultProvider = FutureProvider.autoDispose<AnalyzeResponse>((ref) async {
   final request = ref.watch(apiRequestProvider);
+
   if (request == null || request.text.isEmpty) {
-    // リクエストがない、またはテキストが空の場合は、何もしないか、特定の初期状態を返す
-    // ここではエラーを投げることで、UI側で適切にハンドリングできるようにします。
-    // あるいは、nullを許容する型にして、UI側でnullチェックをする方法もあります。
-    throw Exception('Input text is empty or request is not set.');
+    // 初期状態や入力が空の場合は、APIを呼び出さずにエラーまたは特定のレスポンスを返す
+    // HomeScreen側でこの状態をハンドリングするので、ここではエラーを投げるのが一般的
+    throw Exception('Input text is empty or request is null.');
   }
-  // apiServiceProviderからApiServiceのインスタンスを取得
+
+  // apiServiceProvider を使って ApiService のインスタンスを取得
   final apiService = ref.watch(apiServiceProvider);
-  return await apiService.analyzeText(request.text, agentName: request.agentName);
+  return apiService.analyzeText(request.text, agentName: request.agentName); // 名前付き引数で渡す
 });
