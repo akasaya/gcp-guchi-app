@@ -46,11 +46,11 @@ class ApiService {
       } else {
         errorMessage += '\nError sending request: ${e.message}';
       }
-      print('DioError: $errorMessage');
+      // print('DioError: $errorMessage');
       throw Exception(errorMessage);
     } catch (e) {
       // その他の予期せぬエラー
-      print('Unknown Error in analyzeText: $e');
+      // print('Unknown Error in analyzeText: $e');
       throw Exception('Failed to analyze text (Unknown Error): $e');
     }
   }
