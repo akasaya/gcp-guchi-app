@@ -23,15 +23,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _analyzeGuchi() {
     final text = _textEditingController.text;
     if (text.isNotEmpty) {
-      // apiRequestProviderの値を更新して、API呼び出しをトリガー
+      // apiRequestProviderの値を更新 (名前付きフィールドを持つレコードを代入)
       ref.read(apiRequestProvider.notifier).state = (text: text, agentName: null /* _selectedAgentName */);
     } else {
-      // テキストが空の場合のフィードバック (例: SnackBar)
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('愚痴を入力してください。')),
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
