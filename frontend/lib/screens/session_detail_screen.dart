@@ -19,7 +19,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Future<DocumentSnapshot<Map<String, dynamic>>> _fetchSessionDetails() {
     final User? currentUser = _auth.currentUser;
     if (currentUser == null) {
-      // この画面に来ている時点でログインしているはずなので、本来このエラーは発生しない
       throw Exception('ユーザーがログインしていません。');
     }
     return _firestore
@@ -30,6 +29,22 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .get();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> _fetchSwipes() {
+    final User? currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('ユーザーがログインしていません。');
+    }
+    return _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('sessions')
+        .doc(widget.sessionId)
+        .collection('swipes')
+        .orderBy('swiped_at', descending: false) // 時系列順に表示
+        .snapshots();
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -38,18 +53,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
       body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         future: _fetchSessionDetails(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        builder: (context, sessionSnapshot) {
+          if (sessionSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) {
-            return Center(child: Text('エラーが発生しました: ${snapshot.error}'));
+          if (sessionSnapshot.hasError) {
+            return Center(child: Text('エラーが発生しました: ${sessionSnapshot.error}'));
           }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
+          if (!sessionSnapshot.hasData || !sessionSnapshot.data!.exists) {
             return const Center(child: Text('セッションデータが見つかりません。'));
           }
 
-          final sessionData = snapshot.data!.data();
+          final sessionData = sessionSnapshot.data!.data();
           if (sessionData == null) {
             return const Center(child: Text('セッションデータが空です。'));
           }
@@ -70,30 +85,74 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             noCount = summary['no_count'] ?? 0;
           }
 
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('セッション情報', style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 8),
-                Card(
-                  child: ListTile(
-                    title: Text('日時: $formattedDate'),
-                    subtitle: Text('ステータス: $status'),
+          return SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('セッション情報', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: ListTile(
+                      title: Text('日時: $formattedDate'),
+                      subtitle: Text('ステータス: $status'),
+                    ),
                   ),
-                ),
-                const Divider(height: 32),
-                Text('サマリー', style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 8),
-                Card(
-                  child: ListTile(
-                    title: Text('はい: $yesCount 回'),
-                    subtitle: Text('いいえ: $noCount 回'),
+                  const Divider(height: 32),
+                  Text('サマリー', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: ListTile(
+                      title: Text('はい: $yesCount 回'),
+                      subtitle: Text('いいえ: $noCount 回'),
+                    ),
                   ),
-                ),
-                // TODO: 次のステップで、ここに各スワイプの詳細履歴を表示します。
-              ],
+                  const Divider(height: 32),
+                  Text('スワイプ履歴', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _fetchSwipes(),
+                    builder: (context, swipeSnapshot) {
+                      if (swipeSnapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (swipeSnapshot.hasError) {
+                        return Center(child: Text('スワイプ履歴の取得エラー: ${swipeSnapshot.error}'));
+                      }
+                      if (!swipeSnapshot.hasData || swipeSnapshot.data!.docs.isEmpty) {
+                        return const Center(child: Text('スワイプ履歴はありません。'));
+                      }
+
+                      final swipes = swipeSnapshot.data!.docs;
+
+                      return ListView.builder(
+                        itemCount: swipes.length,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          final swipeData = swipes[index].data();
+                          final String questionText = swipeData['question_text'] ?? '質問テキスト不明';
+                          final String direction = swipeData['direction'] ?? '不明';
+                          final double velocity = (swipeData['velocity'] as num?)?.toDouble() ?? 0.0;
+                          
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: ListTile(
+                              leading: Icon(
+                                direction == 'yes' ? Icons.check_circle_outline : Icons.highlight_off,
+                                color: direction == 'yes' ? Colors.green : Colors.red,
+                              ),
+                              title: Text(questionText),
+                              subtitle: Text('回答: ${direction.toUpperCase()} (速度: ${velocity.toStringAsFixed(2)})'),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           );
         },
