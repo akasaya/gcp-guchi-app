@@ -1,0 +1,201 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  String _email = '';
+  String _password = '';
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  // 新規登録処理
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    _formKey.currentState!.save();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // ignore: unused_local_variable
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: _email,
+        password: _password,
+      );
+      // 新規登録成功後、通常は自動的にログイン状態になるので、
+      // main.dart の StreamBuilder が検知して HomeScreen に遷移するはず。
+      // ここで明示的な画面遷移は不要なことが多い。
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('新規登録に成功しました。')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          if (e.code == 'weak-password') {
+            _errorMessage = 'パスワードが弱すぎます。';
+          } else if (e.code == 'email-already-in-use') {
+            _errorMessage = 'このメールアドレスは既に使用されています。';
+          } else if (e.code == 'invalid-email') {
+            _errorMessage = '無効なメールアドレスです。';
+          }
+           else {
+            _errorMessage = '新規登録に失敗しました: ${e.message}';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = '予期せぬエラーが発生しました: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // ログイン処理
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    _formKey.currentState!.save();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // ignore: unused_local_variable
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: _email,
+        password: _password,
+      );
+      // ログイン成功後、main.dart の StreamBuilder が検知して HomeScreen に遷移するはず。
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ログインしました。')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+             _errorMessage = 'メールアドレスまたはパスワードが間違っています。';
+          } else if (e.code == 'invalid-email') {
+            _errorMessage = '無効なメールアドレスです。';
+          }
+          else {
+            _errorMessage = 'ログインに失敗しました: ${e.message}';
+          }
+        });
+      }
+    } catch (e) {
+       if (mounted) {
+        setState(() {
+          _errorMessage = '予期せぬエラーが発生しました: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('ログイン / 新規登録')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView( // キーボード表示時にフォームが隠れないように
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'メールアドレス'),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty || !value.contains('@')) {
+                        return '有効なメールアドレスを入力してください。';
+                      }
+                      return null;
+                    },
+                    onSaved: (value) {
+                      _email = value!;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'パスワード (6文字以上)'),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.isEmpty || value.length < 6) {
+                        return 'パスワードは6文字以上で入力してください。';
+                      }
+                      return null;
+                    },
+                    onSaved: (value) {
+                      _password = value!;
+                    },
+                  ),
+                  const SizedBox(height: 30),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  if (_isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ElevatedButton(
+                          onPressed: _login,
+                          child: const Text('ログイン'),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton( // 新規登録はOutlinedButtonにしてみる
+                          onPressed: _register,
+                          child: const Text('新規登録'),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

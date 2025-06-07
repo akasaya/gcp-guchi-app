@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'screens/home_screen.dart'; // 作成したHomeScreenをインポート
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Firebase Auth をインポート
+import 'firebase_options.dart';
+import 'package:frontend/screens/home_screen.dart';
+import 'package:frontend/screens/login_screen.dart'; // LoginScreen をインポート
 
-void main() {
-  runApp(
-    // Riverpodを使用するために、アプリケーションのルートウィジェットをProviderScopeでラップします。
-    const ProviderScope(
-      child: MyApp(),
-    ),
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
   );
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -17,13 +19,27 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '愚痴アプリ',
+      title: '愚痴アプリ MVP',
       theme: ThemeData(
-        primarySwatch: Colors.blue, // 古い書き方なので、colorSchemeを使った方が現代的
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HomeScreen(), // 初期画面としてHomeScreenを指定
+      // 認証状態に応じて表示する最初の画面を決定
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(), // 認証状態の変化を監視
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            // 最初のフレームではまだ認証状態が確定していない場合があるため、ローディング表示
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          if (snapshot.hasData) {
+            // ユーザーデータがあれば（ログイン済み）、HomeScreenを表示
+            return const HomeScreen();
+          }
+          // ユーザーデータがなければ（未ログイン）、LoginScreenを表示
+          return const LoginScreen();
+        },
+      ),
     );
   }
 }
