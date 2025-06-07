@@ -40,7 +40,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .collection('sessions')
         .doc(widget.sessionId)
         .collection('swipes')
-        .orderBy('swiped_at', descending: false) // 時系列順に表示
+        .orderBy('swipedAt', descending: false) // 'swiped_at' -> 'swipedAt'
         .snapshots();
   }
 
@@ -80,9 +80,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           final Map<String, dynamic>? summary = sessionData['summary'] as Map<String, dynamic>?;
           int yesCount = 0;
           int noCount = 0;
+          String gemmaSummary = 'AIによる要約はまだありません。'; 
           if (summary != null) {
             yesCount = summary['yes_count'] ?? 0;
             noCount = summary['no_count'] ?? 0;
+            gemmaSummary = summary['gemma_summary'] ?? 'AIによる要約の生成に失敗しました。';
           }
 
           return SingleChildScrollView(
@@ -108,6 +110,28 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       subtitle: Text('いいえ: $noCount 回'),
                     ),
                   ),
+
+                  const Divider(height: 32),
+                  Text('AIによる振り返り', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                      borderRadius: const BorderRadius.all(Radius.circular(12)),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16.0),
+                      width: double.infinity,
+                      child: Text(
+                        gemmaSummary,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+
                   const Divider(height: 32),
                   Text('スワイプ履歴', style: Theme.of(context).textTheme.headlineSmall),
                   const SizedBox(height: 8),
@@ -132,9 +156,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemBuilder: (context, index) {
                           final swipeData = swipes[index].data();
-                          final String questionText = swipeData['question_text'] ?? '質問テキスト不明';
-                          final String direction = swipeData['direction'] ?? '不明';
-                          final double velocity = (swipeData['velocity'] as num?)?.toDouble() ?? 0.0;
+                          // ★★★ ここからキーを修正 ★★★
+                          final String questionText = swipeData['questionText'] ?? '質問テキスト不明';
+                          final String direction = swipeData['answer'] ?? '不明';
+                          final double velocity = (swipeData['speed'] as num?)?.toDouble() ?? 0.0;
+                          // ★★★ ここまでキーを修正 ★★★
                           
                           return Card(
                             margin: const EdgeInsets.symmetric(vertical: 4.0),
