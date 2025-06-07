@@ -1,4 +1,4 @@
-// frontend/lib/screens/swipe_screen.dart
+import 'dart:async'; // Stopwatchのためにインポート
 import 'package:flutter/material.dart';
 import 'package:swipe_cards/swipe_cards.dart';
 import '../services/api_service.dart';
@@ -26,12 +26,12 @@ class _SwipeScreenState extends State<SwipeScreen> {
   final ApiService _apiService = ApiService();
   bool _isLoading = false;
   double _lastSwipeSpeed = 0.0;
-  // _currentCardQuestionId は itemChanged でのデバッグや状態確認用に残しても良いが、
-  // スワイプ処理の主要なIDとしては使わないようにする。
   String? _currentCardQuestionId; 
 
   Key _swipeCardsKey = UniqueKey();
 
+  // ★★★ ためらい時間計測用のStopwatchを追加 ★★★
+  final Stopwatch _hesitationStopwatch = Stopwatch();
 
   @override
   void initState() {
@@ -39,31 +39,42 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _currentCardQuestionId = widget.initialQuestionId; 
     _addCard(widget.initialQuestionId, widget.initialQuestionText);
     _matchEngine = MatchEngine(swipeItems: _swipeItems);
+    // ★★★ 最初のカードが表示されるので、タイマースタート ★★★
+    _hesitationStopwatch.start();
+  }
+
+  @override
+  void dispose() {
+    // ★★★ ウィジェット破棄時にタイマーを停止 ★★★
+    _hesitationStopwatch.stop();
+    super.dispose();
   }
 
   void _addCard(String questionId, String questionText) {
-    // likeAction/nopeAction に questionId を渡す
     final currentQuestionIdForAction = questionId; 
     _swipeItems.add(
       SwipeItem(
         content: QuestionCardContent(questionText: questionText, questionId: questionId),
         likeAction: () {
-          print("Liked question $currentQuestionIdForAction with speed $_lastSwipeSpeed");
-          _handleSwipeComplete('yes', currentQuestionIdForAction); // スワイプされたカードのIDを渡す
+          // ★★★ タイマー停止 & 時間取得 ★★★
+          _hesitationStopwatch.stop();
+          final hesitationTime = _hesitationStopwatch.elapsedMilliseconds / 1000.0;
+          print("Liked question $currentQuestionIdForAction with speed $_lastSwipeSpeed and hesitation $hesitationTime s");
+          _handleSwipeComplete('yes', currentQuestionIdForAction, hesitationTime);
         },
         nopeAction: () {
-          print("Noped question $currentQuestionIdForAction with speed $_lastSwipeSpeed");
-          _handleSwipeComplete('no', currentQuestionIdForAction); // スワイプされたカードのIDを渡す
-        },
-        superlikeAction: () {
-          print("Superlike (not used) on question $currentQuestionIdForAction");
+          // ★★★ タイマー停止 & 時間取得 ★★★
+          _hesitationStopwatch.stop();
+          final hesitationTime = _hesitationStopwatch.elapsedMilliseconds / 1000.0;
+          print("Noped question $currentQuestionIdForAction with speed $_lastSwipeSpeed and hesitation $hesitationTime s");
+          _handleSwipeComplete('no', currentQuestionIdForAction, hesitationTime);
         },
       ),
     );
   }
 
   // 引数に swipedQuestionId を追加
-  void _handleSwipeComplete(String direction, String swipedQuestionId) {
+   void _handleSwipeComplete(String direction, String swipedQuestionId, double hesitationTime) {
     double swipeSpeed = _lastSwipeSpeed;
     if (swipeSpeed == 0.0) {
       swipeSpeed = direction == 'yes' ? 100.0 : -100.0;
@@ -71,13 +82,12 @@ class _SwipeScreenState extends State<SwipeScreen> {
     }
 
     print('Handling swipe: $direction on question $swipedQuestionId with speed $swipeSpeed (abs: ${swipeSpeed.abs()})');
-    // prevQuestionId の代わりに swipedQuestionId を使う
-    _fetchNextQuestion(direction, swipeSpeed.abs(), swipedQuestionId); 
+    _fetchNextQuestion(direction, swipeSpeed.abs(), swipedQuestionId, hesitationTime);
     _lastSwipeSpeed = 0.0;
   }
 
-  // 3番目の引数名を swipedQuestionId に変更 (意味合いは prevQuestionId と同じ)
-  Future<void> _fetchNextQuestion(String direction, double speed, String swipedQuestionId) async {
+  // ★★★ 引数に hesitationTime を追加 ★★★
+  Future<void> _fetchNextQuestion(String direction, double speed, String swipedQuestionId, double hesitationTime) async {
     if (!mounted) return;
 
     setState(() {
@@ -85,14 +95,16 @@ class _SwipeScreenState extends State<SwipeScreen> {
     });
 
     try {
-      final response = await _apiService.recordSwipe( // ← 変更後
+      final response = await _apiService.recordSwipe(
         sessionId: widget.sessionId,
-        questionId: swipedQuestionId, // APIにはスワイプされた質問のIDを渡す
-        answer: direction,        // 'direction' を 'answer' パラメータに渡す
+        questionId: swipedQuestionId,
+        answer: direction,
         speed: speed,
+        hesitationTime: hesitationTime, // ★★★ hesitationTimeをAPIに渡す ★★★
       );
 
       if (!mounted) return;
+
 
       if (response.containsKey('next_question_id')) {
         final nextQuestionId = response['next_question_id'] as String;
@@ -199,9 +211,13 @@ class _SwipeScreenState extends State<SwipeScreen> {
                             itemChanged: (SwipeItem item, int index) {
                               if (item.content is QuestionCardContent) {
                                 // setState(() { // _currentCardQuestionId の更新はUIに直接影響しないので setState は不要かも
-                                   _currentCardQuestionId = (item.content as QuestionCardContent).questionId;
+                                 _currentCardQuestionId = (item.content as QuestionCardContent).questionId;
                                 // });
                                 print("ItemChanged: Now displaying QID: $_currentCardQuestionId at index $index");
+                                // ★★★ 新しいカードが表示されたのでタイマーをリセットして再開 ★★★
+                                _hesitationStopwatch.reset();
+                                _hesitationStopwatch.start();
+
                               }
                             },
                             upSwipeAllowed: false,
