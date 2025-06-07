@@ -41,7 +41,7 @@ def get_db():
     return db
 
 # Gemma on Ollamaを呼び出す関数
-def generate_summary_with_ollama_gemma(swipes_text: str) -> str:
+def generate_summary_with_ollama_gemma(swipes_text: str, user_name: str) -> str:
     """OllamaでホストされているGemmaモデルを使って要約を生成する"""
     
     # このURLを、ご自身のOllama on Cloud RunのエンドポイントURLに置き換えてください
@@ -58,8 +58,7 @@ def generate_summary_with_ollama_gemma(swipes_text: str) -> str:
     # Gemmaに渡すプロンプトを、インタラクションデータを解釈するように変更
     prompt = f"""
     あなたはユーザーの心の動きを読み解く、鋭い洞察力を持つAIカウンセラーです。
-    以下のリストは、あるユーザーの一連の問答と、その際の物理的な反応（反応時間、スワイプ速度）です。
-    これらの言語的・非言語的データ全体から、ユーザーの真の心理状態を深く分析してください。
+    ユーザーの名前は「{user_name}」さんです。フィードバックの冒頭で、必ず「{user_name}さん、」と呼びかけてください。
 
     【分析のヒント】
     - 反応時間が長い（例: 2秒以上）: 迷い、ためらい、または深く考えている可能性があります。
@@ -328,6 +327,14 @@ def get_summary(session_id):
         # Firestoreのセッションサマリーを更新
         if db_firestore and user_id:
             try:
+                try:
+                    user_record = auth.get_user(user_id)
+                    # display_nameがあればそれ、なければemailの@前、それもなければ「あなた」を使う
+                    user_name = user_record.display_name or (user_record.email and user_record.email.split('@')[0]) or "あなた"
+                except Exception as e:
+                    print(f"Firebase Authからユーザー情報の取得に失敗: {e}")
+                    user_name = "あなた" # 失敗時のフォールバック
+
                 # ★★★ ここからプロンプト生成ロジックを変更 ★★★
                 swipes_for_prompt_ref = db_firestore.collection('users', user_id, 'sessions', session_id, 'swipes').order_by('swipedAt').stream()
                 
@@ -354,7 +361,7 @@ def get_summary(session_id):
                 # Gemmaで要約を生成
                 gemma_summary_text = ""
                 if swipes_text:
-                    gemma_summary_text = generate_summary_with_ollama_gemma(swipes_text)
+                    gemma_summary_text = generate_summary_with_ollama_gemma(swipes_text, user_name)
                 
                 session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
                 session_doc_snapshot = session_doc_ref.get()
