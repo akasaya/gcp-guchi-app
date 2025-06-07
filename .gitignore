@@ -39,4 +39,6 @@ ehthumbs.db
 *.bak
 *.tmp
 
+*.db
 credentials/
+
