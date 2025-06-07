@@ -28,11 +28,13 @@ class _SummaryScreenState extends State<SummaryScreen> {
       _errorMessage = null;
     });
     try {
-      final data = await _apiService.getSessionSummary(widget.sessionId);
-      setState(() {
-        _summaryData = data;
-        _isLoading = false;
-      });
+        final data = await _apiService.getSummary(widget.sessionId);
+        if (mounted) {
+          setState(() {
+            _summaryData = data;
+            _isLoading = false;
+          });
+      }
     } catch (e) {
       print('Error in _fetchSummary: $e');
       setState(() {
