@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/services/api_service.dart'; // ApiServiceをインポート
 import 'package:frontend/screens/swipe_screen.dart'; // SwipeScreenをインポート
+import 'package:frontend/screens/hisotry_screen.dart'; // HistoryScreenをインポート 
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -71,6 +72,16 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('ホーム'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'セッション履歴',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => HistoryScreen()), // constを削除
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'ログアウト',
