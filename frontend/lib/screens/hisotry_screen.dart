@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart'; // 日付整形のため
+import 'session_detail_screen.dart'; // この行を追加してください
+
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -85,17 +87,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 noCount = summary['no_count'] ?? 0;
               }
 
-              return Card(
+         return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: ListTile(
                   title: Text('セッション日時: $formattedDate'),
                   subtitle: Text('ステータス: $status\nはい: $yesCount, いいえ: $noCount'),
                   isThreeLine: true,
-                  // TODO: タップで詳細画面へ遷移する処理を追加
                   onTap: () {
-                    // print('Session tapped: ${session.id}');
-                    // 詳細画面への遷移処理をここに追加
-                  },
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SessionDetailScreen(sessionId: session.id),
+                      ),
+                    );
+                  }, // ここにカンマが抜けている可能性
                 ),
               );
             },
