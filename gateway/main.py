@@ -55,11 +55,20 @@ def generate_summary_with_ollama_gemma(swipes_text: str) -> str:
     
     ollama_api_url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/generate"
 
-    # Gemmaに渡すプロンプト
+    # Gemmaに渡すプロンプトを、インタラクションデータを解釈するように変更
     prompt = f"""
-    以下のリストは、あるユーザーの思考や感情を反映した一連の問答です。
-    この対話全体から、ユーザーが何に関心を持ち、どのような心理状態にあるかを分析してください。
-    そして、ユーザーに優しく寄り添うような口調で、3〜4文程度の短いフィードバックとして要約してください。
+    あなたはユーザーの心の動きを読み解く、鋭い洞察力を持つAIカウンセラーです。
+    以下のリストは、あるユーザーの一連の問答と、その際の物理的な反応（反応時間、スワイプ速度）です。
+    これらの言語的・非言語的データ全体から、ユーザーの真の心理状態を深く分析してください。
+
+    【分析のヒント】
+    - 反応時間が長い（例: 2秒以上）: 迷い、ためらい、または深く考えている可能性があります。
+    - 反応時間が短い（例: 1秒未満）: 即答、またはあまり深く考えていない可能性があります。
+    - スワイプ速度が速い（例: 1000以上）: 強い確信、または強い感情（苛立ち、喜びなど）の現れかもしれません。
+    - スワイプ速度が遅い（例: 500未満）: 確信のなさ、気乗りしない、などの可能性があります。
+
+    これらのヒントを参考に、テキストの回答（はい/いいえ）と物理的な反応の間に矛盾がないか（例:「はい」と答えつつ反応が遅く、速度も遅い）、あるいは関連性があるかを探ってください。
+    そして、ユーザーに優しく寄り添い、核心を突きつつも励ますような口調で、3〜4文程度の短いフィードバックとして要約してください。
 
     ---
     {swipes_text}
@@ -319,7 +328,7 @@ def get_summary(session_id):
         # Firestoreのセッションサマリーを更新
         if db_firestore and user_id:
             try:
-                # AIプロンプト作成のために、Firestoreから質問テキストを含むスワイプ履歴を取得
+                # ★★★ ここからプロンプト生成ロジックを変更 ★★★
                 swipes_for_prompt_ref = db_firestore.collection('users', user_id, 'sessions', session_id, 'swipes').order_by('swipedAt').stream()
                 
                 swipes_list_for_prompt = []
@@ -328,9 +337,19 @@ def get_summary(session_id):
                     question = swipe_data.get('questionText', '不明な質問')
                     answer_direction = swipe_data.get('answer', '不明')
                     answer_text = "はい" if answer_direction == 'yes' else "いいえ"
-                    swipes_list_for_prompt.append(f"Q: {question}\nA: {answer_text}")
+                    
+                    # 新しいデータを取得
+                    speed = swipe_data.get('speed', 0.0)
+                    hesitation_time = swipe_data.get('hesitationTime', 0.0)
+                    
+                    # プロンプトに含めるテキストをリッチにする
+                    swipes_list_for_prompt.append(
+                        f"Q: {question}\n"
+                        f"A: {answer_text} (反応時間: {hesitation_time:.2f}秒, スワイプ速度: {abs(speed):.0f})"
+                    )
 
-                swipes_text = "\n".join(swipes_list_for_prompt)
+                swipes_text = "\n\n".join(swipes_list_for_prompt)
+                
                 
                 # Gemmaで要約を生成
                 gemma_summary_text = ""
