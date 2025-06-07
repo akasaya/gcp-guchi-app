@@ -1,21 +1,30 @@
+// ... existing code ...
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart'; // Dioをインポート
 import '../services/api_service.dart';
 
-// ApiService のインスタンスを提供するプロバイダ
-final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
+// Dio のインスタンスを提供するプロバイダ
+final dioProvider = Provider<Dio>((ref) => Dio());
 
-// ユーザーからのリクエストを保持するプロバイダ (名前付きフィールドを持つレコード型に変更)
+// ApiService のインスタンスを提供するプロバイダ
+final apiServiceProvider = Provider<ApiService>((ref) {
+  // dioProvider から Dio インスタンスを取得
+  final dio = ref.watch(dioProvider);
+  // ApiService のコンストラクタに Dio インスタンスを渡す
+  return ApiService(dio);
+});
+
+// ユーザーからのリクエストを保持するプロバイダ (変更なし)
 final apiRequestProvider = StateProvider<({String text, String? agentName})?>((ref) => null);
 
-// API呼び出しと結果の取得を行うFutureProvider
-final analyzeResultProvider = FutureProvider.autoDispose<AnalyzeResponse>((ref) async {
+// API呼び出しと結果の取得を行うFutureProvider (変更なし)
+final analyzeResultProvider = FutureProvider.autoDispose<MultiAgentAnalyzeResponse>((ref) async {
   final request = ref.watch(apiRequestProvider);
 
-  if (request == null || request.text.isEmpty) { // フィールド名 'text' でアクセス
+  if (request == null || request.text.isEmpty) {
     throw Exception('Input text is empty or request is null.');
   }
 
   final apiService = ref.watch(apiServiceProvider);
-  // レコードのフィールド名でアクセスして渡す
-  return apiService.analyzeText(request.text, agentName: request.agentName);
+  return apiService.analyzeText(request.text);
 });
