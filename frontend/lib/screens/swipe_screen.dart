@@ -59,6 +59,9 @@ class _SwipeScreenState extends State<SwipeScreen> {
           // ★★★ タイマー停止 & 時間取得 ★★★
           _hesitationStopwatch.stop();
           final hesitationTime = _hesitationStopwatch.elapsedMilliseconds / 1000.0;
+          // ★★★ 次の計測のためにタイマーをリセットして再開 ★★★
+          _hesitationStopwatch.reset();
+          _hesitationStopwatch.start();
           print("Liked question $currentQuestionIdForAction with speed $_lastSwipeSpeed and hesitation $hesitationTime s");
           _handleSwipeComplete('yes', currentQuestionIdForAction, hesitationTime);
         },
@@ -66,6 +69,10 @@ class _SwipeScreenState extends State<SwipeScreen> {
           // ★★★ タイマー停止 & 時間取得 ★★★
           _hesitationStopwatch.stop();
           final hesitationTime = _hesitationStopwatch.elapsedMilliseconds / 1000.0;
+          // ★★★ 次の計測のためにタイマーをリセットして再開 ★★★
+          _hesitationStopwatch.reset();
+          _hesitationStopwatch.start();
+
           print("Noped question $currentQuestionIdForAction with speed $_lastSwipeSpeed and hesitation $hesitationTime s");
           _handleSwipeComplete('no', currentQuestionIdForAction, hesitationTime);
         },
@@ -122,6 +129,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
       } else if (response.containsKey('session_status') && response['session_status'] == 'completed') {
        print('Session completed! Navigating to SummaryScreen.');
+        // ★★★ セッション完了時はタイマーを止める ★★★
+        _hesitationStopwatch.stop();
         if (mounted) {
           // SummaryScreenへ遷移し、現在の画面は置き換える (戻れないようにする)
           Navigator.pushReplacement(
