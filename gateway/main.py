@@ -181,21 +181,24 @@ def start_session():
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def swipe(session_id):
     data = request.get_json()
-    # キーを 'answer' に統一 (以前の 'direction' から変更)
-    if not data or 'question_id' not in data or 'answer' not in data or 'speed' not in data or 'user_id' not in data:
-        return jsonify({'error': 'Missing data: question_id, answer, speed, and user_id are required'}), 400
+    # ★★★ hesitation_time を受け取るようにバリデーションを修正 ★★★
+    required_keys = ['question_id', 'answer', 'speed', 'user_id', 'hesitation_time']
+    if not data or not all(key in data for key in required_keys):
+        return jsonify({'error': f'Missing data: {", ".join(required_keys)} are required'}), 400
 
     question_id = data['question_id']
     answer = data['answer'] # 'yes' or 'no'
     speed = data['speed']
     user_id = data['user_id'] # フロントエンドからFirebase UID
+    hesitation_time = data['hesitation_time'] # ★★★ 新しいデータを取得 ★★★
 
     if answer not in ['yes', 'no']:
         return jsonify({'error': 'Invalid answer. Must be "yes" or "no"'}), 400
     try:
         speed = float(speed)
+        hesitation_time = float(hesitation_time) # ★★★ 数値であることを確認 ★★★
     except ValueError:
-        return jsonify({'error': 'Invalid speed. Must be a number'}), 400
+        return jsonify({'error': 'Invalid speed or hesitation_time. Must be a number'}), 400
 
     db_sqlite = get_db()
     
@@ -213,8 +216,9 @@ def swipe(session_id):
             swipe_ref.set({
                 'questionId': question_id,
                 'questionText': question_text,
-                'answer': answer, # 'answer' で保存
+                'answer': answer,
                 'speed': speed,
+                'hesitationTime': hesitation_time, # ★★★ Firestoreに保存 (キャメルケース) ★★★
                 'swipedAt': firestore.SERVER_TIMESTAMP
             })
             print(f"Firestore: Swipe recorded users/{user_id}/sessions/{session_id}/swipes/{swipe_ref.id}")
@@ -223,7 +227,7 @@ def swipe(session_id):
             # FirestoreエラーでもSQLite処理は続行
     else:
         print("Warning: Firestore client not initialized. Skipping Firestore operation for swipe.")
-
+    
     try:
         cursor = db_sqlite.cursor()
         cursor.execute('SELECT 1 FROM sessions WHERE session_id = ?', (session_id,))
