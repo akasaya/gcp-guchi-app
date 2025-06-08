@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:frontend/services/api_service.dart'; // ApiServiceをインポート
-import 'package:frontend/screens/swipe_screen.dart'; // SwipeScreenをインポート
-import 'package:frontend/screens/hisotry_screen.dart'; // HistoryScreenをインポート 
+import 'package:frontend/services/api_service.dart';
+import 'package:frontend/screens/swipe_screen.dart';
+import 'package:frontend/screens/hisotry_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,104 +13,150 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final ApiService _apiService = ApiService(); // ApiServiceのインスタンス
+  final ApiService _apiService = ApiService();
+  bool _isLoading = false;
+
+  final List<String> _topics = [
+    '仕事のこと',
+    '人間関係',
+    '将来のこと',
+    '健康のこと',
+    'なんとなく気分が晴れない',
+    'その他'
+  ];
+  String? _selectedTopic;
 
   User? get currentUser => _auth.currentUser;
 
-  Future<void> _startNewSession() async {
-    if (!mounted) return;
-    // ローディング表示などをここに追加しても良い
+  Future<void> _startSession() async {
+    if (_selectedTopic == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('話したいトピックを1つ選んでください。')),
+      );
+      return;
+    }
+    setState(() { _isLoading = true; });
 
     try {
-      // 以前のセッション開始ロジックをここに移動
-      final sessionData = await _apiService.startSession();
-      if (mounted && sessionData.containsKey('session_id')) {
-        print('Navigating to swipe screen with session: ${sessionData['session_id']}, question: ${sessionData['question_text']}');
+      final sessionData = await _apiService.startSession(topic: _selectedTopic!);
+      final questions = sessionData['questions'] as List<dynamic>;
+
+      if (mounted && sessionData.containsKey('session_id') && questions.isNotEmpty) {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => SwipeScreen(
               sessionId: sessionData['session_id'],
-              initialQuestionId: sessionData['question_id'],
-              initialQuestionText: sessionData['question_text'],
+              questions: List<Map<String, dynamic>>.from(questions),
             ),
           ),
         );
       } else {
-        // セッション開始失敗の処理
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('セッションの開始に失敗しました。')),
-          );
-        }
+        throw Exception('AIから質問を取得できませんでした。');
       }
     } catch (e) {
-      print('Error starting new session on HomeScreen: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('セッション開始エラー: ${e.toString()}')),
+          SnackBar(content: Text('セッションの開始に失敗しました: $e')),
         );
       }
-    }
-  }
-
-
-  Future<void> _logout() async {
-    await _auth.signOut();
-    // ログアウト後、main.dart の StreamBuilder が検知して LoginScreen に遷移するはず
-    // ここで明示的な画面遷移は不要
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ログアウトしました。')),
-      );
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = _auth.currentUser;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ホーム'),
+        title: Text(user?.displayName != null && user!.displayName!.isNotEmpty
+            ? '${user.displayName}さん、こんにちは'
+            : 'ホーム'),
         actions: [
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: 'セッション履歴',
+            tooltip: '過去のセッション履歴',
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => HistoryScreen()), // constを削除
+                MaterialPageRoute(builder: (context) => const HistoryScreen()),
               );
             },
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'ログアウト',
-            onPressed: _logout,
+            onPressed: () async {
+              await _auth.signOut();
+            },
           ),
         ],
       ),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              if (currentUser != null)
-                Text(
-                  'ようこそ、${currentUser!.email ?? 'ゲスト'}さん',
-                  style: Theme.of(context).textTheme.headlineSmall,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                const Icon(Icons.psychology_outlined, size: 60, color: Colors.deepPurple),
+                const SizedBox(height: 16),
+                const Text(
+                  'AIとの対話',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: _startNewSession, // ボタンを押してセッション開始
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                  textStyle: const TextStyle(fontSize: 18),
+                const SizedBox(height: 12),
+                const Text(
+                  '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
+                  style: TextStyle(fontSize: 16, color: Colors.black54),
+                  textAlign: TextAlign.center,
                 ),
-                child: const Text('新しいセッションを開始する'),
-              ),
-              // ここに過去のセッション履歴の表示などを追加していく
-            ],
+                const SizedBox(height: 32),
+                Wrap(
+                  spacing: 12.0,
+                  runSpacing: 12.0,
+                  alignment: WrapAlignment.center,
+                  children: _topics.map((topic) {
+                    return ChoiceChip(
+                      label: Text(topic, style: const TextStyle(fontSize: 15)),
+                      selected: _selectedTopic == topic,
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedTopic = topic;
+                          }
+                        });
+                      },
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 40),
+                _isLoading
+                    ? const CircularProgressIndicator()
+                    : ElevatedButton.icon(
+                        onPressed: _startSession,
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: const Text('対話を開始する'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 50, vertical: 16),
+                          textStyle: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          )
+                        ),
+                      ),
+              ],
+            ),
           ),
         ),
       ),

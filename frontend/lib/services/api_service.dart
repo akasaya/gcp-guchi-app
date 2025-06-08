@@ -1,30 +1,51 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
-//import 'package:frontend/config/api_config.dart';
 
 class ApiService {
-  // ★★★ baseUrlを直接定義 ★★★
-  // ローカルテスト時は 'http://127.0.0.1:8080' など、
-  // デプロイ後はCloud RunのURLに書き換える
-  final String _baseUrl = 'http://127.0.0.1:8080'; // ApiConfig.baseUrl;
+  final String _baseUrl = 'http://127.0.0.1:8080';
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<String?> _getIdToken() async {
+  Future<String> _getIdToken() async {
     User? user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('User not logged in');
+    if (user == null) throw Exception('User not logged in');
+    // トークンを強制的にリフレッシュして、有効なものを取得
+    final token = await user.getIdToken(true);
+    if (token == null) {
+      throw Exception('IDトークンの取得に失敗しました。');
     }
-    return await user.getIdToken();
+    return token;
   }
 
-  // ★★★ recordSwipeメソッドに hesitationTime を追加 ★★★
-  Future<Map<String, dynamic>> recordSwipe({
+
+  Future<Map<String, dynamic>> startSession({required String topic}) async {
+    final token = await _getIdToken();
+    final url = Uri.parse('$_baseUrl/session/start');
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'topic': topic}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    } else {
+      final errorBody = utf8.decode(response.bodyBytes);
+      print('Failed to start session: ${response.statusCode}');
+      print('Response body: $errorBody');
+      throw Exception('Failed to start session: ${response.statusCode}\n$errorBody');
+    }
+  }
+
+  Future<void> recordSwipe({
     required String sessionId,
     required String questionId,
     required String answer,
     required double speed,
-    required double hesitationTime, // この行を追加
+    required double hesitationTime,
   }) async {
     final token = await _getIdToken();
     final url = Uri.parse('$_baseUrl/session/$sessionId/swipe');
@@ -34,56 +55,28 @@ class ApiService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      // ★★★ body に hesitation_time を追加 ★★★
       body: jsonEncode({
         'question_id': questionId,
         'answer': answer,
         'speed': speed,
-        'hesitationTime': hesitationTime, // この行を追加
-        'user_id': _auth.currentUser!.uid,
+        'hesitation_time': hesitationTime,
       }),
     );
 
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
+    if (response.statusCode != 200) {
+      final errorBody = utf8.decode(response.bodyBytes);
       print('Failed to record swipe: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('Response body: $errorBody');
       throw Exception('Failed to record swipe');
     }
   }
 
-   Future<Map<String, dynamic>> generateQuestion({
-    required String sessionId,
-    required String history,
-  }) async {
-    final token = await _getIdToken();
-    final userId = _auth.currentUser!.uid;
-    final url = Uri.parse('$_baseUrl/session/$sessionId/generate_question?user_id=$userId');
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'history': history}),
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      print('Failed to generate question: ${response.statusCode}');
-      print('Response body: ${response.body}');
-      throw Exception('Failed to generate question');
-    }
-  }
-
   Future<Map<String, dynamic>> getSummary(String sessionId) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
     final token = await _getIdToken();
-    final userId = _auth.currentUser!.uid;
-    // user_idをクエリパラメータとして追加
-    final url = Uri.parse('$_baseUrl/session/$sessionId/summary?user_id=$userId');
+
+    final url = Uri.parse('$_baseUrl/session/$sessionId/summary?user_id=${user.uid}');
     final response = await http.get(
       url,
       headers: {
@@ -93,33 +86,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(utf8.decode(response.bodyBytes));
     } else {
+      final errorBody = utf8.decode(response.bodyBytes);
       print('Failed to get summary: ${response.statusCode}');
-      print('Response body: ${response.body}');
-      throw Exception('Failed to get summary');
-    }
-  }
-
-  // startSessionメソッドは変更なし
-  Future<Map<String, dynamic>> startSession() async {
-    final token = await _getIdToken();
-    final url = Uri.parse('$_baseUrl/session/start');
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'user_id': _auth.currentUser!.uid}),
-    );
-
-    if (response.statusCode == 201) {
-      return jsonDecode(response.body);
-    } else {
-      print('Failed to start session: ${response.statusCode}');
-      print('Response body: ${response.body}');
-      throw Exception('Failed to start session');
+      print('Response body: $errorBody');
+      throw Exception('Failed to get summary: ${response.statusCode}\n$errorBody');
     }
   }
 }
