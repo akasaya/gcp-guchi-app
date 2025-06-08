@@ -99,7 +99,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                         const SizedBox(height: 16),
                         _buildInfoCard(
                           title: 'AIによる行動分析',
-                          content: _summaryData!['gemma_interaction_analysis'] ?? '分析データはありません。',
+                          content: _summaryData!['interaction_analysis'] ?? '分析データはありません。',
                         ),
                       ],
                       const SizedBox(height: 32),

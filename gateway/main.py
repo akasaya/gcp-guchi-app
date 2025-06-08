@@ -5,7 +5,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import re
-import requests
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -66,21 +65,21 @@ CORS(app)
 
 # ===== プロンプト定義 =====
 SUMMARY_PROMPT = """
-あなたは、ユーザーの感情の動きを分析するプロのアナリストです。
-以下のユーザーとの会話履歴（質問と回答のペア）を分析し、ユーザーの感情状態や潜在的なニーズについて、簡潔な要約と、より深い洞察を含む分析を生成してください。
+あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
+以下のユーザーとの会話履歴（質問と回答のペア、スワイプ操作のデータ）を深く分析し、ユーザーの感情状態、葛藤、そして本人も気づいていないかもしれない潜在的なニーズについて、専門的かつ共感的な洞察を提供してください。
 
 # 会話履歴
 {swipes_text}
 
 # あなたのタスク
-1.  **summary**: 会話全体を2-3文で要約してください。
-2.  **gemma_interaction_analysis**: スワイプの速度やためらい時間も考慮し、ユーザーがどの質問に迷い、どの質問に即答したかを分析し、その態度の変化から読み取れる深層心理や感情の機微について、専門的に分析してください。
+1.  **summary**: 会話全体から読み取れるユーザーの主要な悩みや感情を、2〜3文で簡潔に要約してください。
+2.  **interaction_analysis**: スワイプの速度やためらい時間（hesitation_time_sec, swipe_duration_ms）も重要な手がかりです。ユーザーがどの質問に迷い（ためらい時間が長い）、どの質問に即答したか（ためらい時間が短い）を分析してください。その態度の変化から読み取れる無意識の抵抗、肯定、または葛藤について、専門家として深く、かつ分かりやすく分析してください。
 
 # 制約条件
 - 分析結果は必ず以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や ```json ``` は絶対に含めないでください。
 {{
   "summary": "ここに会話全体の要約を記述",
-  "gemma_interaction_analysis": "ここにスワイプのインタラクションを含めた深掘り分析を記述"
+  "interaction_analysis": "ここにスワイプのインタラクションを含めた深掘り分析を記述"
 }}
 """
 
@@ -125,44 +124,37 @@ def generate_questions_with_gemini(topic):
         print(f"Error calling Gemini for question generation: {e}")
         raise
 
-def generate_summary_with_ollama_gemma(swipes_text):
+def generate_summary_with_gemini(swipes_text):
     """Gemmaを使ってサマリーを生成する"""
+    model_name = os.getenv('GEMINI_FLASH_NAME')
+    model = GenerativeModel(model_name)
+    
     prompt = SUMMARY_PROMPT.format(swipes_text=swipes_text)
     
-    # 環境変数からOllamaのエンドポイントとモデル名を取得
-    base_url = os.getenv("OLLAMA_ENDPOINT_URL")
-    ollama_api_url = f"{base_url}/api/generate"
-    model_name = os.getenv("OLLAMA_MODEL_NAME")
-
     try:
-        response = requests.post(
-            ollama_api_url,
-            json={'model': model_name, 'prompt': prompt, 'stream': False, "format": "json"},
-            timeout=180
-        )
-        response.raise_for_status()
+        response = model.generate_content(prompt)
         
-        response_json = response.json()
-        raw_gemma_response = response_json.get('response', '')
+        # 応答からJSON部分を抽出するロジックを強化
+        # ```json ... ``` で囲まれている場合と、そうでない場合の両方に対応
+        text_to_parse = response.text
+        match = re.search(r'```json\s*(\{.*?\})\s*```', text_to_parse, re.DOTALL)
+        if match:
+            json_text = match.group(1)
+        else:
+            # ```jsonがない場合は、最初に出現する { から最後の } までを抽出
+            match = re.search(r'\{.*\}', text_to_parse, re.DOTALL)
+            if match:
+                json_text = match.group(0)
+            else:
+                raise ValueError(f"Gemini response did not contain valid JSON object: {text_to_parse}")
 
-        # Gemmaの応答からJSON部分のみを抽出する
-        match = re.search(r'\{.*\}', raw_gemma_response, re.DOTALL)
-        if not match:
-            print(f"Could not find JSON in Gemma response: {raw_gemma_response}")
-            raise ValueError("Gemma response did not contain valid JSON.")
+        # 不正な制御文字を削除してからJSONとして読み込む
+        # これが "Invalid control character" エラーに対する直接的な対策
+        cleaned_json_text = ''.join(c for c in json_text if c.isprintable() or c in '\n\r\t')
+        return json.loads(cleaned_json_text)
 
-        json_text = match.group(0)
-        return json.loads(json_text)
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error calling Gemma for summary generation: {e}")
-        raise
-    except json.JSONDecodeError as e:
-        print(f"Error decoding JSON from Gemma response: {e}")
-        print(f"Raw response was: {raw_gemma_response}")
-        raise
-    except ValueError as e:
-        print(e)
+    except Exception as e:
+        print(f"Error calling Gemini for summary generation: {e}")
         raise
 
 @app.route('/session/start', methods=['POST'])
@@ -312,7 +304,7 @@ def get_summary(session_id):
                     duration = swipe_data.get('swipe_duration_ms', 0)
                     swipes_text_list.append(
                         f"Q: {q_text}\n"
-                        f"A: {answer} (ためらい: {hesitation:.2f}秒, スワイプ時間: {duration}ms)"
+                        f"A: {answer} (ためらい: {hesitation:.2f}秒, 速度: {duration}ms)"
                     )
         
         if not swipes_text_list:
@@ -320,11 +312,12 @@ def get_summary(session_id):
 
         swipes_text = "\n".join(swipes_text_list)
         
-        summary_data = generate_summary_with_ollama_gemma(swipes_text)
+        # ★★★ ここをGeminiを呼び出す関数に変更 ★★★
+        summary_data = generate_summary_with_gemini(swipes_text)
         
         session_doc_ref.update({
             'summary': summary_data.get('summary'),
-            'gemma_interaction_analysis': summary_data.get('gemma_interaction_analysis'),
+            'interaction_analysis': summary_data.get('interaction_analysis'), # <- 'gemma_interaction_analysis' から修正
             'status': 'completed',
             'updated_at': firestore.SERVER_TIMESTAMP,
         })
@@ -333,7 +326,6 @@ def get_summary(session_id):
 
     except Exception as e:
         print(f"Error getting summary: {e}")
-        # session_doc_refが取得できている場合のみ、エラーステータスを書き込む
         if session_doc_ref:
             try:
                 session_doc_ref.update({'status': 'error', 'error_message': str(e)})
