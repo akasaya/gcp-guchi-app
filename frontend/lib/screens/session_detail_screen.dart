@@ -79,7 +79,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           final String status = sessionData['status'] ?? '不明';
           // BUG FIX: Handle summary being a String to avoid TypeError.
           final String summary = sessionData['summary']?.toString() ?? 'AIによる振り返りはまだありません。';
-          final String gemmaAnalysis = sessionData['gemma_interaction_analysis']?.toString() ?? '行動分析データはありません。';
+          // BUG FIX: キー名を gemma... から変更し、変数名も統一
+          final String interactionAnalysis = sessionData['interaction_analysis']?.toString() ?? '行動分析データはありません。';
           
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
@@ -99,9 +100,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 ]),
                 const SizedBox(height: 24),
                 
-                _buildSectionTitle('あなたの心の動きの分析'),
+                _buildSectionTitle('あなたのスワイプに関する行動分析'),
                 _buildInfoCard([
-                  Text(gemmaAnalysis),
+                  Text(interactionAnalysis),
                 ]),
                 const SizedBox(height: 24),
 

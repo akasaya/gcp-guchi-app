@@ -69,14 +69,13 @@ class ApiService {
       print('Response body: $errorBody');
       throw Exception('Failed to record swipe');
     }
-  }
+ }
 
   Future<Map<String, dynamic>> getSummary(String sessionId) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('User not logged in');
     final token = await _getIdToken();
 
-    final url = Uri.parse('$_baseUrl/session/$sessionId/summary?user_id=${user.uid}');
+    final url = Uri.parse('$_baseUrl/session/$sessionId/summary');
+    
     final response = await http.get(
       url,
       headers: {
