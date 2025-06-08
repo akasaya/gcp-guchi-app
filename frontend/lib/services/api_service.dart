@@ -39,7 +39,7 @@ class ApiService {
         'question_id': questionId,
         'answer': answer,
         'speed': speed,
-        'hesitation_time': hesitationTime, // この行を追加
+        'hesitationTime': hesitationTime, // この行を追加
         'user_id': _auth.currentUser!.uid,
       }),
     );

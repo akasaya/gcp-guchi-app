@@ -86,6 +86,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             noCount = summary['no_count'] ?? 0;
             gemmaSummary = summary['gemma_summary'] ?? 'AIによる要約の生成に失敗しました。';
           }
+          final String interactionAnalysis = sessionData['gemma_interaction_analysis'] ?? '行動分析データはありません。';
+
 
           return SingleChildScrollView(
             child: Padding(
@@ -128,6 +130,37 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       child: Text(
                         gemmaSummary,
                         style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+
+                  const Divider(height: 32),
+                  // ★★★ ここから新しい分析結果表示UIを追加 ★★★
+                  Text(
+                    'あなたの心の動きの分析',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    elevation: 2,
+                     color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                    shape: RoundedRectangleBorder(
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5
+                      ),
+                      borderRadius: const BorderRadius.all(Radius.circular(12)),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16.0),
+                      width: double.infinity,
+                      child: Text(
+                        interactionAnalysis,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          height: 1.5, // 行間を少し広げる
+                        ),
                       ),
                     ),
                   ),
