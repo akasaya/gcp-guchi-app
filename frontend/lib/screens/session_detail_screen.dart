@@ -16,34 +16,33 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<DocumentSnapshot<Map<String, dynamic>>> _fetchSessionDetails() {
-    final User? currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      throw Exception('ユーザーがログインしていません。');
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _sessionDetailsStream() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream.error('User not logged in');
     }
     return _firestore
         .collection('users')
-        .doc(currentUser.uid)
+        .doc(user.uid)
         .collection('sessions')
         .doc(widget.sessionId)
-        .get();
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _fetchSwipes() {
-    final User? currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      throw Exception('ユーザーがログインしていません。');
-    }
-    return _firestore
-        .collection('users')
-        .doc(currentUser.uid)
-        .collection('sessions')
-        .doc(widget.sessionId)
-        .collection('swipes')
-        .orderBy('swipedAt', descending: false) // 'swiped_at' -> 'swipedAt'
         .snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> _fetchSwipes() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream.error('User not logged in');
+    }
+    return _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('sessions')
+        .doc(widget.sessionId)
+        .collection('swipes')
+        .orderBy('timestamp', descending: false)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,8 +50,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       appBar: AppBar(
         title: const Text('セッション詳細'),
       ),
-      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: _fetchSessionDetails(),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: _sessionDetailsStream(),
         builder: (context, sessionSnapshot) {
           if (sessionSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -69,7 +68,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             return const Center(child: Text('セッションデータが空です。'));
           }
           
-          final Timestamp? createdAtTimestamp = sessionData['createdAt'] as Timestamp?;
+          // BUG FIX: 'createdAt' -> 'created_at'
+          final Timestamp? createdAtTimestamp = sessionData['created_at'] as Timestamp?;
           String formattedDate = '日時不明';
           if (createdAtTimestamp != null) {
             final DateTime createdAtDate = createdAtTimestamp.toDate();
@@ -77,145 +77,145 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           }
 
           final String status = sessionData['status'] ?? '不明';
-          final Map<String, dynamic>? summary = sessionData['summary'] as Map<String, dynamic>?;
-          int yesCount = 0;
-          int noCount = 0;
-          String gemmaSummary = 'AIによる要約はまだありません。'; 
-          if (summary != null) {
-            yesCount = summary['yes_count'] ?? 0;
-            noCount = summary['no_count'] ?? 0;
-            gemmaSummary = summary['gemma_summary'] ?? 'AIによる要約の生成に失敗しました。';
-          }
-          final String interactionAnalysis = sessionData['gemma_interaction_analysis'] ?? '行動分析データはありません。';
-
-
+          // BUG FIX: Handle summary being a String to avoid TypeError.
+          final String summary = sessionData['summary']?.toString() ?? 'AIによる振り返りはまだありません。';
+          final String gemmaAnalysis = sessionData['gemma_interaction_analysis']?.toString() ?? '行動分析データはありません。';
+          
           return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('セッション情報', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: ListTile(
-                      title: Text('日時: $formattedDate'),
-                      subtitle: Text('ステータス: $status'),
-                    ),
-                  ),
-                  const Divider(height: 32),
-                  Text('サマリー', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: ListTile(
-                      title: Text('はい: $yesCount 回'),
-                      subtitle: Text('いいえ: $noCount 回'),
-                    ),
-                  ),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionTitle('セッション情報'),
+                _buildInfoCard([
+                  _buildInfoRow('日時', formattedDate),
+                  _buildInfoRow('ステータス', status),
+                ]),
+                const SizedBox(height: 24),
 
-                  const Divider(height: 32),
-                  Text('AIによる振り返り', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      side: BorderSide(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                      borderRadius: const BorderRadius.all(Radius.circular(12)),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(16.0),
-                      width: double.infinity,
-                      child: Text(
-                        gemmaSummary,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                  ),
+                _buildSectionTitle('AIによる振り返り'),
+                _buildInfoCard([
+                  Text(summary),
+                ]),
+                const SizedBox(height: 24),
+                
+                _buildSectionTitle('あなたの心の動きの分析'),
+                _buildInfoCard([
+                  Text(gemmaAnalysis),
+                ]),
+                const SizedBox(height: 24),
 
-                  const Divider(height: 32),
-                  // ★★★ ここから新しい分析結果表示UIを追加 ★★★
-                  Text(
-                    'あなたの心の動きの分析',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    elevation: 2,
-                     color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                    shape: RoundedRectangleBorder(
-                      side: BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 1.5
-                      ),
-                      borderRadius: const BorderRadius.all(Radius.circular(12)),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(16.0),
-                      width: double.infinity,
-                      child: Text(
-                        interactionAnalysis,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          height: 1.5, // 行間を少し広げる
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const Divider(height: 32),
-                  Text('スワイプ履歴', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _fetchSwipes(),
-                    builder: (context, swipeSnapshot) {
-                      if (swipeSnapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (swipeSnapshot.hasError) {
-                        return Center(child: Text('スワイプ履歴の取得エラー: ${swipeSnapshot.error}'));
-                      }
-                      if (!swipeSnapshot.hasData || swipeSnapshot.data!.docs.isEmpty) {
-                        return const Center(child: Text('スワイプ履歴はありません。'));
-                      }
-
-                      final swipes = swipeSnapshot.data!.docs;
-
-                      return ListView.builder(
-                        itemCount: swipes.length,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemBuilder: (context, index) {
-                          final swipeData = swipes[index].data();
-                          // ★★★ ここからキーを修正 ★★★
-                          final String questionText = swipeData['questionText'] ?? '質問テキスト不明';
-                          final String direction = swipeData['answer'] ?? '不明';
-                          final double velocity = (swipeData['speed'] as num?)?.toDouble() ?? 0.0;
-                          // ★★★ ここまでキーを修正 ★★★
-                          
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: ListTile(
-                              leading: Icon(
-                                direction == 'yes' ? Icons.check_circle_outline : Icons.highlight_off,
-                                color: direction == 'yes' ? Colors.green : Colors.red,
-                              ),
-                              title: Text(questionText),
-                              subtitle: Text('回答: ${direction.toUpperCase()} (速度: ${velocity.toStringAsFixed(2)})'),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
-              ),
+                _buildSectionTitle('スワイプ履歴'),
+                _buildSwipesList(),
+              ],
             ),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(List<Widget> children) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80, // ラベルの幅を固定
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwipesList() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _fetchSwipes(),
+      builder: (context, swipeSnapshot) {
+        if (swipeSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (swipeSnapshot.hasError) {
+          return Text('スワイプ履歴の読み込みに失敗しました: ${swipeSnapshot.error}');
+        }
+        if (!swipeSnapshot.hasData || swipeSnapshot.data!.docs.isEmpty) {
+          return const Text('スワイプ履歴はありません。');
+        }
+
+        final swipes = swipeSnapshot.data!.docs;
+
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(), // SingleChildScrollView内で使うため
+          itemCount: swipes.length,
+          itemBuilder: (context, index) {
+            final swipeData = swipes[index].data();
+            final questionRef = swipeData['question_ref'] as DocumentReference?;
+            
+            return FutureBuilder<DocumentSnapshot>(
+              future: questionRef?.get(),
+              builder: (context, questionDocSnapshot) {
+                String questionText = '質問を読み込み中...';
+                if (questionDocSnapshot.connectionState == ConnectionState.done) {
+                   if (questionDocSnapshot.hasData && questionDocSnapshot.data!.exists) {
+                     final questionData = questionDocSnapshot.data!.data() as Map<String, dynamic>;
+                     questionText = questionData['text'] ?? '質問テキストが見つかりません';
+                   } else {
+                     questionText = '質問が見つかりません';
+                   }
+                }
+
+                final answer = swipeData['answer'] ?? '回答不明';
+                final hesitation = (swipeData['hesitation_time_sec'] ?? 0).toStringAsFixed(2);
+                final duration = swipeData['swipe_duration_ms'] ?? 0;
+                
+                final Color iconColor = answer.toLowerCase() == 'yes' ? Colors.green : Colors.red;
+                final IconData iconData = answer.toLowerCase() == 'yes' ? Icons.check_circle_outline : Icons.cancel_outlined;
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: ListTile(
+                    leading: Icon(iconData, color: iconColor),
+                    title: Text(questionText),
+                    subtitle: Text('回答: $answer (ためらい: ${hesitation}秒, 速度: ${duration}ms)'),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
