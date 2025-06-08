@@ -53,6 +53,32 @@ class ApiService {
     }
   }
 
+   Future<Map<String, dynamic>> generateQuestion({
+    required String sessionId,
+    required String history,
+  }) async {
+    final token = await _getIdToken();
+    final userId = _auth.currentUser!.uid;
+    final url = Uri.parse('$_baseUrl/session/$sessionId/generate_question?user_id=$userId');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'history': history}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      print('Failed to generate question: ${response.statusCode}');
+      print('Response body: ${response.body}');
+      throw Exception('Failed to generate question');
+    }
+  }
+
   Future<Map<String, dynamic>> getSummary(String sessionId) async {
     final token = await _getIdToken();
     final userId = _auth.currentUser!.uid;
