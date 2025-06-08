@@ -27,14 +27,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
-      // ユーザーがログインしていない場合の表示 (本来はここまで来ない想定だが念のため)
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('セッション履歴'),
-        ),
-        body: const Center(
-          child: Text('ログインしていません。履歴を表示できません。'),
-        ),
+        appBar: AppBar(title: const Text('セッション履歴')),
+        body: const Center(child: Text('ログインしていません。履歴を表示できません。')),
       );
     }
 
@@ -47,7 +42,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             .collection('users')
             .doc(_currentUser!.uid)
             .collection('sessions')
-            .orderBy('createdAt', descending: true) // 新しい順に並べる
+            .orderBy('created_at', descending: true) // BUG FIX: 'createdAt' -> 'created_at'
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -69,29 +64,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final session = sessions[index];
               final sessionData = session.data() as Map<String, dynamic>;
               
-              // createdAtがTimestamp型であることを想定
-              final Timestamp? createdAtTimestamp = sessionData['createdAt'] as Timestamp?;
+              final Timestamp? createdAtTimestamp = sessionData['created_at'] as Timestamp?; // BUG FIX: 'createdAt' -> 'created_at'
               String formattedDate = '日時不明';
               if (createdAtTimestamp != null) {
                 final DateTime createdAtDate = createdAtTimestamp.toDate();
-                // intl パッケージを使って日付をフォーマット
                 formattedDate = DateFormat('yyyy年MM月dd日 HH:mm').format(createdAtDate);
               }
 
               final String status = sessionData['status'] ?? '不明';
-              final Map<String, dynamic>? summary = sessionData['summary'] as Map<String, dynamic>?;
-              int yesCount = 0;
-              int noCount = 0;
-              if (summary != null) {
-                yesCount = summary['yes_count'] ?? 0;
-                noCount = summary['no_count'] ?? 0;
-              }
-
-         return Card(
+              // BUG FIX: summary is a string now, not a map
+              final String summary = sessionData['summary']?.toString() ?? '要約待ち';
+              
+              return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: ListTile(
-                  title: Text('セッション日時: $formattedDate'),
-                  subtitle: Text('ステータス: $status\nはい: $yesCount, いいえ: $noCount'),
+                  title: Text('日時: $formattedDate'),
+                  subtitle: Text(
+                    'ステータス: $status\n要約: ${summary.length > 50 ? '${summary.substring(0, 50)}...' : summary}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   isThreeLine: true,
                   onTap: () {
                     Navigator.push(
@@ -100,7 +91,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         builder: (context) => SessionDetailScreen(sessionId: session.id),
                       ),
                     );
-                  }, // ここにカンマが抜けている可能性
+                  },
                 ),
               );
             },
