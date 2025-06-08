@@ -1,20 +1,20 @@
 import os
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-from flask import Flask, request, jsonify, g # g をインポート
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
-import requests # HTTPリクエストを送信するために追加
-import json # JSONを扱うために追加
-import sqlite3 # sqlite3 をインポート
-import uuid # uuid をインポート
-import datetime # datetime をインポート
-
+import requests
+import json
+import sqlite3
+import uuid
+import datetime
+import re # 正規表現をインポート
 
 app = Flask(__name__)
 CORS(app)
-DATABASE = 'guchiswipe.db' # ユーザー提供のパス
+DATABASE = 'guchiswipe.db'
 
-# Firebase Admin SDKの初期化
+# ... (Firebase Admin SDKの初期化 - 変更なし) ...
 db_firestore = None
 try:
     cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
@@ -30,7 +30,7 @@ try:
     print("Firebase Admin SDKが正常に初期化され、Firestoreクライアントを取得しました。")
 except Exception as e:
     print(f"Firebase Admin SDKの初期化またはFirestoreクライアントの取得に失敗しました: {e}")
-    db_firestore = None # エラー時はNoneのまま
+    db_firestore = None
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -40,14 +40,14 @@ def get_db():
         db.execute("PRAGMA foreign_keys = ON")
     return db
 
-# Gemma on Ollamaを呼び出す関数 (user_name引数を削除)
+# ... (generate_summary_with_ollama_gemma関数 - 変更なし) ...
 def generate_summary_with_ollama_gemma(swipes_text: str) -> dict:
     """OllamaでホストされているGemmaモデルを使って要約と分析を生成し、辞書で返す"""
     
     # このURLを、ご自身のOllama on Cloud RunのエンドポイントURLに置き換えてください
-    OLLAMA_BASE_URL = os.getenv("OLLAMA_ENDPOINT_URL", "https://ollama-sample-1036638910637.us-central1.run.app")
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_ENDPOINT_URL")
 
-    if "YOUR_OLLAMA_ENDPOINT_URL" in OLLAMA_BASE_URL:
+    if not OLLAMA_BASE_URL or "YOUR_OLLAMA_ENDPOINT_URL" in OLLAMA_BASE_URL:
         error_message = "（AI分析エラー: OLLAMA_ENDPOINT_URL環境変数が設定されていません）"
         print(error_message)
         return {"summary": error_message, "analysis": error_message}
@@ -78,7 +78,7 @@ def generate_summary_with_ollama_gemma(swipes_text: str) -> dict:
         """
 
     payload = {
-        "model": "gemma3:4B",  
+        "model": os.getenv("OLLAMA_MODEL_NAME"),
         "prompt": prompt,
         "stream": False
     }
@@ -117,6 +117,77 @@ def generate_summary_with_ollama_gemma(swipes_text: str) -> dict:
         return {"summary": error_msg, "analysis": error_msg}
 
 
+# ★★★ 修正点1: AIへの指示（プロンプト）を厳格化 ★★★
+def generate_next_question_with_gemma(session_history_text: str) -> dict:
+    """OllamaでホストされているGemmaモデルを使って次の質問を生成する"""
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_ENDPOINT_URL")
+
+    if not OLLAMA_BASE_URL:
+        return {"error": "OLLAMA_ENDPOINT_URL is not set."}
+    
+    ollama_api_url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/generate"
+
+    # 「開かれた質問」という曖昧な表現を削除し、「はい/いいえ」で答えられることを強調
+    prompt = f"""あなたは、ユーザーの話を注意深く聞き、具体的な事実を明らかにするための質問をする、優れたインタビュアーです。
+    以下の対話履歴を分析し、ユーザーの回答をさらに深掘りするための、**具体的で、かつ「はい」か「いいえ」で答えられる質問**を**一つだけ**生成してください。
+
+    【最重要ルール】
+    - **生成するテキストは、必ず日本語の疑問符「？」で終わる質問文でなければなりません。**
+    - **相槌や感想（例：「なるほど」「それは素晴らしいですね」）は絶対に含めないでください。**
+    - 回答には、**質問文そのもの**だけを含めてください。挨拶や前置き、解説、引用符（「」）は一切不要です。
+    - ユーザーの回答を否定せず、次の具体的な側面に焦点を当てて質問を組み立ててください。
+
+    【対話の進め方の例】
+    履歴1:
+    Q: 今日は気分が良いですか？
+    A: いいえ
+    あなたの思考プロセス: 「気分が良くない」という抽象的な回答だ。これを具体的にする必要がある。身体的な原因か精神的な原因かを探るため、まずは身体について聞こう。「何か体に不調を感じますか？」という質問が良いだろう。
+    生成する質問: 何か体に不調を感じますか？
+
+    履歴2:
+    Q: 何か体に不調を感じますか？
+    A: はい
+    あなたの思考プロセス: 「体に不調がある」ことが分かった。次はその不調がどんな種類のものかを特定したい。「痛み」という具体的な感覚について尋ねるのが自然な流れだ。「それは、体のどこかに痛みがあるということですか？」と質問しよう。
+    生成する質問: それは、体のどこかに痛みがあるということですか？
+
+    【これまでの対話履歴】
+    ---
+    {session_history_text}
+    ---
+
+    【生成する質問】
+    """
+
+    payload = {
+        "model": os.getenv("OLLAMA_MODEL_NAME"),
+        "prompt": prompt,
+        "stream": False
+    }
+
+    try:
+        response = requests.post(ollama_api_url, json=payload, timeout=90)
+        response.raise_for_status()
+        
+        question_text = response.json().get("response", "").strip()
+
+        # 生成された質問の前後に付きがちな不要な文字を正規表現で削除
+        question_text = re.sub(r'^[「『"\']+|[」』"\']+$', '', question_text).strip()
+
+        if not question_text or not question_text.endswith('？'):
+             # 質問でない、または「？」で終わらない場合はエラーとして扱う
+            return {"error": f"Generated text is not a valid question: {question_text}"}
+
+        return {
+            "question_text": question_text
+        }
+    except requests.exceptions.RequestException as e:
+        print(f"Error requesting next question from Ollama: {e}")
+        return {"error": f"AIとの通信に失敗しました: {e}"}
+    except Exception as e:
+        print(f"Unexpected error in generate_next_question: {e}")
+        return {"error": f"予期せぬエラーが発生しました: {e}"}
+        
+# ... (teardown_appcontext, init_db, insert_initial_questions - 変更なし) ...
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
@@ -194,32 +265,28 @@ def start_session():
         db_sqlite.rollback()
         return jsonify({'error': f"SQLite error: {str(e)}"}), 500
 
-# /session/<session_id>/swipe エンドポイントの修正
+
+# ★★★ 修正点2: /swipe エンドポイントを回答記録のみに単純化 ★★★
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def swipe(session_id):
     data = request.get_json()
-    # フロントエンドからのキー名'hesitationTime'に合わせる
-    required_keys = ['question_id', 'answer', 'user_id', 'hesitationTime']
+    required_keys = ['question_id', 'answer', 'user_id', 'hesitationTime', 'speed']
     if not data or not all(key in data for key in required_keys):
         return jsonify({'error': f'Missing data: {", ".join(required_keys)} are required'}), 400
 
     question_id = data['question_id']
     answer = data['answer']
     user_id = data['user_id']
-    hesitation_time = data['hesitationTime']
-    # 'speed'はフロントから送られていないので、デフォルト値または別の扱いにする
-    speed = data.get('speed', 0.0) # speedキーがなくてもエラーにならないように
-
-    if answer not in ['yes', 'no']:
-        return jsonify({'error': 'Invalid answer. Must be "yes" or "no"'}), 400
+    
     try:
-        hesitation_time = float(hesitation_time)
-        speed = float(speed)
-    except ValueError:
+        hesitation_time = float(data['hesitationTime'])
+        speed = float(data['speed'])
+    except (ValueError, TypeError):
         return jsonify({'error': 'Invalid hesitationTime or speed. Must be a number'}), 400
 
     db_sqlite = get_db()
     
+    # Firestoreへの記録 (変更なし)
     if db_firestore:
         try:
             session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
@@ -233,66 +300,79 @@ def swipe(session_id):
                 'questionId': question_id,
                 'questionText': question_text,
                 'answer': answer,
-                'speed': speed, # speedも保存
+                'speed': speed,
                 'hesitationTime': hesitation_time,
                 'swipedAt': firestore.SERVER_TIMESTAMP
             })
             print(f"Firestore: Swipe recorded users/{user_id}/sessions/{session_id}/swipes/{swipe_ref.id}")
         except Exception as e:
             print(f"Firestore error recording swipe: {e}")
-    else:
-        print("Warning: Firestore client not initialized. Skipping Firestore operation for swipe.")
     
+    # SQLiteへの記録
     try:
         cursor = db_sqlite.cursor()
-        cursor.execute('SELECT 1 FROM sessions WHERE session_id = ?', (session_id,))
-        if cursor.fetchone() is None:
-            return jsonify({'error': 'SQLite: Session not found'}), 404
-
         cursor.execute('''
             INSERT INTO swipes (session_id, question_id, direction, speed, answered_at)
             VALUES (?, ?, ?, ?, ?)
         ''', (session_id, question_id, answer, speed, datetime.datetime.now()))
         db_sqlite.commit()
-
-        cursor.execute('SELECT order_num FROM questions WHERE question_id = ?', (question_id,))
-        current_question_data = cursor.fetchone()
-        if not current_question_data:
-            return jsonify({'error': 'SQLite: Invalid question_id'}), 404
-        current_order_num = current_question_data['order_num']
-
-        cursor.execute('''
-            SELECT question_id, question_text FROM questions
-            WHERE order_num > ? ORDER BY order_num ASC LIMIT 1
-        ''', (current_order_num,))
-        next_question = cursor.fetchone()
-
-        if next_question:
-            return jsonify({
-                'next_question_id': next_question['question_id'],
-                'next_question_text': next_question['question_text'] # ★★★ 'text' から 'question_text' に修正 ★★★
-            }), 200
-        else:
-            if db_firestore:
-                try:
-                    session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
-                    session_doc_ref.update({
-                        'status': 'completed',
-                        'completedAt': firestore.SERVER_TIMESTAMP
-                    })
-                    print(f"Firestore: Session status updated to completed for users/{user_id}/sessions/{session_id}")
-                except Exception as e:
-                    print(f"Firestore error updating session status to completed: {e}")
-            
-            return jsonify({'session_status': 'completed', 'message': 'All questions answered.'}), 200
+        
+        # 次の質問を返すロジックを削除し、成功レスポンスのみを返す
+        return jsonify({'status': 'swipe_recorded'}), 200
 
     except sqlite3.Error as e:
         db_sqlite.rollback()
         return jsonify({'error': f"SQLite error: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
-  
+
+# ★★★ 修正点3: /generate_question でセッション完了とDB保存を制御 ★★★
+@app.route('/session/<string:session_id>/generate_question', methods=['POST'])
+def generate_question(session_id):
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    data = request.get_json()
+    if not data or 'history' not in data:
+        return jsonify({'error': 'history is required in request body'}), 400
+
+    session_history_text = data['history']
+    
+    # 会話のターン数を数える（Q: の出現回数）
+    turn_count = session_history_text.count("Q:")
+    # ここでは、最初の質問を含めて5ターンで終了とする
+    if turn_count >= 5:
+        return jsonify({'session_status': 'completed', 'message': 'Session reached turn limit.'}), 200
+
+    # AIに次の質問を生成させる
+    result = generate_next_question_with_gemma(session_history_text)
+
+    if "error" in result:
+        return jsonify(result), 500
+    
+    next_question_text = result['question_text']
+    next_question_id = f"gemma-gen-{uuid.uuid4()}"
+
+    # 生成した質問をデータベースに保存する
+    db_sqlite = get_db()
+    try:
+        cursor = db_sqlite.cursor()
+        # order_num は NULL のまま挿入
+        cursor.execute('INSERT INTO questions (question_id, question_text) VALUES (?, ?)',
+                       (next_question_id, next_question_text))
+        db_sqlite.commit()
+        print(f"SQLite: Saved generated question {next_question_id}")
+    except sqlite3.Error as e:
+        db_sqlite.rollback()
+        print(f"SQLite error saving generated question: {e}")
+        return jsonify({'error': 'Failed to save generated question to DB'}), 500
+
+    return jsonify({
+        'next_question_id': next_question_id,
+        'next_question_text': next_question_text
+    }), 200
+
+# ... (get_summary - 変更なし) ...
 @app.route('/session/<string:session_id>/summary', methods=['GET'])
 def get_summary(session_id):
     user_id = request.args.get('user_id')
@@ -350,7 +430,6 @@ def get_summary(session_id):
                 
                 gemma_results = {"summary": "", "analysis": ""}
                 if swipes_text:
-                    # user_nameを渡さないように呼び出しを修正
                     gemma_results = generate_summary_with_ollama_gemma(swipes_text)
                 
                 session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
@@ -379,19 +458,20 @@ def get_summary(session_id):
                     print(f"Warning: Firestore session document not found for summary update: users/{user_id}/sessions/{session_id}")
             except Exception as e:
                 print(f"Firestore error updating session summary: {e}")
-        elif not user_id and db_firestore:
-             print("Warning: user_id not provided, Firestore summary update skipped.")
-        elif not db_firestore:
-            print("Warning: Firestore client not initialized. Skipping Firestore summary update.")
-
-        return jsonify({
+        
+        # ★★★ フロントエンドへの返却データを整理 ★★★
+        final_response = {
             **summary_data_sqlite,
+            'gemma_summary': gemma_results.get('summary', ''),
+            'gemma_interaction_analysis': gemma_results.get('analysis', ''),
             'message': 'Thank you for sharing your feelings!'
-        }), 200
+        }
+        return jsonify(final_response), 200
 
     except sqlite3.Error as e:
         return jsonify({'error': f"SQLite error: {str(e)}"}), 500
     except Exception as e:
+        print(f"An unexpected error occurred in get_summary: {e}")
         return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':

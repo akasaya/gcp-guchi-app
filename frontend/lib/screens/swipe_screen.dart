@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:swipe_cards/swipe_cards.dart';
-import 'package:swipe_cards/draggable_card.dart'; // SlideRegionを解決するために追加
+import 'package:swipe_cards/draggable_card.dart';
 import '../services/api_service.dart';
 import './summary_screen.dart';
 
@@ -24,7 +24,7 @@ class SwipeScreen extends StatefulWidget {
 class _SwipeScreenState extends State<SwipeScreen> {
   final ApiService _apiService = ApiService();
   late MatchEngine _matchEngine;
-  List<SwipeItem> _swipeItems = [];
+  final List<SwipeItem> _swipeItems = [];
   late Key _swipeCardsKey;
 
   String? _currentCardQuestionId;
@@ -32,6 +32,9 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
   final Stopwatch _hesitationTimer = Stopwatch();
   final Stopwatch _swipeTimer = Stopwatch();
+  
+  // セッションの会話履歴を保持するリスト
+  final List<Map<String, String>> _sessionHistory = [];
 
   @override
   void initState() {
@@ -57,24 +60,24 @@ class _SwipeScreenState extends State<SwipeScreen> {
       SwipeItem(
         content: QuestionCardContent(
             questionText: questionText, questionId: questionId),
-        onSlideUpdate: (SlideRegion? region) async { // ★★★★★ asyncキーワードを追加 ★★★★★
+        // ★★★ エラー修正: async を再度追加します。これによりFutureを返すという要件を満たします。 ★★★
+        onSlideUpdate: (SlideRegion? region) async {
           if (!_swipeTimer.isRunning) {
             _swipeTimer.start();
           }
         },
         likeAction: () {
-          _handleSwipe('yes', questionId);
+          _handleSwipe('yes', questionId, questionText);
         },
         nopeAction: () {
-          _handleSwipe('no', questionId);
+          _handleSwipe('no', questionId, questionText);
         },
       ),
     );
   }
 
-  void _handleSwipe(String direction, String swipedQuestionId) {
+  void _handleSwipe(String direction, String swipedQuestionId, String swipedQuestionText) {
     _hesitationTimer.stop();
-    // スワイプタイマーが万が一動いていなくてもエラーにならないように停止
     if (_swipeTimer.isRunning) {
       _swipeTimer.stop();
     }
@@ -84,53 +87,71 @@ class _SwipeScreenState extends State<SwipeScreen> {
     print(
         "Swiped $direction on QID: $swipedQuestionId. Hesitation: $hesitationTime ms, Swipe Duration: $swipeDuration ms");
 
+    // セッション履歴を更新
+    _sessionHistory.add({
+      'question': swipedQuestionText,
+      'answer': direction,
+    });
+
     _fetchNextQuestion(direction, swipedQuestionId, hesitationTime, swipeDuration);
 
     _hesitationTimer.reset();
     _swipeTimer.reset();
   }
 
+  // ★★★ 修正点2: セッション完了時のエラーを修正し、画面遷移を確実にする ★★★
   Future<void> _fetchNextQuestion(String direction, String swipedQuestionId, int hesitationTime, int swipeDuration) async {
     if (!mounted) return;
 
     setState(() {
       _isLoading = true;
+      _swipeItems.clear(); // 次の質問をロードする間、カードを非表示にする
     });
 
     try {
-      final response = await _apiService.recordSwipe(
+      // Step 1: スワイプを記録する
+      await _apiService.recordSwipe(
         sessionId: widget.sessionId,
         questionId: swipedQuestionId,
         answer: direction,
-        hesitationTime: hesitationTime / 1000.0, // APIは秒単位を想定
-        speed: swipeDuration.toDouble(), // バックエンドの 'speed' にスワイプ時間(ms)を渡す
+        hesitationTime: hesitationTime / 1000.0,
+        speed: swipeDuration.toDouble(),
       );
 
       if (!mounted) return;
 
-      if (response.containsKey('session_status') &&
-          response['session_status'] == 'completed') {
+      // Step 2: 会話履歴を文字列に変換
+      String historyString = _sessionHistory.map((qa) => "Q: ${qa['question']}\nA: ${qa['answer']}").join('\n\n');
+
+      // Step 3: 新しい質問を生成する (こちらが完了を返す可能性がある)
+      final questionResponse = await _apiService.generateQuestion(
+        sessionId: widget.sessionId,
+        history: historyString,
+      );
+
+      if (!mounted) return;
+      
+      // Step 4: レスポンスを判定し、画面遷移またはUI更新を行う
+      // Case A: セッションが完了した場合
+      if (questionResponse.containsKey('session_status') &&
+          questionResponse['session_status'] == 'completed') {
         print('Session completed! Navigating to SummaryScreen.');
-        if (mounted) {
-          _hesitationTimer.stop();
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => SummaryScreen(sessionId: widget.sessionId),
-            ),
-          );
-        }
-        return;
+        _hesitationTimer.stop();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SummaryScreen(sessionId: widget.sessionId),
+          ),
+        );
+        return; // ★★★ 処理をここで終了させる
       }
 
-      if (response.containsKey('next_question_id') &&
-          response['next_question_id'] != null) {
-        final nextQuestionId = response['next_question_id'] as String;
-        final nextQuestionText = response['next_question_text'] as String;
+      // Case B: 次の質問が返ってきた場合
+      if (questionResponse.containsKey('next_question_id')) {
+        final nextQuestionId = questionResponse['next_question_id'] as String;
+        final nextQuestionText = questionResponse['next_question_text'] as String;
         
         _currentCardQuestionId = nextQuestionId;
-
-        _swipeItems.clear();
         _addCard(nextQuestionId, nextQuestionText);
 
         setState(() {
@@ -140,29 +161,22 @@ class _SwipeScreenState extends State<SwipeScreen> {
         });
         
         _hesitationTimer.start();
-
-        print(
-            "Fetched next question: $nextQuestionId. Swipe items now has 1 item.");
-      } else {
-        print('Unexpected API response: $response');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('予期しない応答です: $response')),
-          );
-          Navigator.of(context).pop();
-        }
+        print("Fetched next question: $nextQuestionId.");
+      } 
+      // Case C: 想定外の応答が来た場合
+      else {
+        throw Exception('Unexpected API response: $questionResponse');
       }
     } catch (e) {
-      print('Error fetching next question: $e');
+      print('Error during swipe/question generation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('次の質問の取得に失敗: $e')),
+          SnackBar(content: Text('エラーが発生しました: $e')),
         );
-        setState(() { _isLoading = false; });
+        Navigator.of(context).pop();
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +185,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
         title: const Text('質問にスワイプで回答'),
       ),
       body: Center(
-        child: _isLoading && _swipeItems.isEmpty
+        child: _isLoading
             ? const CircularProgressIndicator()
             : _swipeItems.isNotEmpty && _matchEngine.currentItem != null
                 ? Column(
@@ -210,15 +224,13 @@ class _SwipeScreenState extends State<SwipeScreen> {
                           key: _swipeCardsKey,
                           matchEngine: _matchEngine,
                           itemBuilder: (BuildContext context, int index) {
-                            if (index >= 0 && index < _swipeItems.length) {
-                              return _swipeItems[index].content;
-                            }
-                            return Container(
-                                child: const Center(
-                                    child: Text("カード表示エラー")));
+                            return _swipeItems[index].content;
                           },
                           onStackFinished: () {
                             print("Stack finished.");
+                            setState(() {
+                               _isLoading = false;
+                            });
                           },
                           itemChanged: (SwipeItem item, int index) {
                             if (item.content is QuestionCardContent) {
@@ -232,10 +244,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
                       ),
                     ],
                   )
-                : Center(
-                    child: _isLoading 
-                      ? const CircularProgressIndicator()
-                      : const Text('セッションが終了しました。')
+                : const Center(
+                    child: Text('セッションが終了しました。')
                 ),
       ),
     );
