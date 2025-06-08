@@ -40,67 +40,81 @@ def get_db():
         db.execute("PRAGMA foreign_keys = ON")
     return db
 
-# Gemma on Ollamaを呼び出す関数
-def generate_summary_with_ollama_gemma(swipes_text: str, user_name: str) -> str:
-    """OllamaでホストされているGemmaモデルを使って要約を生成する"""
+# Gemma on Ollamaを呼び出す関数 (user_name引数を削除)
+def generate_summary_with_ollama_gemma(swipes_text: str) -> dict:
+    """OllamaでホストされているGemmaモデルを使って要約と分析を生成し、辞書で返す"""
     
     # このURLを、ご自身のOllama on Cloud RunのエンドポイントURLに置き換えてください
-    # 例: "https://your-ollama-service-xxxx-an.a.run.app/api/generate"
     OLLAMA_BASE_URL = os.getenv("OLLAMA_ENDPOINT_URL", "https://ollama-sample-1036638910637.us-central1.run.app")
 
     if "YOUR_OLLAMA_ENDPOINT_URL" in OLLAMA_BASE_URL:
         error_message = "（AI分析エラー: OLLAMA_ENDPOINT_URL環境変数が設定されていません）"
         print(error_message)
-        return error_message
+        return {"summary": error_message, "analysis": error_message}
     
     ollama_api_url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/generate"
 
-    # Gemmaに渡すプロンプトを、インタラクションデータを解釈するように変更
-    prompt = f"""
-    あなたはユーザーの心の動きを読み解く、鋭い洞察力を持つAIカウンセラーです。
-    ユーザーの名前は「{user_name}」さんです。フィードバックの冒頭で、必ず「{user_name}さん、」と呼びかけてください。
+    prompt = f"""あなたはユーザーの心の動きを読み解く、鋭い洞察力を持つAIアナリストです。
+        以下のセッションデータを分析し、指定されたフォーマットで厳密に出力してください。
 
-    【分析のヒント】
-    - 反応時間が長い（例: 2秒以上）: 迷い、ためらい、または深く考えている可能性があります。
-    - 反応時間が短い（例: 1秒未満）: 即答、またはあまり深く考えていない可能性があります。
-    - スワイプ速度が速い（例: 1000以上）: 強い確信、または強い感情（苛立ち、喜びなど）の現れかもしれません。
-    - スワイプ速度が遅い（例: 500未満）: 確信のなさ、気乗りしない、などの可能性があります。
+        ---
+        【セッションデータ】
+        {swipes_text}
+        ---
 
-    これらのヒントを参考に、テキストの回答（はい/いいえ）と物理的な反応の間に矛盾がないか（例:「はい」と答えつつ反応が遅く、速度も遅い）、あるいは関連性があるかを探ってください。
-    そして、ユーザーに優しく寄り添い、核心を突きつつも励ますような口調で、3〜4文程度の短いフィードバックとして要約してください。
+        【指示】
+        1. まず、`===SUMMARY===` という区切り文字の後に、セッション全体の会話内容を3行程度で簡潔にまとめてください。
+        2. 次に、`===ANALYSIS===` という区切り文字の後に、以下のルールに従って詳細なインタラクション分析を記述してください。
+        - 「反応時間」と「スワイプ速度」という行動データに注目してください。
+        - **重要:** 分析結果に具体的な数値（例: 2.10秒, 速度627）を直接含めないでください。
+        - 代わりに、その数値が示す意味（例：「他の質問より少し時間をかけて」「特に力強く」など）を解釈して表現してください。
+        - **最重要:** 分析レポートとして、客観的な視点で記述してください。ユーザー個人への呼びかけ（「あなた」「〇〇さん」など）は絶対に使用しないでください。
 
-    ---
-    {swipes_text}
-    ---
-    要約:
-    """
+        【出力フォーマット】
+        ===SUMMARY===
+        ここに要約を記述
+        ===ANALYSIS===
+        ここにインタラクション分析を記述
+        """
 
-    # Ollamaの/api/generateエンドポイントに送信するデータ形式
     payload = {
-        "model": "gemma3:4B",  # 使用するモデル名（Ollamaで指定しているものに合わせる）
+        "model": "gemma3:4B",  
         "prompt": prompt,
-        "stream": False # レスポンスをストリーミングしない
+        "stream": False
     }
 
     try:
-        # POSTリクエストを送信
-        response = requests.post(ollama_api_url, json=payload, timeout=60) # タイムアウトを60秒に設定
-        response.raise_for_status()  # ステータスコードが200番台以外なら例外を発生させる
+        response = requests.post(ollama_api_url, json=payload, timeout=90)
+        response.raise_for_status()
 
-        # レスポンスのJSONから 'response' の値（生成されたテキスト）を取得
-        summary = response.json().get("response", "").strip()
+        gemma_response_text = response.json().get("response", "").strip()
+        
+        summary = "要約の取得に失敗しました。"
+        analysis = "分析の取得に失敗しました。"
 
-        if summary:
-            return summary
+        if "===ANALYSIS===" in gemma_response_text:
+            parts = gemma_response_text.split("===ANALYSIS===", 1)
+            analysis = parts[1].strip()
+            if "===SUMMARY===" in parts[0]:
+                summary = parts[0].split("===SUMMARY===", 1)[1].strip()
+            else:
+                summary = "（要約部分がありませんでした）"
+        elif "===SUMMARY===" in gemma_response_text:
+            summary = gemma_response_text.split("===SUMMARY===", 1)[1].strip()
+            analysis = "（分析部分がありませんでした）"
         else:
-            return "（AIによる分析結果を今回は生成できませんでした。Ollamaからの応答が空です）"
+            analysis = gemma_response_text if gemma_response_text else "分析結果が空でした。"
+
+        return {"summary": summary, "analysis": analysis}
 
     except requests.exceptions.RequestException as e:
         print(f"Ollamaへのリクエスト中にエラーが発生しました: {e}")
-        return f"（AI分析エラーが発生しました: {e}）"
+        error_msg = f"（AI分析エラーが発生しました: {e}）"
+        return {"summary": error_msg, "analysis": error_msg}
     except Exception as e:
         print(f"Ollamaでの要約生成中に予期せぬエラーが発生しました: {e}")
-        return f"（AI分析中に予期せぬエラーが発生しました: {e}）"
+        error_msg = f"（AI分析中に予期せぬエラーが発生しました: {e}）"
+        return {"summary": error_msg, "analysis": error_msg}
 
 
 @app.teardown_appcontext
@@ -141,32 +155,26 @@ def start_session():
     if not data or 'user_id' not in data:
         return jsonify({'error': 'Missing data: user_id is required'}), 400
     
-    user_id = data['user_id'] # フロントエンドからFirebase UIDを受け取る
+    user_id = data['user_id']
     new_session_id = str(uuid.uuid4())
     db_sqlite = get_db()
 
-    # Firestoreにセッション開始情報を保存
     if db_firestore:
         try:
             session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(new_session_id)
             session_doc_ref.set({
                 'createdAt': firestore.SERVER_TIMESTAMP,
                 'status': 'in_progress',
-                'sqlite_session_id': new_session_id # 参考情報として
+                'sqlite_session_id': new_session_id
             })
             print(f"Firestore: Session started users/{user_id}/sessions/{new_session_id}")
         except Exception as e:
             print(f"Firestore error starting session: {e}")
-            # FirestoreエラーでもSQLite処理は続行
     else:
         print("Warning: Firestore client not initialized. Skipping Firestore operation for session start.")
 
     try:
         cursor = db_sqlite.cursor()
-        # user_idもSQLiteのsessionsテーブルに保存する場合 (スキーマにuser_idカラムが必要)
-        # cursor.execute('INSERT INTO sessions (session_id, user_id, created_at) VALUES (?, ?, ?)',
-        #                (new_session_id, user_id, datetime.datetime.now()))
-        # MVPのsessionsテーブルにはuser_idがないので、以下のように元の形を維持
         cursor.execute('INSERT INTO sessions (session_id, created_at) VALUES (?, ?)',
                        (new_session_id, datetime.datetime.now()))
         db_sqlite.commit()
@@ -186,53 +194,52 @@ def start_session():
         db_sqlite.rollback()
         return jsonify({'error': f"SQLite error: {str(e)}"}), 500
 
+# /session/<session_id>/swipe エンドポイントの修正
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def swipe(session_id):
     data = request.get_json()
-    # ★★★ hesitation_time を受け取るようにバリデーションを修正 ★★★
-    required_keys = ['question_id', 'answer', 'speed', 'user_id', 'hesitation_time']
+    # フロントエンドからのキー名'hesitationTime'に合わせる
+    required_keys = ['question_id', 'answer', 'user_id', 'hesitationTime']
     if not data or not all(key in data for key in required_keys):
         return jsonify({'error': f'Missing data: {", ".join(required_keys)} are required'}), 400
 
     question_id = data['question_id']
-    answer = data['answer'] # 'yes' or 'no'
-    speed = data['speed']
-    user_id = data['user_id'] # フロントエンドからFirebase UID
-    hesitation_time = data['hesitation_time'] # ★★★ 新しいデータを取得 ★★★
+    answer = data['answer']
+    user_id = data['user_id']
+    hesitation_time = data['hesitationTime']
+    # 'speed'はフロントから送られていないので、デフォルト値または別の扱いにする
+    speed = data.get('speed', 0.0) # speedキーがなくてもエラーにならないように
 
     if answer not in ['yes', 'no']:
         return jsonify({'error': 'Invalid answer. Must be "yes" or "no"'}), 400
     try:
+        hesitation_time = float(hesitation_time)
         speed = float(speed)
-        hesitation_time = float(hesitation_time) # ★★★ 数値であることを確認 ★★★
     except ValueError:
-        return jsonify({'error': 'Invalid speed or hesitation_time. Must be a number'}), 400
+        return jsonify({'error': 'Invalid hesitationTime or speed. Must be a number'}), 400
 
     db_sqlite = get_db()
     
-    # Firestoreにスワイプ情報を保存
     if db_firestore:
         try:
             session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
-            # SQLiteから質問文を取得
             question_text_cursor = db_sqlite.cursor()
             question_text_cursor.execute('SELECT question_text FROM questions WHERE question_id = ?', (question_id,))
             question_row = question_text_cursor.fetchone()
             question_text = question_row['question_text'] if question_row else "Unknown Question"
 
-            swipe_ref = session_doc_ref.collection('swipes').document() # 自動ID
+            swipe_ref = session_doc_ref.collection('swipes').document()
             swipe_ref.set({
                 'questionId': question_id,
                 'questionText': question_text,
                 'answer': answer,
-                'speed': speed,
-                'hesitationTime': hesitation_time, # ★★★ Firestoreに保存 (キャメルケース) ★★★
+                'speed': speed, # speedも保存
+                'hesitationTime': hesitation_time,
                 'swipedAt': firestore.SERVER_TIMESTAMP
             })
             print(f"Firestore: Swipe recorded users/{user_id}/sessions/{session_id}/swipes/{swipe_ref.id}")
         except Exception as e:
             print(f"Firestore error recording swipe: {e}")
-            # FirestoreエラーでもSQLite処理は続行
     else:
         print("Warning: Firestore client not initialized. Skipping Firestore operation for swipe.")
     
@@ -242,12 +249,10 @@ def swipe(session_id):
         if cursor.fetchone() is None:
             return jsonify({'error': 'SQLite: Session not found'}), 404
 
-        # SQLiteには 'direction' というカラム名で保存している場合、合わせる
-        # ここでは 'answer' をそのまま 'direction' カラムに保存すると仮定
         cursor.execute('''
             INSERT INTO swipes (session_id, question_id, direction, speed, answered_at)
             VALUES (?, ?, ?, ?, ?)
-        ''', (session_id, question_id, answer, speed, datetime.datetime.now())) # 'answer' を 'direction' カラムに
+        ''', (session_id, question_id, answer, speed, datetime.datetime.now()))
         db_sqlite.commit()
 
         cursor.execute('SELECT order_num FROM questions WHERE question_id = ?', (question_id,))
@@ -265,17 +270,15 @@ def swipe(session_id):
         if next_question:
             return jsonify({
                 'next_question_id': next_question['question_id'],
-                'next_question_text': next_question['question_text']
+                'next_question_text': next_question['question_text'] # ★★★ 'text' から 'question_text' に修正 ★★★
             }), 200
         else:
-            # セッション完了時、Firestoreのセッションステータスも更新
             if db_firestore:
                 try:
                     session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
                     session_doc_ref.update({
                         'status': 'completed',
-                        'completedAt': firestore.SERVER_TIMESTAMP 
-                        # サマリー情報は /summary エンドポイントで更新するため、ここではステータスのみ
+                        'completedAt': firestore.SERVER_TIMESTAMP
                     })
                     print(f"Firestore: Session status updated to completed for users/{user_id}/sessions/{session_id}")
                 except Exception as e:
@@ -292,7 +295,7 @@ def swipe(session_id):
   
 @app.route('/session/<string:session_id>/summary', methods=['GET'])
 def get_summary(session_id):
-    user_id = request.args.get('user_id') # クエリパラメータから user_id を取得
+    user_id = request.args.get('user_id')
 
     if not user_id and db_firestore:
         return jsonify({'error': 'user_id is required for summary with Firestore'}), 400
@@ -324,18 +327,8 @@ def get_summary(session_id):
             'average_speed': round(avg_speed, 2),
         }
 
-        # Firestoreのセッションサマリーを更新
         if db_firestore and user_id:
             try:
-                try:
-                    user_record = auth.get_user(user_id)
-                    # display_nameがあればそれ、なければemailの@前、それもなければ「あなた」を使う
-                    user_name = user_record.display_name or (user_record.email and user_record.email.split('@')[0]) or "あなた"
-                except Exception as e:
-                    print(f"Firebase Authからユーザー情報の取得に失敗: {e}")
-                    user_name = "あなた" # 失敗時のフォールバック
-
-                # ★★★ ここからプロンプト生成ロジックを変更 ★★★
                 swipes_for_prompt_ref = db_firestore.collection('users', user_id, 'sessions', session_id, 'swipes').order_by('swipedAt').stream()
                 
                 swipes_list_for_prompt = []
@@ -345,11 +338,9 @@ def get_summary(session_id):
                     answer_direction = swipe_data.get('answer', '不明')
                     answer_text = "はい" if answer_direction == 'yes' else "いいえ"
                     
-                    # 新しいデータを取得
                     speed = swipe_data.get('speed', 0.0)
                     hesitation_time = swipe_data.get('hesitationTime', 0.0)
                     
-                    # プロンプトに含めるテキストをリッチにする
                     swipes_list_for_prompt.append(
                         f"Q: {question}\n"
                         f"A: {answer_text} (反応時間: {hesitation_time:.2f}秒, スワイプ速度: {abs(speed):.0f})"
@@ -357,11 +348,10 @@ def get_summary(session_id):
 
                 swipes_text = "\n\n".join(swipes_list_for_prompt)
                 
-                
-                # Gemmaで要約を生成
-                gemma_summary_text = ""
+                gemma_results = {"summary": "", "analysis": ""}
                 if swipes_text:
-                    gemma_summary_text = generate_summary_with_ollama_gemma(swipes_text, user_name)
+                    # user_nameを渡さないように呼び出しを修正
+                    gemma_results = generate_summary_with_ollama_gemma(swipes_text)
                 
                 session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
                 session_doc_snapshot = session_doc_ref.get()
@@ -371,15 +361,15 @@ def get_summary(session_id):
                         'no_count': no_count,
                         'average_speed': round(avg_speed, 2),
                         'total_swipes': len(swipes_data_sqlite),
-                        'gemma_summary': gemma_summary_text # 生成したAI要約を追加
+                        'gemma_summary': gemma_results.get('summary')
                     }
                     
                     update_data = {
                         'status': 'completed',
-                        'summary': summary_update_data
+                        'summary': summary_update_data,
+                        'gemma_interaction_analysis': gemma_results.get('analysis')
                     }
 
-                    # completedAt は swipe エンドポイントで全問回答時に設定される想定だが、なければここで設定も可
                     if 'completedAt' not in session_doc_snapshot.to_dict():
                          update_data['completedAt'] = firestore.SERVER_TIMESTAMP
 
@@ -394,9 +384,8 @@ def get_summary(session_id):
         elif not db_firestore:
             print("Warning: Firestore client not initialized. Skipping Firestore summary update.")
 
-
         return jsonify({
-            **summary_data_sqlite, # SQLiteのサマリーを展開
+            **summary_data_sqlite,
             'message': 'Thank you for sharing your feelings!'
         }), 200
 
