@@ -104,7 +104,9 @@ class _SwipeScreenState extends State<SwipeScreen> {
       questionId: swipedQuestionId,
       answer: direction,
       hesitationTime: hesitationTime / 1000.0,
-      speed: swipeDuration.toDouble(),
+      // ★★★ ここを修正 ★★★
+      // speed: swipeDuration.toDouble(), // 修正前
+      speed: swipeDuration, // 修正後
     ).catchError((e) {
       print("Failed to record swipe for QID $swipedQuestionId: $e");
     });

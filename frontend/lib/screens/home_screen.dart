@@ -28,44 +28,48 @@ class _HomeScreenState extends State<HomeScreen> {
 
   User? get currentUser => _auth.currentUser;
 
-  Future<void> _startSession() async {
-    if (_selectedTopic == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('話したいトピックを1つ選んでください。')),
-      );
-      return;
-    }
-    setState(() { _isLoading = true; });
+void _startSession() async {
+  if (_selectedTopic == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('トピックを選択してください')),
+    );
+    return;
+  }
+  
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final sessionData = await _apiService.startSession(topic: _selectedTopic!);
-      final questions = sessionData['questions'] as List<dynamic>;
+  try {
+    // ★★★ ここの呼び出し方を修正 ★★★
+    // final sessionData = await _apiService.startSession(topic: _selectedTopic!); // 修正前
+    final sessionData = await _apiService.startSession(_selectedTopic!); // 修正後
 
-      if (mounted && sessionData.containsKey('session_id') && questions.isNotEmpty) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => SwipeScreen(
-              sessionId: sessionData['session_id'],
-              questions: List<Map<String, dynamic>>.from(questions),
-            ),
-          ),
-        );
-      } else {
-        throw Exception('AIから質問を取得できませんでした。');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('セッションの開始に失敗しました: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() { _isLoading = false; });
-      }
+    final questionsRaw = sessionData['questions'] as List;
+    final questions = List<Map<String, dynamic>>.from(questionsRaw);
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SwipeScreen(
+          sessionId: sessionData['session_id'],
+          questions: questions,
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('エラー: $e')),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
