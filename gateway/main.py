@@ -4,13 +4,12 @@ from firebase_admin import credentials, firestore, auth
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
-import re
 from dotenv import load_dotenv
 from pathlib import Path
-from tenacity import retry, stop_after_attempt, wait_exponential # Tenacityをインポート
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 import vertexai
-from vertexai.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 from google.oauth2 import service_account
 
 # .envファイルのパスを明示的に指定して読み込む
@@ -18,7 +17,7 @@ dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
 
-# --- Firebase Admin SDKの初期化 ---
+# --- (Firebase, Vertex AIの初期化処理は変更なし) ---
 try:
     firebase_project_id = os.getenv('FIREBASE_PROJECT_ID')
     firebase_credentials_path_str = os.getenv('FIREBASE_CREDENTIALS_PATH')
@@ -39,8 +38,6 @@ except Exception as e:
     db_firestore = None
     print(f"❌ Error initializing Firebase Admin SDK: {e}")
 
-
-# --- Vertex AIの初期化 ---
 try:
     vertex_ai_project_id = os.getenv('VERTEX_AI_PROJECT_ID')
     vertex_ai_credentials_path_str = os.getenv('VERTEX_AI_CREDENTIALS_PATH')
@@ -64,8 +61,99 @@ except Exception as e:
 app = Flask(__name__)
 CORS(app)
 
-# ===== プロンプト定義 =====
-SUMMARY_PROMPT = """
+
+# ===== JSONスキーマ定義 =====
+QUESTIONS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question_text": {"type": "string"}
+                },
+                "required": ["question_text"]
+            }
+        }
+    },
+    "required": ["questions"]
+}
+
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "insights": {
+            "type": "string",
+            "description": "ユーザーの心理状態、葛藤、ニーズに関する400〜600字程度の統合的な分析レポート"
+        }
+    },
+    "required": ["insights"]
+}
+
+
+# ===== Gemini 呼び出しヘルパー関数 (リトライ機能付き) =====
+@retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+def _call_gemini_with_schema(prompt: str, schema: dict) -> dict:
+    """Geminiを構造化出力で呼び出し、JSONを返す。リトライ機能付き。"""
+    model_name = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-001')
+    model = GenerativeModel(model_name)
+    
+    attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
+    print(f"--- Calling Gemini with schema (Attempt: {attempt_num}) ---")
+
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=schema,
+            ),
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error on attempt {attempt_num}: {e}")
+        raise
+
+# ===== Gemini 呼び出しメイン関数 =====
+
+def generate_initial_questions(topic):
+    """トピックに基づき、初回の質問を生成する"""
+    prompt = f"""
+あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
+ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
+質問は、前の質問からの流れを汲み、徐々に核心に迫るように構成してください。
+"""
+    try:
+        data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA)
+        return data.get("questions", [])
+    except Exception as e:
+        print(f"Failed to generate initial questions after retries: {e}")
+        return [{"question_text": q} for q in [
+            "最近、特にストレスを感じることはありますか？", "何か新しい挑戦をしたいと思っていますか？", "自分の時間をもっと大切にしたいですか？",
+            "人間関係で何か改善したい点はありますか？", "今の生活に満足していますか？"
+        ]]
+
+
+def generate_follow_up_questions(insights):
+    """以前の分析(insights)に基づき、深掘り質問を生成する"""
+    prompt = f"""
+あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
+ユーザーとのこれまでの対話から、あなたは以下のような深い洞察を得ました。
+
+# あなたの分析(洞察)
+{insights}
+
+この洞察をさらに深め、ユーザーが自身の気持ちをより明確に理解できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
+質問は、分析結果から浮かび上がったテーマや葛藤に直接関連するものにしてください。
+"""
+    data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA)
+    return data.get("questions", [])
+
+
+def generate_summary_with_gemini(swipes_text):
+    """Geminiを使ってサマリー(insights)を生成する"""
+    prompt = f"""
 あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
 以下のユーザーとの会話履歴（質問と回答のペア、そしてためらい時間やスワイプ速度といったインタラクションデータ）を総合的に分析してください。
 
@@ -79,123 +167,12 @@ SUMMARY_PROMPT = """
 - **感情の一貫性と矛盾**: ユーザーの回答（Yes/No）と、その際の感情の現れ（ためらいが長い、即答するなど）は一致していますか？ もし不一致がある場合、それはどのような心理的な葛藤を示唆していますか？
 - **核心となる問い**: どの質問に対して、ユーザーは最も感情的な反応（非常に長い/短い時間での反応）を示しましたか？ それがこのセッションの核心である可能性について考察してください。
 - **潜在的なニーズの特定**: これまでの分析を踏まえ、このユーザーが本当に望んでいること、あるいは必要としているサポートは何だと考えられますか？
-
-# 制約条件
-- 分析結果は、**「insights」**というキーを持つJSON形式で、JSONオブジェクトのみを出力してください。
 - **ためらい時間や速度の具体的な数値は出力に含めず**、それらのデータからあなたが読み取った「解釈」だけを、自然な文章で記述してください。
-- 全体で400〜600字程度の、読み応えのある一つの分析レポートとしてまとめてください。
-- 説明文や ```json ``` は絶対に含めないでください。
-{{
-  "insights": "（ここに統合された分析レポートを記述）"
-}}
 """
+    return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA)
 
-def _call_gemini_for_questions(prompt):
-    """[Helper] Geminiを呼び出し、質問リストのJSONを解析して返す共通関数"""
-    model = GenerativeModel(os.getenv('GEMINI_FLASH_NAME'))
-    try:
-        response = model.generate_content(prompt)
-        match = re.search(r'\{.*\}', response.text, re.DOTALL)
-        if not match:
-            raise ValueError("Gemini response did not contain valid JSON.")
-        
-        json_text = match.group(0)
-        questions_data = json.loads(json_text)
-        
-        if 'questions' not in questions_data or not isinstance(questions_data['questions'], list):
-            raise ValueError("JSON from Gemini is missing 'questions' list.")
-            
-        return questions_data['questions']
-    except Exception as e:
-        print(f"Error calling Gemini for question generation: {e}")
-        raise
 
-def generate_initial_questions(topic):
-    """トピックに基づき、初回の質問を生成する"""
-    prompt = f"""
-あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
-質問は、前の質問からの流れを汲み、徐々に核心に迫るように構成してください。
-
-# 制約条件
-- 必ず5つの質問を生成してください。
-- 各質問は、必ず「はい」か「いいえ」で回答できる形式にしてください。
-- 回答は、以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や```json ```は不要です。
-{{
-  "questions": [
-    {{"question_text": "ここに1つ目の質問"}},
-    {{"question_text": "ここに2つ目の質問"}},
-    {{"question_text": "ここに3つ目の質問"}},
-    {{"question_text": "ここに4つ目の質問"}},
-    {{"question_text": "ここに5つ目の質問"}}
-  ]
-}}
-"""
-    return _call_gemini_for_questions(prompt)
-
-def generate_follow_up_questions(insights):
-    """以前の分析(insights)に基づき、深掘り質問を生成する"""
-    prompt = f"""
-あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーとのこれまでの対話から、あなたは以下のような深い洞察を得ました。
-
-# あなたの分析(洞察)
-{insights}
-
-この洞察をさらに深め、ユーザーが自身の気持ちをより明確に理解できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
-質問は、分析結果から浮かび上がったテーマや葛藤に直接関連するものにしてください。
-
-# 制約条件
-- 必ず5つの質問を生成してください。
-- 各質問は、必ず「はい」か「いいえ」で回答できる形式にしてください。
-- 回答は、以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や```json ```は不要です。
-{{
-  "questions": [
-    {{"question_text": "ここに1つ目の質問"}},
-    {{"question_text": "ここに2つ目の質問"}},
-    {{"question_text": "ここに3つ目の質問"}},
-    {{"question_text": "ここに4つ目の質問"}},
-    {{"question_text": "ここに5つ目の質問"}}
-  ]
-}}
-"""
-    return _call_gemini_for_questions(prompt)
-
-@retry(
-    wait=wait_exponential(multiplier=1, min=2, max=10), # 待機時間: 2秒, 4秒, 8秒...
-    stop=stop_after_attempt(3), # 最大3回試行
-    reraise=True # 3回失敗したら最終的なエラーを発生させる
-)
-def generate_summary_with_gemini_with_retry(swipes_text):
-    """[リトライ機能付き] Geminiを使ってサマリー(insights)を生成する"""
-    model_name = os.getenv('GEMINI_FLASH_NAME')
-    model = GenerativeModel(model_name)
-    
-    prompt = SUMMARY_PROMPT.format(swipes_text=swipes_text)
-    
-    attempt_num = generate_summary_with_gemini_with_retry.retry.statistics.get('attempt_number', 1)
-    print(f"--- Calling Gemini for summary (Attempt: {attempt_num}) ---")
-
-    try:
-        response = model.generate_content(prompt)
-        text_to_parse = response.text
-        match = re.search(r'```json\s*(\{.*?\})\s*```', text_to_parse, re.DOTALL)
-        if match:
-            json_text = match.group(1)
-        else:
-            match = re.search(r'\{.*\}', text_to_parse, re.DOTALL)
-            if match:
-                json_text = match.group(0)
-            else:
-                raise ValueError(f"Gemini response did not contain valid JSON object: {text_to_parse}")
-
-        cleaned_json_text = ''.join(c for c in json_text if c.isprintable() or c in '\n\r\t')
-        return json.loads(cleaned_json_text)
-
-    except Exception as e:
-        print(f"Error calling Gemini for summary generation on attempt {attempt_num}: {e}")
-        raise # リトライのために例外を再送出
-
+# ===== API Routes =====
 @app.route('/session/start', methods=['POST'])
 def start_session():
     try:
@@ -230,7 +207,7 @@ def start_session():
             'topic': topic,
             'status': 'in_progress',
             'created_at': firestore.SERVER_TIMESTAMP,
-            'turn': 1, # ★ ターン数を初期化
+            'turn': 1,
         })
         session_id = session_doc_ref.id
 
@@ -260,6 +237,7 @@ def start_session():
     except Exception as e:
         print(f"Error in start_session: {e}")
         return jsonify({'error': 'Failed to start session', 'details': str(e)}), 500
+
 
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
@@ -308,6 +286,7 @@ def record_swipe(session_id):
         print(f"Error recording swipe: {e}")
         return jsonify({'error': 'Failed to record swipe', 'details': str(e)}), 500
 
+
 @app.route('/session/<string:session_id>/summary', methods=['GET'])
 def get_summary(session_id):
     try:
@@ -352,8 +331,7 @@ def get_summary(session_id):
 
         swipes_text = "\n".join(swipes_text_list)
         
-         # ★ 新しいリトライ機能付き関数を呼び出す
-        summary_data = generate_summary_with_gemini_with_retry(swipes_text)
+        summary_data = generate_summary_with_gemini(swipes_text)
         
         session_doc = session_doc_ref.get()
         if not session_doc.exists:
@@ -362,12 +340,12 @@ def get_summary(session_id):
         session_turn = session_doc.to_dict().get('turn', 1)
 
         session_doc_ref.update({
-            'insights': summary_data.get('insights'), # ★ 新しい分析結果を保存
+            'insights': summary_data.get('insights'),
             'status': 'completed',
             'updated_at': firestore.SERVER_TIMESTAMP,
         })
         
-        summary_data['turn'] = session_turn # ★ ターン数をレスポンスに追加
+        summary_data['turn'] = session_turn
         return jsonify(summary_data)
 
     except Exception as e:
@@ -378,6 +356,7 @@ def get_summary(session_id):
             except Exception as update_e:
                 print(f"Failed to update session status to error: {update_e}")
         return jsonify({'error': 'Failed to get summary', 'details': str(e)}), 500
+
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
@@ -409,7 +388,6 @@ def continue_session(session_id):
 
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         
-        # トランザクションで安全にターン数を更新
         @firestore.transactional
         def update_turn_in_transaction(transaction, session_ref):
             snapshot = session_ref.get(transaction=transaction)
@@ -427,7 +405,7 @@ def continue_session(session_id):
             return new_turn
 
         transaction = db_firestore.transaction()
-        update_turn_in_transaction(transaction, session_doc_ref)
+        new_turn = update_turn_in_transaction(transaction, session_doc_ref)
 
         questions_collection = session_doc_ref.collection('questions')
 
@@ -457,12 +435,14 @@ def continue_session(session_id):
 
         return jsonify({
             'session_id': session_id,
-            'questions': question_docs_for_frontend
+            'questions': question_docs_for_frontend,
+            'turn': new_turn
         }), 200
 
     except Exception as e:
         print(f"Error in continue_session: {e}")
         return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
