@@ -147,7 +147,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget _buildSwipeHistoryList() {
     // この部分は既存のロジックを流用可能
     return FutureBuilder<QuerySnapshot>(
-      future: _sessionRef.collection('questions').orderBy('turn').orderBy('created_at').get(),
+      future: _sessionRef.collection('questions').orderBy('order').get(),
       builder: (context, questionsSnapshot) {
         if (!questionsSnapshot.hasData) return const Center(child: CircularProgressIndicator());
         
