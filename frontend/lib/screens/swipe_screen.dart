@@ -48,8 +48,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
   void _onSwipe(String answer, Map<String, dynamic> questionData, int index) {
     final hesitationTime =
-        DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
-    _questionStartTime = DateTime.now();
+       DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
+
 
     _swipesDataForSummary.add({
       'question_text': questionData['question_text'],
@@ -115,6 +115,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
                   setState(() {
                     _currentQuestionIndex = index;
                   });
+                  // 新しいカードが表示されたタイミングでタイマーをリセット
+                  _questionStartTime = DateTime.now();
                 },
               ),
             ),
