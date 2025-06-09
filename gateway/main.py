@@ -17,7 +17,7 @@ dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
 
-# --- (Firebase, Vertex AIの初期化処理は変更なし) ---
+# --- Firebase & Vertex AI 初期化 (変更なし) ---
 try:
     firebase_project_id = os.getenv('FIREBASE_PROJECT_ID')
     firebase_credentials_path_str = os.getenv('FIREBASE_CREDENTIALS_PATH')
@@ -80,15 +80,20 @@ QUESTIONS_SCHEMA = {
     "required": ["questions"]
 }
 
+# 改善点①, ②: タイトルとMarkdown形式の分析結果を要求するスキーマ
 SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
+        "title": {
+            "type": "string",
+            "description": "このセッション全体を要約する15文字程度の短いタイトル"
+        },
         "insights": {
             "type": "string",
-            "description": "ユーザーの心理状態、葛藤、ニーズに関する400〜600字程度の統合的な分析レポート"
+            "description": "指定されたMarkdown形式でのユーザーの心理分析レポート"
         }
     },
-    "required": ["insights"]
+    "required": ["title", "insights"]
 }
 
 
@@ -151,23 +156,37 @@ def generate_follow_up_questions(insights):
     return data.get("questions", [])
 
 
-def generate_summary_with_gemini(swipes_text):
-    """Geminiを使ってサマリー(insights)を生成する"""
+# 改善点①: Markdown形式の要約とタイトルを生成するようプロンプトを更新
+def generate_summary_and_title(topic, swipes_text):
+    """Geminiを使ってサマリー(insights)とタイトルを生成する"""
     prompt = f"""
 あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
-以下のユーザーとの会話履歴（質問と回答のペア、そしてためらい時間やスワイプ速度といったインタラクションデータ）を総合的に分析してください。
+ユーザーは「{topic}」というテーマについて対話しています。
+以下のユーザーとの会話履歴を分析し、必ず指示通りのJSON形式で分析レポートとタイトルを出力してください。
 
 # 分析対象の会話履歴
 {swipes_text}
 
-# あなたのタスク
-ユーザーの回答内容と言動（スワイプの速さ・ためらい）の両方から、ユーザーの現在の心理状態、内面的な葛藤、そして本人も気づいていないかもしれない「真の願い」や「潜在的なニーズ」について、深く、かつ共感的に分析してください。
+# 出力形式 (JSON)
+必ず以下のキーを持つJSONオブジェクトを生成してください。
+- `title`: 会話全体を象徴する15文字程度の短いタイトル。
+- `insights`: 以下のMarkdown形式で記述された分析レポート。
 
-# 分析のポイント
-- **感情の一貫性と矛盾**: ユーザーの回答（Yes/No）と、その際の感情の現れ（ためらいが長い、即答するなど）は一致していますか？ もし不一致がある場合、それはどのような心理的な葛藤を示唆していますか？
-- **核心となる問い**: どの質問に対して、ユーザーは最も感情的な反応（非常に長い/短い時間での反応）を示しましたか？ それがこのセッションの核心である可能性について考察してください。
-- **潜在的なニーズの特定**: これまでの分析を踏まえ、このユーザーが本当に望んでいること、あるいは必要としているサポートは何だと考えられますか？
-- **ためらい時間や速度の具体的な数値は出力に含めず**、それらのデータからあなたが読み取った「解釈」だけを、自然な文章で記述してください。
+```markdown
+## 全体的な要約
+ここに1〜2行でユーザーの状態の要約を記述します。
+
+## 詳細
+### ユーザーの感情
+ここに「ポジティブ」「ネガティブ」「葛藤している」など、感情の状態を記述します。
+
+### 詳細な分析
++ （ここに具体的な願いや思考に関する分析を箇条書きで記述）
++ （ここには、特に反応に時間がかかった質問など、気になった回答とその考察を記述）
+
+### 総括
+ここに全体をまとめた結論や、次へのアドバイスを記述します。
+```
 """
     return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA)
 
@@ -203,11 +222,13 @@ def start_session():
         user_doc_ref = db_firestore.collection('users').document(user_id)
         session_doc_ref = user_doc_ref.collection('sessions').document()
         
+        # turnの上限を設定
         session_doc_ref.set({
             'topic': topic,
             'status': 'in_progress',
             'created_at': firestore.SERVER_TIMESTAMP,
             'turn': 1,
+            'max_turns': 3, # 改善点④: 最大ターン数を設定
         })
         session_id = session_doc_ref.id
 
@@ -220,6 +241,7 @@ def start_session():
                 q_doc_ref.set({
                     'text': q_text,
                     'order': i,
+                    'turn': 1 # どのターンの質問かを記録
                 })
                 question_docs_for_frontend.append({
                     'question_id': q_doc_ref.id,
@@ -261,9 +283,10 @@ def record_swipe(session_id):
     answer = data.get('answer')
     hesitation_time = data.get('hesitation_time')
     speed = data.get('speed')
+    turn = data.get('turn') # フロントエンドから現在のターン番号を受け取る
 
-    if not all([question_id, answer]):
-        return jsonify({'error': 'Missing required fields in swipe data'}), 400
+    if not all([question_id, answer, turn]):
+        return jsonify({'error': 'Missing required fields in swipe data (question_id, answer, turn)'}), 400
 
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
@@ -273,10 +296,11 @@ def record_swipe(session_id):
         swipes_collection = session_doc_ref.collection('swipes')
         swipes_collection.add({
             'question_id': question_id,
-            'question_ref': db_firestore.collection('users').document(user_id).collection('sessions').document(session_id).collection('questions').document(question_id),
+            'question_ref': session_doc_ref.collection('questions').document(question_id),
             'answer': answer,
             'hesitation_time_sec': hesitation_time,
             'swipe_duration_ms': speed,
+            'turn': turn, # どのターンの回答か記録
             'timestamp': firestore.SERVER_TIMESTAMP
         })
         
@@ -287,75 +311,79 @@ def record_swipe(session_id):
         return jsonify({'error': 'Failed to record swipe', 'details': str(e)}), 500
 
 
-@app.route('/session/<string:session_id>/summary', methods=['GET'])
-def get_summary(session_id):
+# 改善点①, ②: get_summaryをpost_summaryに置き換え
+@app.route('/session/<string:session_id>/summary', methods=['POST'])
+def post_summary(session_id):
     try:
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-        
         id_token = auth_header.split('Bearer ')[1]
         decoded_token = auth.verify_id_token(id_token)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
     except Exception as e:
         return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
 
+    data = request.get_json()
+    if not data or 'swipes' not in data:
+        return jsonify({'error': 'Swipes data is required in request body'}), 400
+    swipes_from_frontend = data['swipes']
+
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
-    session_doc_ref = None
+    session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+
     try:
-        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
-        
-        swipes_query = session_doc_ref.collection('swipes').order_by('timestamp', direction=firestore.Query.ASCENDING).stream()
-
-        swipes_text_list = []
-        for swipe in swipes_query:
-            swipe_data = swipe.to_dict()
-            q_ref = swipe_data.get('question_ref')
-            if q_ref:
-                q_doc = q_ref.get()
-                if q_doc.exists:
-                    q_text = q_doc.to_dict().get('text', '不明な質問')
-                    answer = swipe_data.get('answer', '不明な回答')
-                    hesitation = swipe_data.get('hesitation_time_sec', 0)
-                    duration = swipe_data.get('swipe_duration_ms', 0)
-                    swipes_text_list.append(
-                        f"Q: {q_text}\n"
-                        f"A: {answer} (ためらい: {hesitation:.2f}秒, 速度: {duration}ms)"
-                    )
-        
-        if not swipes_text_list:
-            raise Exception("No swipes found for this session.")
-
-        swipes_text = "\n".join(swipes_text_list)
-        
-        summary_data = generate_summary_with_gemini(swipes_text)
-        
         session_doc = session_doc_ref.get()
         if not session_doc.exists:
-             raise Exception("Session document not found after summary generation.")
-        
-        session_turn = session_doc.to_dict().get('turn', 1)
+            return jsonify({'error': 'Session not found'}), 404
+        session_data = session_doc.to_dict()
+        topic = session_data.get('topic', '不明なトピック')
+        current_turn = session_data.get('turn', 1)
+        max_turns = session_data.get('max_turns', 3)
 
-        session_doc_ref.update({
-            'insights': summary_data.get('insights'),
-            'status': 'completed',
-            'updated_at': firestore.SERVER_TIMESTAMP,
+        swipes_text_list = []
+        for swipe in swipes_from_frontend:
+            q_text = swipe.get('question_text', '不明な質問')
+            answer = swipe.get('answer', '不明な回答')
+            hesitation = swipe.get('hesitation_time', 0)
+            swipes_text_list.append(f"Q: {q_text}\nA: {answer} (ためらい: {hesitation:.2f}秒)")
+        swipes_text = "\n".join(swipes_text_list)
+        
+        summary_data = generate_summary_and_title(topic, swipes_text)
+        insights_md = summary_data.get('insights')
+        title = summary_data.get('title')
+        if not insights_md or not title:
+            raise Exception("AI failed to generate summary or title.")
+
+        analyses_collection = session_doc_ref.collection('analyses')
+        analyses_collection.add({
+            'turn': current_turn,
+            'insights': insights_md,
+            'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        summary_data['turn'] = session_turn
-        return jsonify(summary_data)
+        session_update_data = {
+            'status': 'completed',
+            'updated_at': firestore.SERVER_TIMESTAMP,
+            'latest_insights': insights_md # 履歴一覧表示用の最新の分析結果
+        }
+        # 最初のターンでのみタイトルを設定
+        if current_turn == 1:
+            session_update_data['title'] = title
+        
+        session_doc_ref.update(session_update_data)
+        
+        return jsonify({
+            'title': title,
+            'insights': insights_md,
+            'turn': current_turn,
+            'max_turns': max_turns
+        }), 200
 
     except Exception as e:
-        print(f"Error getting summary: {e}")
-        if session_doc_ref:
-            try:
-                session_doc_ref.update({'status': 'error', 'error_message': str(e)})
-            except Exception as update_e:
-                print(f"Failed to update session status to error: {update_e}")
-        return jsonify({'error': 'Failed to get summary', 'details': str(e)}), 500
+        print(f"Error in post_summary: {e}")
+        return jsonify({'error': 'Failed to generate summary', 'details': str(e)}), 500
 
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
@@ -368,8 +396,6 @@ def continue_session(session_id):
         id_token = auth_header.split('Bearer ')[1]
         decoded_token = auth.verify_id_token(id_token)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
     except Exception as e:
         return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
 
@@ -382,10 +408,6 @@ def continue_session(session_id):
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
     try:
-        questions = generate_follow_up_questions(insights=insights)
-        if not questions or len(questions) < 1:
-            raise Exception("AI failed to generate sufficient follow-up questions.")
-
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         
         @firestore.transactional
@@ -394,7 +416,13 @@ def continue_session(session_id):
             if not snapshot.exists:
                 raise Exception("Session not found in transaction")
             
-            current_turn = snapshot.to_dict().get('turn', 1)
+            session_data = snapshot.to_dict()
+            current_turn = session_data.get('turn', 1)
+            max_turns = session_data.get('max_turns', 3)
+            
+            if current_turn >= max_turns:
+                raise Exception(f"Cannot continue session. Maximum turns ({max_turns}) reached.")
+
             new_turn = current_turn + 1
             
             transaction.update(session_ref, {
@@ -407,23 +435,20 @@ def continue_session(session_id):
         transaction = db_firestore.transaction()
         new_turn = update_turn_in_transaction(transaction, session_doc_ref)
 
+        questions = generate_follow_up_questions(insights=insights)
+        if not questions or len(questions) < 1:
+            raise Exception("AI failed to generate sufficient follow-up questions.")
+
         questions_collection = session_doc_ref.collection('questions')
-
-        last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
-        last_order = -1
-        for q in last_question_query:
-            last_order = q.to_dict().get('order', -1)
-        
-        start_order = last_order + 1
-
         question_docs_for_frontend = []
-        for i, q_data in enumerate(questions):
+        for q_data in questions:
             q_text = q_data.get("question_text")
             if q_text and q_text.strip():
                 q_doc_ref = questions_collection.document()
                 q_doc_ref.set({
                     'text': q_text,
-                    'order': start_order + i,
+                    'turn': new_turn, # どのターンの質問かを記録
+                    'created_at': firestore.SERVER_TIMESTAMP
                 })
                 question_docs_for_frontend.append({
                     'question_id': q_doc_ref.id,
