@@ -28,6 +28,28 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .doc(widget.sessionId);
   }
 
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Dialog(
+          child: Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text("次の質問を生成中..."),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,9 +67,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
-              _buildAnalysisCard('AIによる振り返り', sessionData['summary'] ?? '分析がありません。'),
-              const SizedBox(height: 24),
-              _buildAnalysisCard('スワイプに関する行動分析', sessionData['interaction_analysis'] ?? '分析がありません。'),
+              _buildAnalysisCard('AIによるセッションの洞察', sessionData['insights'] ?? '分析がありません。'),
               const SizedBox(height: 24),
               const Divider(),
               const SizedBox(height: 16),
@@ -127,8 +147,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
         
         final sessionData = snapshot.data!.data() as Map<String, dynamic>;
+        final int currentTurn = sessionData['turn'] ?? 1;
 
-        if (sessionData['status'] == 'completed') {
+        if (sessionData['status'] == 'completed' && currentTurn < 3) {
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -138,17 +159,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   foregroundColor: Theme.of(context).colorScheme.onSecondary,
                 ),
                 onPressed: () async {
+                  _showLoadingDialog();
                    try {
                         final result = await _apiService.continueSession(
                           sessionId: widget.sessionId,
-                          summary: sessionData['summary'],
-                          // ★★★ ここを修正 ★★★
-                          interactionAnalysis: sessionData['interaction_analysis'],
+                          insights: sessionData['insights'],
                         );
                         final newQuestionsRaw = result['questions'] as List;
                         final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
 
                         if (!mounted) return;
+                        Navigator.of(context).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (context) => SwipeScreen(
@@ -159,6 +180,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         );
                       } catch (e) {
                         if (!mounted) return;
+                        Navigator.of(context).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('エラー: $e')),
                         );
