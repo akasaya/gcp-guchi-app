@@ -439,15 +439,28 @@ def continue_session(session_id):
         if not questions or len(questions) < 1:
             raise Exception("AI failed to generate sufficient follow-up questions.")
 
+        # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        # ↓↓↓ この行を追加してエラーを修正します ↓↓↓
         questions_collection = session_doc_ref.collection('questions')
+        # ↑↑↑ この行を追加してエラーを修正します ↑↑↑
+        # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
+        # 最後の質問のorder番号を取得
+        last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
+        last_order = -1
+        for q in last_question_query:
+            last_order = q.to_dict().get('order', -1)
+        start_order = last_order + 1
+
         question_docs_for_frontend = []
-        for q_data in questions:
+        for i, q_data in enumerate(questions):
             q_text = q_data.get("question_text")
             if q_text and q_text.strip():
                 q_doc_ref = questions_collection.document()
                 q_doc_ref.set({
                     'text': q_text,
-                    'turn': new_turn, # どのターンの質問かを記録
+                    'turn': new_turn,
+                    'order': start_order + i, # order番号を付与
                     'created_at': firestore.SERVER_TIMESTAMP
                 })
                 question_docs_for_frontend.append({
