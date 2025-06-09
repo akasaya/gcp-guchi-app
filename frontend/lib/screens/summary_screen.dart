@@ -21,6 +21,29 @@ class _SummaryScreenState extends State<SummaryScreen> {
     _summaryFuture = _apiService.getSummary(widget.sessionId);
   }
 
+  // ★ ローディングダイアログを表示するメソッド
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Dialog(
+          child: Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text("次の質問を生成中..."),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,6 +74,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           }
 
           final summaryData = snapshot.data!;
+          // ★ 表示を統合
           return _buildAnalysisContent(summaryData);
         },
       ),
@@ -63,13 +87,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
       padding: const EdgeInsets.all(16.0),
       children: [
         _buildAnalysisCard(
-          'AIによる振り返り',
-          summaryData['summary'] ?? '分析結果の読み込みに失敗しました。',
-        ),
-        const SizedBox(height: 24),
-        _buildAnalysisCard(
-          'スワイプに関する行動分析',
-          summaryData['interaction_analysis'] ?? '分析結果の読み込みに失敗しました。',
+          'AIによるセッションの洞察', // ★ タイトルを統一
+          summaryData['insights'] ?? '分析結果の読み込みに失敗しました。', // ★ 表示データをinsightsに統一
         ),
       ],
     );
@@ -83,6 +102,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           return const SizedBox.shrink();
         }
         final summaryData = snapshot.data!;
+        final int currentTurn = summaryData['turn'] ?? 1;
 
         return SafeArea(
           child: Padding(
@@ -98,42 +118,45 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                    onPressed: () async {
-                      try {
-                        final result = await _apiService.continueSession(
-                          sessionId: widget.sessionId,
-                          summary: summaryData['summary'],
-                          // ★★★ ここを修正 ★★★
-                          interactionAnalysis: summaryData['interaction_analysis'],
-                        );
-                        final newQuestionsRaw = result['questions'] as List;
-                        final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
+                // ★ ターン数が3未満の場合のみボタンを表示
+                if (currentTurn < 3)
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      ),
+                      onPressed: () async {
+                        _showLoadingDialog(); // ローディング表示開始
+                        try {
+                          final result = await _apiService.continueSession(
+                            sessionId: widget.sessionId,
+                            insights: summaryData['insights'], // ★ insightsを渡す
+                          );
+                          final newQuestionsRaw = result['questions'] as List;
+                          final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
 
-                        if (!mounted) return;
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (context) => SwipeScreen(
-                              sessionId: widget.sessionId,
-                              questions: newQuestions,
+                          if (!mounted) return;
+                          Navigator.of(context).pop(); // ローディング表示を閉じる
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (context) => SwipeScreen(
+                                sessionId: widget.sessionId,
+                                questions: newQuestions,
+                              ),
                             ),
-                          ),
-                        );
-                      } catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('エラーが発生しました: $e')),
-                        );
-                      }
-                    },
-                    child: const Text('さらに深掘りする'),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          Navigator.of(context).pop(); // エラー時もローディング表示を閉じる
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('エラーが発生しました: $e')),
+                          );
+                        }
+                      },
+                      child: const Text('さらに深掘りする'),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

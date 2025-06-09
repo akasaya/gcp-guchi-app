@@ -66,31 +66,34 @@ CORS(app)
 # ===== プロンプト定義 =====
 SUMMARY_PROMPT = """
 あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
-以下のユーザーとの会話履歴（質問と回答のペア、スワイプ操作のデータ）を深く分析し、ユーザーの感情状態、葛藤、そして本人も気づいていないかもしれない潜在的なニーズについて、専門的かつ共感的な洞察を提供してください。
+以下のユーザーとの会話履歴（質問と回答のペア、そしてためらい時間やスワイプ速度といったインタラクションデータ）を総合的に分析してください。
 
-# 会話履歴
+# 分析対象の会話履歴
 {swipes_text}
 
 # あなたのタスク
-1.  **summary**: 会話全体から読み取れるユーザーの主要な悩みや感情を、2〜3文で簡潔に要約してください。
-2.  **interaction_analysis**: スワイプの速度やためらい時間（hesitation_time_sec, swipe_duration_ms）も重要な手がかりです。ユーザーがどの質問に迷い（ためらい時間が長い）、どの質問に即答したか（ためらい時間が短い）を分析してください。その態度の変化から読み取れる無意識の抵抗、肯定、または葛藤について、専門家として深く、かつ分かりやすく分析してください。
+ユーザーの回答内容と言動（スワイプの速さ・ためらい）の両方から、ユーザーの現在の心理状態、内面的な葛藤、そして本人も気づいていないかもしれない「真の願い」や「潜在的なニーズ」について、深く、かつ共感的に分析してください。
+
+# 分析のポイント
+- **感情の一貫性と矛盾**: ユーザーの回答（Yes/No）と、その際の感情の現れ（ためらいが長い、即答するなど）は一致していますか？ もし不一致がある場合、それはどのような心理的な葛藤を示唆していますか？
+- **核心となる問い**: どの質問に対して、ユーザーは最も感情的な反応（非常に長い/短い時間での反応）を示しましたか？ それがこのセッションの核心である可能性について考察してください。
+- **潜在的なニーズの特定**: これまでの分析を踏まえ、このユーザーが本当に望んでいること、あるいは必要としているサポートは何だと考えられますか？
 
 # 制約条件
-- 分析結果は必ず以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や ```json ``` は絶対に含めないでください。
+- 分析結果は、**「insights」**というキーを持つJSON形式で、JSONオブジェクトのみを出力してください。
+- **ためらい時間や速度の具体的な数値は出力に含めず**、それらのデータからあなたが読み取った「解釈」だけを、自然な文章で記述してください。
+- 全体で400〜600字程度の、読み応えのある一つの分析レポートとしてまとめてください。
+- 説明文や ```json ``` は絶対に含めないでください。
 {{
-  "summary": "ここに会話全体の要約を記述",
-  "interaction_analysis": "ここにスワイプのインタラクションを含めた深掘り分析を記述"
+  "insights": "（ここに統合された分析レポートを記述）"
 }}
 """
-
-# --- リファクタリングされた質問生成関数 ---
 
 def _call_gemini_for_questions(prompt):
     """[Helper] Geminiを呼び出し、質問リストのJSONを解析して返す共通関数"""
     model = GenerativeModel(os.getenv('GEMINI_FLASH_NAME'))
     try:
         response = model.generate_content(prompt)
-        # 応答からJSON部分を抽出する
         match = re.search(r'\{.*\}', response.text, re.DOTALL)
         if not match:
             raise ValueError("Gemini response did not contain valid JSON.")
@@ -98,7 +101,6 @@ def _call_gemini_for_questions(prompt):
         json_text = match.group(0)
         questions_data = json.loads(json_text)
         
-        # 質問がリスト形式で、内容があることを確認
         if 'questions' not in questions_data or not isinstance(questions_data['questions'], list):
             raise ValueError("JSON from Gemini is missing 'questions' list.")
             
@@ -130,20 +132,17 @@ def generate_initial_questions(topic):
 """
     return _call_gemini_for_questions(prompt)
 
-def generate_follow_up_questions(previous_summary, interaction_analysis):
-    """以前の要約と分析に基づき、深掘り質問を生成する"""
+def generate_follow_up_questions(insights):
+    """以前の分析(insights)に基づき、深掘り質問を生成する"""
     prompt = f"""
 あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーとのこれまでの対話の要約と、あなたの専門的な分析は以下の通りです。
+ユーザーとのこれまでの対話から、あなたは以下のような深い洞察を得ました。
 
-# 対話の要約
-{previous_summary}
+# あなたの分析(洞察)
+{insights}
 
-# あなたの分析
-{interaction_analysis}
-
-この分析結果を踏まえ、ユーザーが自身の気持ちをさらに深く探求できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
-質問は、これまでの流れを汲み、ユーザーがまだ言語化できていない感情や思考を引き出すような、鋭い問いかけを期待します。
+この洞察をさらに深め、ユーザーが自身の気持ちをより明確に理解できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
+質問は、分析結果から浮かび上がったテーマや葛藤に直接関連するものにしてください。
 
 # 制約条件
 - 必ず5つの質問を生成してください。
@@ -162,7 +161,7 @@ def generate_follow_up_questions(previous_summary, interaction_analysis):
     return _call_gemini_for_questions(prompt)
 
 def generate_summary_with_gemini(swipes_text):
-    """Gemmaを使ってサマリーを生成する"""
+    """Geminiを使ってサマリー(insights)を生成する"""
     model_name = os.getenv('GEMINI_FLASH_NAME')
     model = GenerativeModel(model_name)
     
@@ -170,7 +169,6 @@ def generate_summary_with_gemini(swipes_text):
     
     try:
         response = model.generate_content(prompt)
-        
         text_to_parse = response.text
         match = re.search(r'```json\s*(\{.*?\})\s*```', text_to_parse, re.DOTALL)
         if match:
@@ -223,6 +221,7 @@ def start_session():
             'topic': topic,
             'status': 'in_progress',
             'created_at': firestore.SERVER_TIMESTAMP,
+            'turn': 1, # ★ ターン数を初期化
         })
         session_id = session_doc_ref.id
 
@@ -346,13 +345,19 @@ def get_summary(session_id):
         
         summary_data = generate_summary_with_gemini(swipes_text)
         
+        session_doc = session_doc_ref.get()
+        if not session_doc.exists:
+             raise Exception("Session document not found after summary generation.")
+        
+        session_turn = session_doc.to_dict().get('turn', 1)
+
         session_doc_ref.update({
-            'summary': summary_data.get('summary'),
-            'interaction_analysis': summary_data.get('interaction_analysis'),
+            'insights': summary_data.get('insights'), # ★ 新しい分析結果を保存
             'status': 'completed',
             'updated_at': firestore.SERVER_TIMESTAMP,
         })
         
+        summary_data['turn'] = session_turn # ★ ターン数をレスポンスに追加
         return jsonify(summary_data)
 
     except Exception as e:
@@ -380,23 +385,40 @@ def continue_session(session_id):
         return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
 
     data = request.get_json()
-    if not data or 'summary' not in data or 'interaction_analysis' not in data:
-        return jsonify({'error': 'Summary and interaction_analysis are required'}), 400
+    if not data or 'insights' not in data:
+        return jsonify({'error': 'Insights are required'}), 400
     
-    summary = data['summary']
-    interaction_analysis = data['interaction_analysis']
+    insights = data['insights']
 
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
     try:
-        questions = generate_follow_up_questions(
-            previous_summary=summary,
-            interaction_analysis=interaction_analysis
-        )
+        questions = generate_follow_up_questions(insights=insights)
         if not questions or len(questions) < 1:
             raise Exception("AI failed to generate sufficient follow-up questions.")
 
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+        
+        # トランザクションで安全にターン数を更新
+        @firestore.transactional
+        def update_turn_in_transaction(transaction, session_ref):
+            snapshot = session_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                raise Exception("Session not found in transaction")
+            
+            current_turn = snapshot.to_dict().get('turn', 1)
+            new_turn = current_turn + 1
+            
+            transaction.update(session_ref, {
+                'status': 'in_progress',
+                'updated_at': firestore.SERVER_TIMESTAMP,
+                'turn': new_turn
+            })
+            return new_turn
+
+        transaction = db_firestore.transaction()
+        update_turn_in_transaction(transaction, session_doc_ref)
+
         questions_collection = session_doc_ref.collection('questions')
 
         last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
@@ -422,11 +444,6 @@ def continue_session(session_id):
         
         if not question_docs_for_frontend:
              raise Exception("All generated follow-up questions were empty.")
-
-        session_doc_ref.update({
-            'status': 'in_progress',
-            'updated_at': firestore.SERVER_TIMESTAMP,
-        })
 
         return jsonify({
             'session_id': session_id,
