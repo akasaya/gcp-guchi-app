@@ -1,37 +1,31 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiService {
-  final String _baseUrl = 'http://127.0.0.1:8080';
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: 'http://127.0.0.1:8080', // TODO: Replace with your actual backend URL
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
+  final _auth = FirebaseAuth.instance;
 
-  Future<Map<String, String>> _getHeaders() async {
+  Future<String?> _getIdToken() async {
     final user = _auth.currentUser;
     if (user == null) {
       throw Exception('User not logged in');
     }
-    final token = await user.getIdToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
+    return await user.getIdToken();
   }
 
   Future<Map<String, dynamic>> startSession(String topic) async {
-    final url = Uri.parse('$_baseUrl/session/start');
-    final headers = await _getHeaders();
-    final response = await http.post(
-      url,
-      headers: headers,
-      body: jsonEncode({'topic': topic}),
+    final token = await _getIdToken();
+    final response = await _dio.post(
+      '/session/start',
+      data: jsonEncode({'topic': topic}),
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(utf8.decode(response.bodyBytes));
-    } else {
-      throw Exception('Failed to start session: ${response.body}');
-    }
+    return response.data;
   }
 
   Future<void> recordSwipe({
@@ -39,57 +33,47 @@ class ApiService {
     required String questionId,
     required String answer,
     required double hesitationTime,
-    required int speed,
+    required int swipeSpeed,
+    required int turn, // turnを追加
   }) async {
-    final url = Uri.parse('$_baseUrl/session/$sessionId/swipe');
-    final headers = await _getHeaders();
-    final response = await http.post(
-      url,
-      headers: headers,
-      body: jsonEncode({
+    final token = await _getIdToken();
+    await _dio.post(
+      '/session/$sessionId/swipe',
+      data: jsonEncode({
         'question_id': questionId,
         'answer': answer,
         'hesitation_time': hesitationTime,
-        'speed': speed,
+        'speed': swipeSpeed,
+        'turn': turn, // turnを送信
       }),
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to record swipe: ${response.body}');
-    }
   }
 
-  Future<Map<String, dynamic>> getSummary(String sessionId) async {
-    final url = Uri.parse('$_baseUrl/session/$sessionId/summary');
-    final headers = await _getHeaders();
-    final response = await http.get(url, headers: headers);
-
-    if (response.statusCode == 200) {
-      return jsonDecode(utf8.decode(response.bodyBytes));
-    } else {
-      throw Exception('Failed to get summary: ${response.body}');
-    }
+  // getSummaryをpostSummaryに変更し、引数をswipesにする
+  Future<Map<String, dynamic>> postSummary({
+    required String sessionId,
+    required List<Map<String, dynamic>> swipes,
+  }) async {
+    final token = await _getIdToken();
+    final response = await _dio.post(
+      '/session/$sessionId/summary',
+      data: jsonEncode({'swipes': swipes}), // 送信するデータをswipesに変更
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return response.data;
   }
 
   Future<Map<String, dynamic>> continueSession({
     required String sessionId,
-    required String insights, // ★ 引数をinsightsに統一
+    required String insights,
   }) async {
-    final url = Uri.parse('$_baseUrl/session/$sessionId/continue');
-    final headers = await _getHeaders();
-    final response = await http.post(
-      url,
-      headers: headers,
-      body: jsonEncode({
-        'insights': insights, // ★ 送信するデータをinsightsに統一
-      }),
+    final token = await _getIdToken();
+    final response = await _dio.post(
+      '/session/$sessionId/continue',
+      data: jsonEncode({'insights': insights}),
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(utf8.decode(response.bodyBytes));
-    } else {
-      final errorBody = jsonDecode(utf8.decode(response.bodyBytes));
-      throw Exception('Failed to continue session: ${errorBody['error']}');
-    }
+    return response.data;
   }
 }
