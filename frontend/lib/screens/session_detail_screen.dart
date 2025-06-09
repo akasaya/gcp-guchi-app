@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
+import '../services/api_service.dart';
+import '../screens/swipe_screen.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final String sessionId;
@@ -13,209 +14,162 @@ class SessionDetailScreen extends StatefulWidget {
 }
 
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ApiService _apiService = ApiService();
+  late final DocumentReference _sessionRef;
 
-  Stream<DocumentSnapshot<Map<String, dynamic>>> _sessionDetailsStream() {
-    final user = _auth.currentUser;
-    if (user == null) {
-      return Stream.error('User not logged in');
-    }
-    return _firestore
+  @override
+  void initState() {
+    super.initState();
+    final user = FirebaseAuth.instance.currentUser!;
+    _sessionRef = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('sessions')
-        .doc(widget.sessionId)
-        .snapshots();
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _fetchSwipes() {
-    final user = _auth.currentUser;
-    if (user == null) {
-      return Stream.error('User not logged in');
-    }
-    return _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('sessions')
-        .doc(widget.sessionId)
-        .collection('swipes')
-        .orderBy('timestamp', descending: false)
-        .snapshots();
+        .doc(widget.sessionId);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('セッション詳細'),
+        title: const Text('セッションの履歴'),
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: _sessionDetailsStream(),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _sessionRef.snapshots(),
         builder: (context, sessionSnapshot) {
-          if (sessionSnapshot.connectionState == ConnectionState.waiting) {
+          if (!sessionSnapshot.hasData || !sessionSnapshot.data!.exists) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (sessionSnapshot.hasError) {
-            return Center(child: Text('エラーが発生しました: ${sessionSnapshot.error}'));
-          }
-          if (!sessionSnapshot.hasData || !sessionSnapshot.data!.exists) {
-            return const Center(child: Text('セッションデータが見つかりません。'));
-          }
+          final sessionData = sessionSnapshot.data!.data() as Map<String, dynamic>;
 
-          final sessionData = sessionSnapshot.data!.data();
-          if (sessionData == null) {
-            return const Center(child: Text('セッションデータが空です。'));
-          }
-          
-          // BUG FIX: 'createdAt' -> 'created_at'
-          final Timestamp? createdAtTimestamp = sessionData['created_at'] as Timestamp?;
-          String formattedDate = '日時不明';
-          if (createdAtTimestamp != null) {
-            final DateTime createdAtDate = createdAtTimestamp.toDate();
-            formattedDate = DateFormat('yyyy年MM月dd日 HH:mm:ss').format(createdAtDate);
-          }
-
-          final String status = sessionData['status'] ?? '不明';
-          // BUG FIX: Handle summary being a String to avoid TypeError.
-          final String summary = sessionData['summary']?.toString() ?? 'AIによる振り返りはまだありません。';
-          // BUG FIX: キー名を gemma... から変更し、変数名も統一
-          final String interactionAnalysis = sessionData['interaction_analysis']?.toString() ?? '行動分析データはありません。';
-          
-          return SingleChildScrollView(
+          return ListView(
             padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionTitle('セッション情報'),
-                _buildInfoCard([
-                  _buildInfoRow('日時', formattedDate),
-                  _buildInfoRow('ステータス', status),
-                ]),
-                const SizedBox(height: 24),
-
-                _buildSectionTitle('AIによる振り返り'),
-                _buildInfoCard([
-                  Text(summary),
-                ]),
-                const SizedBox(height: 24),
-                
-                _buildSectionTitle('あなたのスワイプに関する行動分析'),
-                _buildInfoCard([
-                  Text(interactionAnalysis),
-                ]),
-                const SizedBox(height: 24),
-
-                _buildSectionTitle('スワイプ履歴'),
-                _buildSwipesList(),
-              ],
-            ),
+            children: [
+              _buildAnalysisCard('AIによる振り返り', sessionData['summary'] ?? '分析がありません。'),
+              const SizedBox(height: 24),
+              _buildAnalysisCard('スワイプに関する行動分析', sessionData['interaction_analysis'] ?? '分析がありません。'),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              Text('回答の全履歴', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              _buildSwipeHistoryList(),
+            ],
           );
         },
       ),
+      bottomNavigationBar: _buildContinueButton(),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-
-  Widget _buildInfoCard(List<Widget> children) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80, // ラベルの幅を固定
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+  Widget _buildAnalysisCard(String title, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(content),
           ),
-          const SizedBox(width: 16),
-          Expanded(child: Text(value)),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _buildSwipesList() {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _fetchSwipes(),
-      builder: (context, swipeSnapshot) {
-        if (swipeSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (swipeSnapshot.hasError) {
-          return Text('スワイプ履歴の読み込みに失敗しました: ${swipeSnapshot.error}');
-        }
-        if (!swipeSnapshot.hasData || swipeSnapshot.data!.docs.isEmpty) {
-          return const Text('スワイプ履歴はありません。');
-        }
+  Widget _buildSwipeHistoryList() {
+    return FutureBuilder<QuerySnapshot>(
+      future: _sessionRef.collection('questions').orderBy('order').get(),
+      builder: (context, questionsSnapshot) {
+        if (!questionsSnapshot.hasData) return const Center(child: CircularProgressIndicator());
+        
+        final questionsMap = { for (var doc in questionsSnapshot.data!.docs) doc.id: doc.get('text') as String };
 
-        final swipes = swipeSnapshot.data!.docs;
-
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(), // SingleChildScrollView内で使うため
-          itemCount: swipes.length,
-          itemBuilder: (context, index) {
-            final swipeData = swipes[index].data();
-            final questionRef = swipeData['question_ref'] as DocumentReference?;
+        return StreamBuilder<QuerySnapshot>(
+          stream: _sessionRef.collection('swipes').orderBy('timestamp').snapshots(),
+          builder: (context, swipesSnapshot) {
+            if (!swipesSnapshot.hasData) return const Center(child: Text("回答を読み込み中..."));
+            if (swipesSnapshot.data!.docs.isEmpty) return const Center(child: Text("回答履歴がありません。"));
             
-            return FutureBuilder<DocumentSnapshot>(
-              future: questionRef?.get(),
-              builder: (context, questionDocSnapshot) {
-                String questionText = '質問を読み込み中...';
-                if (questionDocSnapshot.connectionState == ConnectionState.done) {
-                   if (questionDocSnapshot.hasData && questionDocSnapshot.data!.exists) {
-                     final questionData = questionDocSnapshot.data!.data() as Map<String, dynamic>;
-                     questionText = questionData['text'] ?? '質問テキストが見つかりません';
-                   } else {
-                     questionText = '質問が見つかりません';
-                   }
-                }
-
-                final answer = swipeData['answer'] ?? '回答不明';
-                final hesitation = (swipeData['hesitation_time_sec'] ?? 0).toStringAsFixed(2);
-                final duration = swipeData['swipe_duration_ms'] ?? 0;
-                
-                final Color iconColor = answer.toLowerCase() == 'yes' ? Colors.green : Colors.red;
-                final IconData iconData = answer.toLowerCase() == 'yes' ? Icons.check_circle_outline : Icons.cancel_outlined;
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: swipesSnapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                final swipeData = swipesSnapshot.data!.docs[index].data() as Map<String, dynamic>;
+                final questionId = swipeData['question_id'] as String;
+                final questionText = questionsMap[questionId] ?? '質問の読み込みに失敗';
+                final answer = swipeData['answer'] == 'yes' ? 'はい' : 'いいえ';
+                final answerColor = swipeData['answer'] == 'yes' ? Colors.green : Colors.red;
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4.0),
                   child: ListTile(
-                    leading: Icon(iconData, color: iconColor),
                     title: Text(questionText),
-                    subtitle: Text('回答: $answer (ためらい: ${hesitation}秒, 速度: ${duration}ms)'),
+                    trailing: Text(answer, style: TextStyle(color: answerColor, fontWeight: FontWeight.bold)),
                   ),
                 );
               },
             );
           },
         );
+      },
+    );
+  }
+
+  Widget _buildContinueButton() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _sessionRef.snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
+        
+        final sessionData = snapshot.data!.data() as Map<String, dynamic>;
+
+        if (sessionData['status'] == 'completed') {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                ),
+                onPressed: () async {
+                   try {
+                        final result = await _apiService.continueSession(
+                          sessionId: widget.sessionId,
+                          summary: sessionData['summary'],
+                          // ★★★ ここを修正 ★★★
+                          interactionAnalysis: sessionData['interaction_analysis'],
+                        );
+                        final newQuestionsRaw = result['questions'] as List;
+                        final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
+
+                        if (!mounted) return;
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => SwipeScreen(
+                              sessionId: widget.sessionId,
+                              questions: newQuestions,
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('エラー: $e')),
+                        );
+                      }
+                },
+                child: const Text('このセッションを続けて深掘りする'),
+              ),
+            ),
+          );
+        }
+        return const SizedBox.shrink();
       },
     );
   }

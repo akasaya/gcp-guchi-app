@@ -83,28 +83,11 @@ SUMMARY_PROMPT = """
 }}
 """
 
-def generate_questions_with_gemini(topic):
-    """Geminiを使って質問を生成する"""
-    model = GenerativeModel(os.getenv('GEMINI_FLASH_NAME'))
-    prompt = f"""
-あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
-質問は、前の質問からの流れを汲み、徐々に核心に迫るように構成してください。
+# --- リファクタリングされた質問生成関数 ---
 
-# 制約条件
-- 必ず5つの質問を生成してください。
-- 各質問は、必ず「はい」か「いいえ」で回答できる形式にしてください。
-- 回答は、以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や```json ```は不要です。
-{{
-  "questions": [
-    {{"question_text": "ここに1つ目の質問"}},
-    {{"question_text": "ここに2つ目の質問"}},
-    {{"question_text": "ここに3つ目の質問"}},
-    {{"question_text": "ここに4つ目の質問"}},
-    {{"question_text": "ここに5つ目の質問"}}
-  ]
-}}
-"""
+def _call_gemini_for_questions(prompt):
+    """[Helper] Geminiを呼び出し、質問リストのJSONを解析して返す共通関数"""
+    model = GenerativeModel(os.getenv('GEMINI_FLASH_NAME'))
     try:
         response = model.generate_content(prompt)
         # 応答からJSON部分を抽出する
@@ -124,6 +107,60 @@ def generate_questions_with_gemini(topic):
         print(f"Error calling Gemini for question generation: {e}")
         raise
 
+def generate_initial_questions(topic):
+    """トピックに基づき、初回の質問を生成する"""
+    prompt = f"""
+あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
+ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
+質問は、前の質問からの流れを汲み、徐々に核心に迫るように構成してください。
+
+# 制約条件
+- 必ず5つの質問を生成してください。
+- 各質問は、必ず「はい」か「いいえ」で回答できる形式にしてください。
+- 回答は、以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や```json ```は不要です。
+{{
+  "questions": [
+    {{"question_text": "ここに1つ目の質問"}},
+    {{"question_text": "ここに2つ目の質問"}},
+    {{"question_text": "ここに3つ目の質問"}},
+    {{"question_text": "ここに4つ目の質問"}},
+    {{"question_text": "ここに5つ目の質問"}}
+  ]
+}}
+"""
+    return _call_gemini_for_questions(prompt)
+
+def generate_follow_up_questions(previous_summary, interaction_analysis):
+    """以前の要約と分析に基づき、深掘り質問を生成する"""
+    prompt = f"""
+あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
+ユーザーとのこれまでの対話の要約と、あなたの専門的な分析は以下の通りです。
+
+# 対話の要約
+{previous_summary}
+
+# あなたの分析
+{interaction_analysis}
+
+この分析結果を踏まえ、ユーザーが自身の気持ちをさらに深く探求できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
+質問は、これまでの流れを汲み、ユーザーがまだ言語化できていない感情や思考を引き出すような、鋭い問いかけを期待します。
+
+# 制約条件
+- 必ず5つの質問を生成してください。
+- 各質問は、必ず「はい」か「いいえ」で回答できる形式にしてください。
+- 回答は、以下のJSON形式で、JSONオブジェクトのみを出力してください。説明文や```json ```は不要です。
+{{
+  "questions": [
+    {{"question_text": "ここに1つ目の質問"}},
+    {{"question_text": "ここに2つ目の質問"}},
+    {{"question_text": "ここに3つ目の質問"}},
+    {{"question_text": "ここに4つ目の質問"}},
+    {{"question_text": "ここに5つ目の質問"}}
+  ]
+}}
+"""
+    return _call_gemini_for_questions(prompt)
+
 def generate_summary_with_gemini(swipes_text):
     """Gemmaを使ってサマリーを生成する"""
     model_name = os.getenv('GEMINI_FLASH_NAME')
@@ -134,22 +171,17 @@ def generate_summary_with_gemini(swipes_text):
     try:
         response = model.generate_content(prompt)
         
-        # 応答からJSON部分を抽出するロジックを強化
-        # ```json ... ``` で囲まれている場合と、そうでない場合の両方に対応
         text_to_parse = response.text
         match = re.search(r'```json\s*(\{.*?\})\s*```', text_to_parse, re.DOTALL)
         if match:
             json_text = match.group(1)
         else:
-            # ```jsonがない場合は、最初に出現する { から最後の } までを抽出
             match = re.search(r'\{.*\}', text_to_parse, re.DOTALL)
             if match:
                 json_text = match.group(0)
             else:
                 raise ValueError(f"Gemini response did not contain valid JSON object: {text_to_parse}")
 
-        # 不正な制御文字を削除してからJSONとして読み込む
-        # これが "Invalid control character" エラーに対する直接的な対策
         cleaned_json_text = ''.join(c for c in json_text if c.isprintable() or c in '\n\r\t')
         return json.loads(cleaned_json_text)
 
@@ -180,7 +212,7 @@ def start_session():
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
     try:
-        questions = generate_questions_with_gemini(topic)
+        questions = generate_initial_questions(topic)
         if not questions or len(questions) < 1:
             raise Exception("AI failed to generate sufficient questions.")
 
@@ -285,7 +317,7 @@ def get_summary(session_id):
 
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
-    session_doc_ref = None # 先にNoneで初期化しておく
+    session_doc_ref = None
     try:
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         
@@ -312,12 +344,11 @@ def get_summary(session_id):
 
         swipes_text = "\n".join(swipes_text_list)
         
-        # ★★★ ここをGeminiを呼び出す関数に変更 ★★★
         summary_data = generate_summary_with_gemini(swipes_text)
         
         session_doc_ref.update({
             'summary': summary_data.get('summary'),
-            'interaction_analysis': summary_data.get('interaction_analysis'), # <- 'gemma_interaction_analysis' から修正
+            'interaction_analysis': summary_data.get('interaction_analysis'),
             'status': 'completed',
             'updated_at': firestore.SERVER_TIMESTAMP,
         })
@@ -332,6 +363,79 @@ def get_summary(session_id):
             except Exception as update_e:
                 print(f"Failed to update session status to error: {update_e}")
         return jsonify({'error': 'Failed to get summary', 'details': str(e)}), 500
+
+@app.route('/session/<string:session_id>/continue', methods=['POST'])
+def continue_session(session_id):
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
+        
+        id_token = auth_header.split('Bearer ')[1]
+        decoded_token = auth.verify_id_token(id_token)
+        user_id = decoded_token['uid']
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
+    except Exception as e:
+        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
+
+    data = request.get_json()
+    if not data or 'summary' not in data or 'interaction_analysis' not in data:
+        return jsonify({'error': 'Summary and interaction_analysis are required'}), 400
+    
+    summary = data['summary']
+    interaction_analysis = data['interaction_analysis']
+
+    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
+
+    try:
+        questions = generate_follow_up_questions(
+            previous_summary=summary,
+            interaction_analysis=interaction_analysis
+        )
+        if not questions or len(questions) < 1:
+            raise Exception("AI failed to generate sufficient follow-up questions.")
+
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+        questions_collection = session_doc_ref.collection('questions')
+
+        last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
+        last_order = -1
+        for q in last_question_query:
+            last_order = q.to_dict().get('order', -1)
+        
+        start_order = last_order + 1
+
+        question_docs_for_frontend = []
+        for i, q_data in enumerate(questions):
+            q_text = q_data.get("question_text")
+            if q_text and q_text.strip():
+                q_doc_ref = questions_collection.document()
+                q_doc_ref.set({
+                    'text': q_text,
+                    'order': start_order + i,
+                })
+                question_docs_for_frontend.append({
+                    'question_id': q_doc_ref.id,
+                    'question_text': q_text
+                })
+        
+        if not question_docs_for_frontend:
+             raise Exception("All generated follow-up questions were empty.")
+
+        session_doc_ref.update({
+            'status': 'in_progress',
+            'updated_at': firestore.SERVER_TIMESTAMP,
+        })
+
+        return jsonify({
+            'session_id': session_id,
+            'questions': question_docs_for_frontend
+        }), 200
+
+    except Exception as e:
+        print(f"Error in continue_session: {e}")
+        return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
