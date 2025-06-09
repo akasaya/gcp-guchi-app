@@ -7,6 +7,7 @@ import json
 import re
 from dotenv import load_dotenv
 from pathlib import Path
+from tenacity import retry, stop_after_attempt, wait_exponential # Tenacityをインポート
 
 import vertexai
 from vertexai.generative_models import GenerativeModel
@@ -160,13 +161,21 @@ def generate_follow_up_questions(insights):
 """
     return _call_gemini_for_questions(prompt)
 
-def generate_summary_with_gemini(swipes_text):
-    """Geminiを使ってサマリー(insights)を生成する"""
+@retry(
+    wait=wait_exponential(multiplier=1, min=2, max=10), # 待機時間: 2秒, 4秒, 8秒...
+    stop=stop_after_attempt(3), # 最大3回試行
+    reraise=True # 3回失敗したら最終的なエラーを発生させる
+)
+def generate_summary_with_gemini_with_retry(swipes_text):
+    """[リトライ機能付き] Geminiを使ってサマリー(insights)を生成する"""
     model_name = os.getenv('GEMINI_FLASH_NAME')
     model = GenerativeModel(model_name)
     
     prompt = SUMMARY_PROMPT.format(swipes_text=swipes_text)
     
+    attempt_num = generate_summary_with_gemini_with_retry.retry.statistics.get('attempt_number', 1)
+    print(f"--- Calling Gemini for summary (Attempt: {attempt_num}) ---")
+
     try:
         response = model.generate_content(prompt)
         text_to_parse = response.text
@@ -184,8 +193,8 @@ def generate_summary_with_gemini(swipes_text):
         return json.loads(cleaned_json_text)
 
     except Exception as e:
-        print(f"Error calling Gemini for summary generation: {e}")
-        raise
+        print(f"Error calling Gemini for summary generation on attempt {attempt_num}: {e}")
+        raise # リトライのために例外を再送出
 
 @app.route('/session/start', methods=['POST'])
 def start_session():
@@ -343,7 +352,8 @@ def get_summary(session_id):
 
         swipes_text = "\n".join(swipes_text_list)
         
-        summary_data = generate_summary_with_gemini(swipes_text)
+         # ★ 新しいリトライ機能付き関数を呼び出す
+        summary_data = generate_summary_with_gemini_with_retry(swipes_text)
         
         session_doc = session_doc_ref.get()
         if not session_doc.exists:
