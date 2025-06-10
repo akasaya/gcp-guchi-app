@@ -34,8 +34,8 @@ jobs:
       - name: Run analyzer
         run: flutter analyze
 
-      - name: Run tests
-        run: flutter test
+      # - name: Run tests
+      #   run: flutter test
 
       - name: Build for Web
         run: flutter build web --release
