@@ -73,7 +73,7 @@ jobs:
         docker push ${{ env.IMAGE_NAME }}:${IMAGE_TAG}
         docker push ${{ env.IMAGE_NAME }}:latest
 
-    - name: Deploy to Cloud Run
+- name: Deploy to Cloud Run
       env:
         IMAGE_TAG: ${{ github.sha }}
       run: |-
@@ -83,4 +83,16 @@ jobs:
           --platform managed \
           --quiet \
           --allow-unauthenticated \
-          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }}
+          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+          --update-env-vars="GEMINI_FLASH_NAME=- name: Deploy to Cloud Run
+      env:
+        IMAGE_TAG: ${{ github.sha }}
+      run: |-
+        gcloud run deploy ${{ env.CLOUD_RUN_SERVICE_NAME }} \
+          --image ${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
+          --region ${{ env.GCP_REGION }} \
+          --platform managed \
+          --quiet \
+          --allow-unauthenticated \
+          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+          --update-env-vars="GEMINI_FLASH_NAME="gemini-2.5-flash-preview-05-20"

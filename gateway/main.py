@@ -75,7 +75,7 @@ SUMMARY_SCHEMA = {
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
 def _call_gemini_with_schema(prompt: str, schema: dict) -> dict:
     """Geminiを構造化出力で呼び出し、JSONを返す。リトライ機能付き。"""
-    model_name = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-001')
+    model_name = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
     model = GenerativeModel(model_name)
     
     attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
