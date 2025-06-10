@@ -83,5 +83,6 @@ jobs:
           --platform managed \
           --quiet \
           --allow-unauthenticated \
+          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
           --set-secrets="GCP_CREDENTIALS_JSON=GCP_CREDENTIALS_JSON:latest" \
           --update-env-vars="GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
