@@ -2,27 +2,19 @@ import os
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from flask import Flask, request, jsonify
-from flask_cors import CORS # ★ CORSライブラリをインポート
+from flask_cors import CORS
 import json
-# 不要になったライブラリは削除
-# from dotenv import load_dotenv
-# from pathlib import Path
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
-# 不要になったライブラリは削除
-# from google.oauth2 import service_account
 
-# --- GCP & Firebase 初期化 (★★★★★ 全面的に書き換え ★★★★★) ---
-
-# Cloud Run環境や`gcloud auth application-default login`を実行した
-# ローカル環境では、認証情報は自動的に解決されます。
+# --- GCP & Firebase 初期化 (推奨される方法に修正) ---
 try:
     print("Initializing GCP services using Application Default Credentials...")
     
-    # 引数なしで初期化。環境からプロジェクトIDと認証情報を自動取得します。
-    # (環境変数 GOOGLE_CLOUD_PROJECT や gcloud config の設定が利用されます)
+    # 引数なしで初期化することで、Cloud Run環境やローカルのgcloud設定から
+    # 認証情報とプロジェクトIDを自動で取得します。
     firebase_admin.initialize_app()
     db_firestore = firestore.client()
     
@@ -38,16 +30,13 @@ try:
 except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
-    # 本番環境で初期化に失敗したら、起動を中止
+    # 本番環境で初期化に失敗したら、起動を中止してログにエラーを残します
     if 'K_SERVICE' in os.environ:
         raise
 
 app = Flask(__name__)
-# ★ CORS設定を追加
+# CORS設定: Firebase Hostingからのリクエストを明示的に許可
 CORS(app, resources={r"/*": {"origins": "https://guchi-app-flutter.web.app"}})
-
-
-
 
 # ===== JSONスキーマ定義 =====
 QUESTIONS_SCHEMA = {
@@ -67,7 +56,6 @@ QUESTIONS_SCHEMA = {
     "required": ["questions"]
 }
 
-# 改善点①, ②: タイトルとMarkdown形式の分析結果を要求するスキーマ
 SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -82,7 +70,6 @@ SUMMARY_SCHEMA = {
     },
     "required": ["title", "insights"]
 }
-
 
 # ===== Gemini 呼び出しヘルパー関数 (リトライ機能付き) =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
@@ -108,9 +95,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict) -> dict:
         raise
 
 # ===== Gemini 呼び出しメイン関数 =====
-
 def generate_initial_questions(topic):
-    """トピックに基づき、初回の質問を生成する"""
     prompt = f"""
 あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
 ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
@@ -126,9 +111,7 @@ def generate_initial_questions(topic):
             "人間関係で何か改善したい点はありますか？", "今の生活に満足していますか？"
         ]]
 
-
 def generate_follow_up_questions(insights):
-    """以前の分析(insights)に基づき、深掘り質問を生成する"""
     prompt = f"""
 あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
 ユーザーとのこれまでの対話から、あなたは以下のような深い洞察を得ました。
@@ -142,10 +125,7 @@ def generate_follow_up_questions(insights):
     data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA)
     return data.get("questions", [])
 
-
-# 改善点①: Markdown形式の要約とタイトルを生成するようプロンプトを更新
 def generate_summary_and_title(topic, swipes_text):
-    """Geminiを使ってサマリー(insights)とタイトルを生成する"""
     prompt = f"""
 あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
 ユーザーは「{topic}」というテーマについて対話しています。
@@ -176,7 +156,6 @@ def generate_summary_and_title(topic, swipes_text):
 ```
 """
     return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA)
-
 
 # ===== API Routes =====
 @app.route('/session/start', methods=['POST'])
@@ -209,13 +188,12 @@ def start_session():
         user_doc_ref = db_firestore.collection('users').document(user_id)
         session_doc_ref = user_doc_ref.collection('sessions').document()
         
-        # turnの上限を設定
         session_doc_ref.set({
             'topic': topic,
             'status': 'in_progress',
             'created_at': firestore.SERVER_TIMESTAMP,
             'turn': 1,
-            'max_turns': 3, # 改善点④: 最大ターン数を設定
+            'max_turns': 3,
         })
         session_id = session_doc_ref.id
 
@@ -228,7 +206,7 @@ def start_session():
                 q_doc_ref.set({
                     'text': q_text,
                     'order': i,
-                    'turn': 1 # どのターンの質問かを記録
+                    'turn': 1
                 })
                 question_docs_for_frontend.append({
                     'question_id': q_doc_ref.id,
@@ -246,7 +224,6 @@ def start_session():
     except Exception as e:
         print(f"Error in start_session: {e}")
         return jsonify({'error': 'Failed to start session', 'details': str(e)}), 500
-
 
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
@@ -270,7 +247,7 @@ def record_swipe(session_id):
     answer = data.get('answer')
     hesitation_time = data.get('hesitation_time')
     speed = data.get('speed')
-    turn = data.get('turn') # フロントエンドから現在のターン番号を受け取る
+    turn = data.get('turn')
 
     if not all([question_id, answer, turn]):
         return jsonify({'error': 'Missing required fields in swipe data (question_id, answer, turn)'}), 400
@@ -287,7 +264,7 @@ def record_swipe(session_id):
             'answer': answer,
             'hesitation_time_sec': hesitation_time,
             'swipe_duration_ms': speed,
-            'turn': turn, # どのターンの回答か記録
+            'turn': turn,
             'timestamp': firestore.SERVER_TIMESTAMP
         })
         
@@ -297,8 +274,6 @@ def record_swipe(session_id):
         print(f"Error recording swipe: {e}")
         return jsonify({'error': 'Failed to record swipe', 'details': str(e)}), 500
 
-
-# 改善点①, ②: get_summaryをpost_summaryに置き換え
 @app.route('/session/<string:session_id>/summary', methods=['POST'])
 def post_summary(session_id):
     try:
@@ -359,9 +334,8 @@ def post_summary(session_id):
         session_update_data = {
             'status': 'completed',
             'updated_at': firestore.SERVER_TIMESTAMP,
-            'latest_insights': insights_md # 履歴一覧表示用の最新の分析結果
+            'latest_insights': insights_md
         }
-        # 最初のターンでのみタイトルを設定
         if current_turn == 1:
             session_update_data['title'] = title
         
@@ -431,13 +405,8 @@ def continue_session(session_id):
         if not questions or len(questions) < 1:
             raise Exception("AI failed to generate sufficient follow-up questions.")
 
-        # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-        # ↓↓↓ この行を追加してエラーを修正します ↓↓↓
         questions_collection = session_doc_ref.collection('questions')
-        # ↑↑↑ この行を追加してエラーを修正します ↑↑↑
-        # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
-        # 最後の質問のorder番号を取得
         last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
         last_order = -1
         for q in last_question_query:
@@ -452,7 +421,7 @@ def continue_session(session_id):
                 q_doc_ref.set({
                     'text': q_text,
                     'turn': new_turn,
-                    'order': start_order + i, # order番号を付与
+                    'order': start_order + i,
                     'created_at': firestore.SERVER_TIMESTAMP
                 })
                 question_docs_for_frontend.append({
@@ -472,7 +441,6 @@ def continue_session(session_id):
     except Exception as e:
         print(f"Error in continue_session: {e}")
         return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
