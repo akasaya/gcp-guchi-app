@@ -2,77 +2,51 @@ import os
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS # ★ CORSライブラリをインポート
 import json
-from dotenv import load_dotenv
-from pathlib import Path
+# 不要になったライブラリは削除
+# from dotenv import load_dotenv
+# from pathlib import Path
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
-from google.oauth2 import service_account
+# 不要になったライブラリは削除
+# from google.oauth2 import service_account
 
-# --- GCP & Firebase 初期化 ---
+# --- GCP & Firebase 初期化 (★★★★★ 全面的に書き換え ★★★★★) ---
 
-# Cloud Runで実行されているかどうかを判定
-IS_PRODUCTION = 'K_SERVICE' in os.environ
-
-# 認証情報とプロジェクトIDを準備
-gcp_project_id = None
-gcp_credentials = None
-
+# Cloud Run環境や`gcloud auth application-default login`を実行した
+# ローカル環境では、認証情報は自動的に解決されます。
 try:
-    if IS_PRODUCTION:
-        # 本番環境：環境変数から認証情報(JSON文字列)とプロジェクトIDを読み込む
-        print("Initializing GCP services in Production mode...")
-        cred_json_str = os.getenv('GCP_CREDENTIALS_JSON')
-        gcp_project_id = os.getenv('GCP_PROJECT_ID')
-
-        if not cred_json_str or not gcp_project_id:
-            raise ValueError("GCP_CREDENTIALS_JSON and GCP_PROJECT_ID must be set in production.")
-        
-        cred_info = json.loads(cred_json_str)
-        gcp_credentials = service_account.Credentials.from_service_account_info(cred_info)
-    else:
-        # ローカル環境：.envから認証情報ファイルへのパスとプロジェクトIDを読み込む
-        print("Running in local mode, loading .env file...")
-        dotenv_path = Path(__file__).parent / '.env'
-        load_dotenv(dotenv_path=dotenv_path)
-
-        gcp_project_id = os.getenv('GCP_PROJECT_ID')
-        cred_path_str = os.getenv('GOOGLE_APPLICATION_CREDENTIALS') # 標準的な環境変数名を使用
-
-        if not gcp_project_id or not cred_path_str:
-             raise ValueError("GCP_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS must be set in .env for local dev.")
-        
-        base_path = Path(__file__).parent
-        credentials_path = (base_path / cred_path_str).resolve()
-        if not credentials_path.is_file():
-             raise FileNotFoundError(f"GCP credentials file not found at: {credentials_path}")
-        gcp_credentials = service_account.Credentials.from_service_account_file(str(credentials_path))
-
-    # --- 認証情報を使って各サービスを初期化 ---
-    # Firebase
-    fb_cred = credentials.Certificate(gcp_credentials.service_account_email) # ここを修正
-    firebase_admin.initialize_app(
-        credentials.Certificate(gcp_credentials.to_service_account_info()), 
-        {'projectId': gcp_project_id}
-    )
+    print("Initializing GCP services using Application Default Credentials...")
+    
+    # 引数なしで初期化。環境からプロジェクトIDと認証情報を自動取得します。
+    # (環境変数 GOOGLE_CLOUD_PROJECT や gcloud config の設定が利用されます)
+    firebase_admin.initialize_app()
     db_firestore = firestore.client()
-    print(f"✅ Firebase Admin SDK initialized for project: {gcp_project_id}")
+    
+    # 初期化されたアプリからプロジェクトIDを取得
+    options = firebase_admin.get_app().options
+    project_id = options['projectId']
+    print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
-    # Vertex AI
-    vertexai.init(project=gcp_project_id, location='asia-northeast1', credentials=gcp_credentials)
-    print(f"✅ Vertex AI initialized for project: {gcp_project_id} in asia-northeast1")
+    # Vertex AIを初期化
+    vertexai.init(project=project_id, location='asia-northeast1')
+    print(f"✅ Vertex AI initialized for project: {project_id} in asia-northeast1")
 
 except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
-    if IS_PRODUCTION:
+    # 本番環境で初期化に失敗したら、起動を中止
+    if 'K_SERVICE' in os.environ:
         raise
 
 app = Flask(__name__)
-CORS(app)
+# ★ CORS設定を追加
+CORS(app, resources={r"/*": {"origins": "https://guchi-app-flutter.web.app"}})
+
+
 
 
 # ===== JSONスキーマ定義 =====
