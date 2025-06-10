@@ -24,10 +24,10 @@ try:
     print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
     # Vertex AIを初期化
- vertex_ai_region = os.getenv('GCP_VERTEX_AI_REGION', 'us-central1')
+    vertex_ai_region = os.getenv('GCP_VERTEX_AI_REGION', 'us-central1')
     vertexai.init(project=project_id, location=vertex_ai_region)
     print(f"✅ Vertex AI initialized for project: {project_id} in {vertex_ai_region}")
-    
+
 except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
