@@ -48,15 +48,16 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
   void _onSwipe(String answer, Map<String, dynamic> questionData, int index) {
     final hesitationTime =
-       DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
+        DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
 
-
+    // /summaryエンドポイントに送信するデータにはbool値を入れる
     _swipesDataForSummary.add({
       'question_text': questionData['question_text'],
-      'answer': answer,
+      'answer': answer == 'yes', // 'yes'の場合true、'no'の場合false
       'hesitation_time': hesitationTime,
     });
 
+    // /swipeエンドポイントには互換性のためstringのまま送信
     _apiService.recordSwipe(
       sessionId: widget.sessionId,
       questionId: questionData['question_id'],
@@ -75,49 +76,53 @@ class _SwipeScreenState extends State<SwipeScreen> {
             '質問 ${_currentQuestionIndex + 1} / ${_swipeItems.length}'),
         automaticallyImplyLeading: false,
       ),
-      body: Column(
+       body: Column(
         children: [
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: SwipeCards(
-                matchEngine: _matchEngine,
-                itemBuilder: (BuildContext context, int index) {
-                  final question =
-                      _swipeItems[index].content['question_text'] as String;
-                  return Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Text(
-                          question,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineSmall,
+            // ★★★ この child: が重要です ★★★
+            child: Center(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.8,
+                width: MediaQuery.of(context).size.width * 0.5,
+                child: SwipeCards(
+                  matchEngine: _matchEngine,
+                  itemBuilder: (BuildContext context, int index) {
+                    final question =
+                        _swipeItems[index].content['question_text'] as String;
+                    return Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text(
+                            question,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-                onStackFinished: () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (context) => SummaryScreen(
-                        sessionId: widget.sessionId,
-                        swipes: _swipesDataForSummary,
+                    );
+                  },
+                  onStackFinished: () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (context) => SummaryScreen(
+                          sessionId: widget.sessionId,
+                          swipes: _swipesDataForSummary,
+                        ),
                       ),
-                    ),
-                  );
-                },
-                itemChanged: (SwipeItem item, int index) {
-                  setState(() {
-                    _currentQuestionIndex = index;
-                  });
-                  // 新しいカードが表示されたタイミングでタイマーをリセット
-                  _questionStartTime = DateTime.now();
-                },
+                    );
+                  },
+                  itemChanged: (SwipeItem item, int index) {
+                    setState(() {
+                      _currentQuestionIndex = index;
+                    });
+                    // 新しいカードが表示されたタイミングでタイマーをリセット
+                    _questionStartTime = DateTime.now();
+                  },
+                ),
               ),
             ),
           ),

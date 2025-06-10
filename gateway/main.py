@@ -182,7 +182,7 @@ def generate_summary_and_title(topic, swipes_text):
 
 ### 詳細な分析
 + （ここに具体的な願いや思考に関する分析を箇条書きで記述）
-+ （ここには、特に反応に時間がかかった質問など、気になった回答とその考察を記述）
++ （会話履歴に「特に迷いが見られました」と記載のある回答は、ユーザーがためらいや葛藤を抱えている可能性があります。その点を中心に、なぜ迷ったのかを深く考察してください）
 
 ### 総括
 ここに全体をまとめた結論や、次へのアドバイスを記述します。
@@ -331,12 +331,12 @@ def post_summary(session_id):
 
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
 
-    session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
-
     try:
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         session_doc = session_doc_ref.get()
         if not session_doc.exists:
             return jsonify({'error': 'Session not found'}), 404
+        
         session_data = session_doc.to_dict()
         topic = session_data.get('topic', '不明なトピック')
         current_turn = session_data.get('turn', 1)
@@ -345,9 +345,15 @@ def post_summary(session_id):
         swipes_text_list = []
         for swipe in swipes_from_frontend:
             q_text = swipe.get('question_text', '不明な質問')
-            answer = swipe.get('answer', '不明な回答')
+            answer_bool = swipe.get('answer', False)
+            answer_text = "はい" if answer_bool else "いいえ"
             hesitation = swipe.get('hesitation_time', 0)
-            swipes_text_list.append(f"Q: {q_text}\nA: {answer} (ためらい: {hesitation:.2f}秒)")
+            
+            hesitation_comment = ""
+            if hesitation >= 3.0:
+                hesitation_comment = f"（回答に{hesitation:.1f}秒かかっており、特に迷いが見られました）"
+
+            swipes_text_list.append(f"Q: {q_text}\nA: {answer_text} {hesitation_comment}")
         swipes_text = "\n".join(swipes_text_list)
         
         summary_data = generate_summary_and_title(topic, swipes_text)
@@ -384,7 +390,6 @@ def post_summary(session_id):
     except Exception as e:
         print(f"Error in post_summary: {e}")
         return jsonify({'error': 'Failed to generate summary', 'details': str(e)}), 500
-
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
