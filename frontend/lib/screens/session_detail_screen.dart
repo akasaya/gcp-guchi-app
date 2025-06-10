@@ -243,7 +243,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       }
                 },
                 // 改善点④: 残回数を表示
-                child: Text('このセッションを続けて深掘りする (残り${remaining}回)'),
+                child: Text('このセッションを続けて深掘りする (残り$remaining回)'),
               ),
             ),
           );
