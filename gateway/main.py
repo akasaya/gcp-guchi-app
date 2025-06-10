@@ -12,51 +12,64 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 from google.oauth2 import service_account
 
-# .envファイルのパスを明示的に指定して読み込む
-dotenv_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=dotenv_path)
+# --- GCP & Firebase 初期化 ---
 
+# Cloud Runで実行されているかどうかを判定
+IS_PRODUCTION = 'K_SERVICE' in os.environ
 
-# --- Firebase & Vertex AI 初期化 (変更なし) ---
+# 認証情報とプロジェクトIDを準備
+gcp_project_id = None
+gcp_credentials = None
+
 try:
-    firebase_project_id = os.getenv('FIREBASE_PROJECT_ID')
-    firebase_credentials_path_str = os.getenv('FIREBASE_CREDENTIALS_PATH')
-    if not firebase_project_id or not firebase_credentials_path_str:
-        raise ValueError("FIREBASE_PROJECT_ID and FIREBASE_CREDENTIALS_PATH must be set in .env file")
-    
-    base_path = Path(__file__).parent
-    firebase_credentials_path = (base_path / firebase_credentials_path_str).resolve()
-    
-    if not firebase_credentials_path.is_file():
-         raise FileNotFoundError(f"Firebase credentials file not found at: {firebase_credentials_path}")
+    if IS_PRODUCTION:
+        # 本番環境：環境変数から認証情報(JSON文字列)とプロジェクトIDを読み込む
+        print("Initializing GCP services in Production mode...")
+        cred_json_str = os.getenv('GCP_CREDENTIALS_JSON')
+        gcp_project_id = os.getenv('GCP_PROJECT_ID')
 
-    cred = credentials.Certificate(str(firebase_credentials_path))
-    firebase_admin.initialize_app(cred, {'projectId': firebase_project_id})
+        if not cred_json_str or not gcp_project_id:
+            raise ValueError("GCP_CREDENTIALS_JSON and GCP_PROJECT_ID must be set in production.")
+        
+        cred_info = json.loads(cred_json_str)
+        gcp_credentials = service_account.Credentials.from_service_account_info(cred_info)
+    else:
+        # ローカル環境：.envから認証情報ファイルへのパスとプロジェクトIDを読み込む
+        print("Running in local mode, loading .env file...")
+        dotenv_path = Path(__file__).parent / '.env'
+        load_dotenv(dotenv_path=dotenv_path)
+
+        gcp_project_id = os.getenv('GCP_PROJECT_ID')
+        cred_path_str = os.getenv('GOOGLE_APPLICATION_CREDENTIALS') # 標準的な環境変数名を使用
+
+        if not gcp_project_id or not cred_path_str:
+             raise ValueError("GCP_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS must be set in .env for local dev.")
+        
+        base_path = Path(__file__).parent
+        credentials_path = (base_path / cred_path_str).resolve()
+        if not credentials_path.is_file():
+             raise FileNotFoundError(f"GCP credentials file not found at: {credentials_path}")
+        gcp_credentials = service_account.Credentials.from_service_account_file(str(credentials_path))
+
+    # --- 認証情報を使って各サービスを初期化 ---
+    # Firebase
+    fb_cred = credentials.Certificate(gcp_credentials.service_account_email) # ここを修正
+    firebase_admin.initialize_app(
+        credentials.Certificate(gcp_credentials.to_service_account_info()), 
+        {'projectId': gcp_project_id}
+    )
     db_firestore = firestore.client()
-    print(f"✅ Firebase Admin SDK initialized for project: {firebase_project_id}")
+    print(f"✅ Firebase Admin SDK initialized for project: {gcp_project_id}")
+
+    # Vertex AI
+    vertexai.init(project=gcp_project_id, location='asia-northeast1', credentials=gcp_credentials)
+    print(f"✅ Vertex AI initialized for project: {gcp_project_id} in asia-northeast1")
+
 except Exception as e:
     db_firestore = None
-    print(f"❌ Error initializing Firebase Admin SDK: {e}")
-
-try:
-    vertex_ai_project_id = os.getenv('VERTEX_AI_PROJECT_ID')
-    vertex_ai_credentials_path_str = os.getenv('VERTEX_AI_CREDENTIALS_PATH')
-    vertex_ai_location = os.getenv('VERTEX_AI_LOCATION', 'asia-northeast1')
-    if not vertex_ai_project_id or not vertex_ai_credentials_path_str:
-        raise ValueError("VERTEX_AI_PROJECT_ID and VERTEX_AI_CREDENTIALS_PATH must be set in .env file")
-
-    base_path = Path(__file__).parent
-    vertex_ai_credentials_path = (base_path / vertex_ai_credentials_path_str).resolve()
-    if not vertex_ai_credentials_path.is_file():
-         raise FileNotFoundError(f"Vertex AI credentials file not found at: {vertex_ai_credentials_path}")
-
-    vertex_credentials = service_account.Credentials.from_service_account_file(str(vertex_ai_credentials_path))
-    vertexai.init(project=vertex_ai_project_id, location=vertex_ai_location, credentials=vertex_credentials)
-    print(f"✅ Vertex AI initialized for project: {vertex_ai_project_id} in {vertex_ai_location}")
-except Exception as e:
-    print(f"❌ Error initializing Vertex AI: {e}")
-    pass
-
+    print(f"❌ Error during initialization: {e}")
+    if IS_PRODUCTION:
+        raise
 
 app = Flask(__name__)
 CORS(app)
