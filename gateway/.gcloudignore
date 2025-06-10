@@ -1,0 +1,18 @@
+# This file specifies files that are *not* uploaded to Google Cloud when
+# deploying. For more information, see:
+# https://cloud.google.com/sdk/gcloud/reference/topic/gcloudignore
+
+.git
+.gitignore
+
+# Python build artifacts and local environment
+__pycache__/
+*.pyc
+venv/
+.venv/
+guchiswipe.local.db
+*.db-journal
+
+# Secret files that should not be uploaded
+.env
+*.json
