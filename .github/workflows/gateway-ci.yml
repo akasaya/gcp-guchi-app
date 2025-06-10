@@ -73,7 +73,7 @@ jobs:
         docker push ${{ env.IMAGE_NAME }}:${IMAGE_TAG}
         docker push ${{ env.IMAGE_NAME }}:latest
 
-    - name: Deploy to Cloud Run
+ - name: Deploy to Cloud Run
       env:
         IMAGE_TAG: ${{ github.sha }}
       run: |-
@@ -83,6 +83,4 @@ jobs:
           --platform managed \
           --quiet \
           --allow-unauthenticated \
-          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
-          --set-secrets="GCP_CREDENTIALS_JSON=GCP_CREDENTIALS_JSON:latest" \
-          --update-env-vars="GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
+          --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }}
