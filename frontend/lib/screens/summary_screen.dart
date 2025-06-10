@@ -55,8 +55,13 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Future<void> _continueSession(String insights) async {
+Future<void> _continueSession(String insights) async {
     _showLoadingDialog('次の質問を考えています...');
+
+    // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     try {
       final result = await _apiService.continueSession(
         sessionId: widget.sessionId,
@@ -65,9 +70,9 @@ class _SummaryScreenState extends State<SummaryScreen> {
       final newQuestions = List<Map<String, dynamic>>.from(result['questions']);
       final newTurn = result['turn'] as int;
 
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      Navigator.of(context).pushReplacement(
+      // キャプチャしたnavigatorを使用
+      navigator.pop(); // ローディングダイアログを閉じる
+      navigator.pushReplacement(
         MaterialPageRoute(
           builder: (context) => SwipeScreen(
             sessionId: widget.sessionId,
@@ -77,9 +82,9 @@ class _SummaryScreenState extends State<SummaryScreen> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      // キャプチャしたnavigatorとscaffoldMessengerを使用
+      navigator.pop(); // ローディングダイアログを閉じる
+      scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('エラーが発生しました: $e')),
       );
     }
@@ -156,7 +161,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16)),
                       onPressed: () => _continueSession(insights),
-                      child: Text('さらに深掘りする (残り${remainingTurns}回)'),
+                      child: Text('さらに深掘りする (残り$remainingTurns回)'), // ${} を $ に変更
                     ),
                   const SizedBox(height: 12),
                   OutlinedButton(

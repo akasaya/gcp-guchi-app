@@ -209,6 +209,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 ),
                 onPressed: () async {
                   _showLoadingDialog();
+                  
+                  // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
+                  final navigator = Navigator.of(context);
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+                  
                    try {
                         final result = await _apiService.continueSession(
                           sessionId: widget.sessionId,
@@ -217,10 +222,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         final newQuestionsRaw = result['questions'] as List;
                         final newTurn = result['turn'] as int;
                         final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
-
-                        if (!mounted) return;
-                        Navigator.of(context).pop();
-                        Navigator.of(context).push(
+                        
+                        // キャプチャしたnavigatorを使用
+                        navigator.pop(); // ローディングダイアログを閉じる
+                        navigator.push(
                           MaterialPageRoute(
                             builder: (context) => SwipeScreen(
                               sessionId: widget.sessionId,
@@ -230,9 +235,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           ),
                         );
                       } catch (e) {
-                        if (!mounted) return;
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        // キャプチャしたnavigatorとscaffoldMessengerを使用
+                        navigator.pop(); // ローディングダイアログを閉じる
+                        scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text('エラー: $e')),
                         );
                       }
