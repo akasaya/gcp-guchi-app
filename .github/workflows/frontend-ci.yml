@@ -1,21 +1,24 @@
-name: Frontend CI
+name: Frontend CI/CD
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
   pull_request:
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
 
 jobs:
-  flutter-ci:
+  # ------ CI (ビルドとテスト) ジョブ ------
+  build_and_test:
+    name: Build & Test
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: frontend
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +26,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: master  # 適宜、使用中のFlutterバージョンに合わせてください
+          channel: 'stable' # 'master'から'stable'に変更 (推奨)
 
       - name: Install dependencies
         run: flutter pub get
@@ -33,3 +36,48 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+      - name: Build for Web
+        run: flutter build web --release
+
+      - name: Archive web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: frontend/build/web
+
+  # ------ CD (デプロイ) ジョブ ------
+  deploy_to_hosting:
+    name: Deploy to Firebase Hosting
+    needs: build_and_test # build_and_testジョブの成功が必須
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Workload Identity連携に必要
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download web build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: frontend/build/web
+
+      - name: Authenticate to Google Cloud
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # Firebase CLIの公式Actionを使ってデプロイ
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+          channelId: live
+          projectId: ${{ secrets.GCP_PROJECT_ID }}
+          entryPoint: ./frontend # actionの実行ディレクトリを指定

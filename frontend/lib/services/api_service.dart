@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'http://127.0.0.1:8080', // TODO: Replace with your actual backend URL
+    baseUrl: 'https://kokoro-himotoku-api-877175644081.asia-northeast1.run.app',
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 30),
   ));
