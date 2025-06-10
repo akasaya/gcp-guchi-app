@@ -84,4 +84,4 @@ jobs:
           --quiet \
           --allow-unauthenticated \
           --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
-          --update-env-vars="GEMINI_FLASH_NAME="gemini-2.5-flash-preview-05-20"
+          --update-env-vars='GEMINI_FLASH_NAME=gemini-2.5-flash-preview-05-20'
