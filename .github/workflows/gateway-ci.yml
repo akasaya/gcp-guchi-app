@@ -1,8 +1,8 @@
-name: Gateway CI/CD # 名称をCI/CDに変更するとより実態に合います
+name: Gateway CI/CD
 
 on:
   push:
-    branches: [ main ] # mainブランチにプッシュされた時のみデプロイを実行
+    branches: [ main ]
     paths:
       - 'gateway/**'
       - '.github/workflows/gateway-ci.yml'
@@ -12,15 +12,16 @@ on:
       - 'gateway/**'
       - '.github/workflows/gateway-ci.yml'
 
+# --- ワークフロー全体で使う環境変数を定義 ---
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_REGION: ${{ secrets.GCP_REGION }} # 例: us-central1
-  CLOUD_RUN_SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE_NAME }} # 例: guchi-gateway
-  ARTIFACT_REGISTRY_REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPOSITORY }} # 例: guchi-app-images
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  CLOUD_RUN_SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE_NAME }}
+  ARTIFACT_REGISTRY_REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPOSITORY }}
   IMAGE_NAME: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPOSITORY }}/${{ secrets.CLOUD_RUN_SERVICE_NAME }}
 
 jobs:
-  gateway-test: # ジョブ名を gateway-test から test に変更すると deploy ジョブの needs と合わせやすい
+  gateway-test:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,23 +31,18 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10' # Dockerfile内のPythonバージョンと合わせるのが理想
+        python-version: '3.10'
     - name: Install dependencies
       run: pip install -r requirements.txt
     - name: Run Lint (flake8)
       run: |
         pip install flake8
         flake8 . --exclude=venv,.venv,__pycache__ --count --select=E9,F63,F7,F82 --show-source --statistics
-    - name: Check if Flask app runs # Pythonファイルのコンパイルチェックは限定的。可能なら簡単なテストを実行する
+    - name: Check if Flask app runs
       run: python -m py_compile main.py
-      # pytest を使う場合は以下のようなステップを追加
-      # - name: Test with pytest
-      #   run: |
-      #     pip install pytest
-      #     pytest
 
   deploy:
-    needs: gateway-test # gateway-test ジョブが成功した場合のみ実行 (ジョブ名注意)
+    needs: gateway-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -65,15 +61,13 @@ jobs:
 
     - name: Set up Cloud SDK
       uses: 'google-github-actions/setup-gcloud@v2'
-      # with:
-      #   project_id: ${{ secrets.GCP_PROJECT_ID }} # ここでプロジェクトIDを指定しても良い
 
     - name: Configure Docker
       run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
     - name: Build and push Docker image
       env:
-        IMAGE_TAG: ${{ github.sha }} # コミットSHAをタグとして使用
+        IMAGE_TAG: ${{ github.sha }}
       run: |-
         docker build -t ${{ env.IMAGE_NAME }}:${IMAGE_TAG} -t ${{ env.IMAGE_NAME }}:latest ./gateway
         docker push ${{ env.IMAGE_NAME }}:${IMAGE_TAG}
@@ -89,11 +83,5 @@ jobs:
           --platform managed \
           --quiet \
           --allow-unauthenticated \
-          --update-env-vars="PROJECT_ID=${{ env.GCP_PROJECT_ID }},REGION=${{ env.GCP_REGION }},DEFAULT_RESOURCE_ID=${{ secrets.DEFAULT_RESOURCE_ID_FOR_RUN }}"
-      # --service-account=<Cloud Runが使用するサービスアカウントのメール> 
-      # .env ファイルの内容をCloud Runの環境変数として設定する必要がある
-     
-      # GOOGLE_APPLICATION_CREDENTIALS はCloud Runでは通常不要（サービスアカウントを指定するため）
-      # ただし、Cloud Runサービスがデフォルト以外のSAを使う場合、そのSAにVertex AI Userロールなどが必要
-      # シークレットはSecret Managerに保存し、--set-secretsでマウントするのがベストプラクティス
-      # --set-secrets="DEFAULT_RESOURCE_ID=your-secret-id:latest"
+          --set-secrets="GCP_CREDENTIALS_JSON=GCP_CREDENTIALS_JSON:latest" \
+          --update-env-vars="GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
