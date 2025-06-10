@@ -20,7 +20,7 @@ try:
     
     # 初期化されたアプリからプロジェクトIDを取得
     options = firebase_admin.get_app().options
-    project_id = options['projectId']
+    project_id = app_instance.project_id
     print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
     # Vertex AIを初期化
