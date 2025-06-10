@@ -26,7 +26,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable' # 'master'から'stable'に変更 (推奨)
+          flutter-version: '3.33.0-1.0.pre.139' # 'stable'から具体的なバージョン指定に変更
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Install dependencies
         run: flutter pub get
