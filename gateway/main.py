@@ -19,7 +19,7 @@ try:
     db_firestore = firestore.client()
     
     # 初期化されたアプリからプロジェクトIDを取得
-    options = firebase_admin.get_app().options
+    app_instance = firebase_admin.get_app()
     project_id = app_instance.project_id
     print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
