@@ -67,22 +67,17 @@ jobs:
           path: frontend/build/web
 
       - name: Authenticate to Google Cloud
-        id: auth # ★ステップにIDを追加
         uses: 'google-github-actions/auth@v2'
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          # ★GCPサービスアカウントキーをファイルとして出力する
-          create_credentials_file: true 
 
       # Firebase CLIの公式Actionを使ってデプロイ
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          # ★環境変数に認証情報ファイルのパスを設定する
-          entryPoint: ./frontend
-          projectId: ${{ secrets.GCP_PROJECT_ID }}
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}'
           channelId: live
-        env:
-          # ★この環境変数が重要
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+          projectId: ${{ secrets.GCP_PROJECT_ID }}
+          entryPoint: ./frontend
