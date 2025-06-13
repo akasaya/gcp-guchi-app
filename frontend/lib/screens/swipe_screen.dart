@@ -36,9 +36,10 @@ class _SwipeScreenState extends State<SwipeScreen> {
       _swipeItems.add(
         SwipeItem(
           content: questionData,
-          likeAction: () => _onSwipe('yes', questionData, i),
-          nopeAction: () => _onSwipe('no', questionData, i),
-          // onSlideUpdate: (SlideRegion? region) async {}
+          // --- ↓↓↓ ここから修正 (1箇所目) ↓↓↓ ---
+          likeAction: () => _onSwipe(true, questionData, i),  // bool値の true を渡す
+          nopeAction: () => _onSwipe(false, questionData, i), // bool値の false を渡す
+          // --- ↑↑↑ ここまで修正 (1箇所目) ↑↑↑ ---
         ),
       );
     }
@@ -46,26 +47,25 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _questionStartTime = DateTime.now();
   }
 
-  void _onSwipe(String answer, Map<String, dynamic> questionData, int index) {
+  void _onSwipe(bool isYes, Map<String, dynamic> questionData, int index) {
     final hesitationTime =
         DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
 
     // /summaryエンドポイントに送信するデータにはbool値を入れる
-    _swipesDataForSummary.add({
-      'question_text': questionData['question_text'],
-      'answer': answer == 'yes', // 'yes'の場合true、'no'の場合false
-      'hesitation_time': hesitationTime,
-    });
+  _swipesDataForSummary.add({
+    'question_text': questionData['question_text'],
+    'answer': isYes, // isYes (bool値) をそのまま使う
+    'hesitation_time': hesitationTime,
+  });
 
-    // /swipeエンドポイントには互換性のためstringのまま送信
-    _apiService.recordSwipe(
-      sessionId: widget.sessionId,
-      questionId: questionData['question_id'],
-      answer: answer,
-      hesitationTime: hesitationTime,
-      swipeSpeed: 0, // speedは現在取得できないため0
-      turn: widget.turn, // 追加
-    );
+  _apiService.recordSwipe(
+    sessionId: widget.sessionId,
+    questionId: questionData['question_id'],
+    answer: isYes, // isYes (bool値) をそのまま使う
+    hesitationTime: hesitationTime,
+    swipeSpeed: 0,
+    turn: widget.turn,
+  );
   }
 
   @override

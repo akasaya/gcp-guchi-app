@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Firebase Auth をインポート
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'package:frontend/screens/home_screen.dart';
-import 'package:frontend/screens/login_screen.dart'; // LoginScreen をインポート
+import 'package:frontend/screens/login_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // <-- ★★★ この行を追加してください ★★★
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  // --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
+  runApp(
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
+  // --- ↑↑↑ ここまでが修正箇所です ↑↑↑ ---
 }
 
 class MyApp extends StatelessWidget {

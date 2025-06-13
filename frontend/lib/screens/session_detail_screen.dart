@@ -167,8 +167,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 final swipeData = swipesSnapshot.data!.docs[index].data() as Map<String, dynamic>;
                 final questionId = swipeData['question_id'] as String;
                 final questionText = questionsMap[questionId] ?? '質問の読み込みに失敗';
-                final answer = swipeData['answer'] == 'yes' ? 'はい' : 'いいえ';
-                final answerColor = swipeData['answer'] == 'yes' ? Colors.green : Colors.red;
+                
+                // ★★★ ここからが修正箇所です ★★★
+                // 'answer' の値が文字列の 'yes' ではなく、ブール値の true かどうかをチェックします。
+                final bool isYes = swipeData['answer'] == true;
+                final String answer = isYes ? 'はい' : 'いいえ';
+                final Color answerColor = isYes ? Colors.green.shade700 : Colors.red.shade700;
+                // ★★★ ここまでが修正箇所です ★★★
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4.0),

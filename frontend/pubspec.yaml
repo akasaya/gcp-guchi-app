@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.0-138.0.dev
+  sdk: '>=3.8.0 <4.0.0'
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -44,6 +44,7 @@ dependencies:
 
   flutter_markdown: ^0.7.1 # ① Markdown表示用
   flutter_spinkit: ^5.2.1 # ③ ローディング表示統一用
+  graphview: ^1.2.0 #統合分析のグラフ表示用
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +57,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+dependency_overrides:
+  flame: 1.18.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

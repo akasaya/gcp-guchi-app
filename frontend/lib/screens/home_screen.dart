@@ -3,7 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart'; // ★★★ この行を追加 ★★★
+import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:frontend/screens/analysis_dashboard_screen.dart'; // <-- ★★★ この行を追加してください ★★★
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -154,6 +155,17 @@ void _startSession() async {
             ? '${user.displayName}さん、こんにちは'
             : 'ホーム'),
         actions: [
+          // --- ↓↓↓ ここからが追加箇所です ↓↓↓ ---
+          IconButton(
+            icon: const Icon(Icons.insights_rounded), // 新しいアイコン
+            tooltip: '統合分析ダッシュボード',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AnalysisDashboardScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: '過去のセッション履歴',
