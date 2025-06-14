@@ -18,7 +18,8 @@ class AnalysisDashboardScreen extends ConsumerStatefulWidget {
 class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScreen> {
   Future<model.GraphData>? _graphDataFuture;
   final Graph _graph = Graph();
-  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
+  // iterationsを200から150に減らし、計算速度を少し上げる
+  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 150);
   Map<String, model.Node> _nodeDataMap = {};
 
   // --- チャット用の状態変数 ---
@@ -259,6 +260,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     if (nodeData == null) {
       return const SizedBox.shrink();
     }
+
+    // ノードのタイプに応じて色をマッピング
     final Map<String, Color> colorMap = {
       'emotion': Colors.orange.shade300,
       'topic': Colors.blue.shade300,
@@ -266,7 +269,10 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       'issue': Colors.red.shade300,
     };
     final color = colorMap[nodeData.type] ?? Colors.grey.shade400;
-    final double visualSize = nodeData.size.toDouble().clamp(10.0, 30.0) * 4.5;
+    
+    // 表示サイズを少し小さくして、重なりを緩和する (4.5 -> 4.0)
+    final double visualSize = nodeData.size.toDouble().clamp(10.0, 30.0) * 4.0;
+
     return Tooltip(
       message: "${nodeData.id}\nタイプ: ${nodeData.type}",
       child: Container(
