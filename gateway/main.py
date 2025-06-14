@@ -264,7 +264,7 @@ def generate_summary_and_title(topic, swipes_text):
 ここに全体をまとめた結論や、次へのアドバイスを記述します。
 ```
 """
-    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
     return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA, model_name=flash_model)
 
 def generate_graph_data(all_insights_text):
@@ -272,7 +272,7 @@ def generate_graph_data(all_insights_text):
     prompt = GRAPH_ANALYSIS_PROMPT_TEMPLATE + all_insights_text
     try:
         # グラフ生成には、ユーザー指定の高性能なProモデルを使用
-        pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-001')
+        pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-2.5-pro-preview-05-06')
         data = _call_gemini_with_schema(prompt, GRAPH_SCHEMA, model_name=pro_model)
         return data
     except Exception as e:

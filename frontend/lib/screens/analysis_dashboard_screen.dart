@@ -1,197 +1,267 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:graphview/GraphView.dart'; // 新しいライブラリをインポート
+import 'package:frontend/models/graph_data.dart' as model; // graphviewのクラスと名前が衝突するのを防ぐ
+import 'package:frontend/services/api_service.dart';
+import 'package:graphview/GraphView.dart';
 
-import '../models/graph_data.dart' as app_graph;
-import '../services/api_service.dart';
-
-// Providerの定義 (変更なし)
-final graphDataProvider = FutureProvider<app_graph.GraphData>((ref) {
-  final apiService = ref.watch(apiServiceProvider);
-  return apiService.getAnalysisGraph();
-});
-
-class AnalysisDashboardScreen extends ConsumerWidget {
-  const AnalysisDashboardScreen({Key? key}) : super(key: key);
+// Riverpodと連携するため、ConsumerStatefulWidgetに変更
+class AnalysisDashboardScreen extends ConsumerStatefulWidget {
+  const AnalysisDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncGraphData = ref.watch(graphDataProvider);
+  ConsumerState<AnalysisDashboardScreen> createState() =>
+      _AnalysisDashboardScreenState();
+}
 
+class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScreen> {
+  Future<model.GraphData>? _graphDataFuture;
+  final Graph _graph = Graph();
+  // ノード同士の配置を計算するアルゴリズム
+  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
+  Map<String, model.Node> _nodeDataMap = {};
+
+
+  @override
+  void initState() {
+    super.initState();
+    // initState内でRiverpodからApiServiceのインスタンスを取得
+    final apiService = ref.read(apiServiceProvider);
+    // グラフデータを非同期で取得する処理を開始
+    _graphDataFuture = _fetchAndBuildGraph(apiService);
+  }
+
+  Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
+    try {
+      final graphData = await apiService.getAnalysisGraph();
+      
+      if (!mounted) return graphData;
+
+      // グラフを再描画する前に、以前のデータをクリア
+      _graph.nodes.clear();
+      _graph.edges.clear();
+      _nodeDataMap = { for (var v in graphData.nodes) v.id: v };
+
+      // APIから取得したノードデータを、graphview用のNodeに変換
+      final Map<String, Node> nodesForGraphView = {};
+      for (var nodeData in graphData.nodes) {
+        nodesForGraphView[nodeData.id] = Node.Id(nodeData.id);
+        _graph.addNode(nodesForGraphView[nodeData.id]!);
+      }
+
+      // APIから取得したエッジデータを、graphview用のEdgeに変換
+      for (var edgeData in graphData.edges) {
+        final fromNode = nodesForGraphView[edgeData.source];
+        final toNode = nodesForGraphView[edgeData.target];
+        if (fromNode != null && toNode != null) {
+          _graph.addEdge(
+            fromNode,
+            toNode,
+            paint: Paint()
+              ..color = Colors.grey.withOpacity(0.7)
+              ..strokeWidth = edgeData.weight.toDouble().clamp(1.0, 8.0), // weightで線の太さを変える
+          );
+        }
+      }
+      
+      return graphData;
+    } catch (e) {
+      // エラーが発生した場合、FutureBuilderに伝えるために再スローする
+      rethrow;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('統合分析ダッシュボード'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
-      body: Center(
-        child: asyncGraphData.when(
-          loading: () => _buildLoadingState(context),
-          error: (err, stack) => _buildErrorState(context, err, ref),
-          data: (graphData) {
-            if (graphData.nodes.isEmpty) {
-              return _buildEmptyState(context, ref);
-            }
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth > 800) {
+            return _buildWideLayout();
+          } else {
+            return _buildNarrowLayout();
+          }
+        },
+      ),
+    );
+  }
 
-            // 1. 新しいライブラリ用のGraphオブジェクトを作成
-            final graph = Graph();
-            // ★★★【コンパイルエラーの修正】★★★
-            // このライブラリのFruchtermanReingoldAlgorithmは、
-            // iterations以外のパラメータをコンストラクタで取りません。
-            // 不要なパラメータを削除しました。
-            final algorithm = FruchtermanReingoldAlgorithm(
-              iterations: 200,
-            );
-
-            // 2. Mapを使って、後からエッジを追加できるようにノードを保存
-            final Map<String, Node> nodeMap = {};
-            for (var nodeData in graphData.nodes) {
-              final node = Node.Id(nodeData.id);
-              nodeMap[nodeData.id] = node;
-              graph.addNode(node);
-            }
-
-            // 3. 保存したノードを使ってエッジを追加
-            for (var edgeData in graphData.edges) {
-              final sourceNode = nodeMap[edgeData.source];
-              final targetNode = nodeMap[edgeData.target];
-              if (sourceNode != null && targetNode != null) {
-                graph.addEdge(
-                  sourceNode,
-                  targetNode,
-                  paint: Paint()
-                    ..color = Colors.grey
-                    ..strokeWidth = edgeData.weight.clamp(1, 10).toDouble() / 2.0,
-                );
-              }
-            }
-
-            // 4. GraphViewウィジェットを返す
-            return InteractiveViewer(
-              constrained: false,
-              boundaryMargin: const EdgeInsets.all(100),
-              minScale: 0.01,
-              maxScale: 5.6,
-              child: GraphView(
-                graph: graph,
-                algorithm: algorithm,
-                paint: Paint()
-                  ..color = Colors.green
-                  ..strokeWidth = 1
-                  ..style = PaintingStyle.stroke,
-                builder: (Node node) {
-                  final nodeId = node.key!.value as String;
-                  final nodeData = graphData.nodes.firstWhere((n) => n.id == nodeId, orElse: () => graphData.nodes.first);
-                  return _buildNodeWidget(context, nodeData);
-                },
+  // FutureBuilderで非同期処理の状態を管理する
+  Widget _buildGraphViewFuture() {
+    return FutureBuilder<model.GraphData>(
+      future: _graphDataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                '分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}',
+                textAlign: TextAlign.center,
               ),
-            );
-          },
-        ),
-      ),
+            ),
+          );
+        } else if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                '分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ),
+          );
+        } else {
+          // データ取得成功時にグラフを描画
+          return _buildGraphView();
+        }
+      },
     );
   }
 
-  // ノードの見た目を定義するWidget
-  Widget _buildNodeWidget(BuildContext context, app_graph.Node nodeData) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: _getColorForNodeType(context, nodeData.type),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Text(
-        nodeData.id,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  // ノードの種類に応じて色を返すヘルパーメソッド
-  Color _getColorForNodeType(BuildContext context, String type) {
-    final colors = Theme.of(context).colorScheme;
-    switch (type) {
-      case 'topic':
-        return colors.primaryContainer;
-      case 'emotion':
-        return colors.errorContainer;
-      case 'issue':
-        return colors.secondaryContainer;
-      case 'keyword':
-        return colors.tertiaryContainer;
-      default:
-        return Colors.grey[300]!;
-    }
-  }
-  
-  // 以下、状態表示用のヘルパーWidget (変更なし)
-  Widget _buildLoadingState(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+  // ワイドスクリーン用の左右分割レイアウト
+  Widget _buildWideLayout() {
+    return Row(
       children: [
-        SpinKitFadingCube(
-          color: Theme.of(context).primaryColor,
-          size: 50.0,
-        ),
-        const SizedBox(height: 20),
-        const Text('AIによる統合分析を実行中...'),
+        Expanded(flex: 3, child: _buildGraphViewFuture()),
+        const VerticalDivider(width: 1, thickness: 1),
+        Expanded(flex: 2, child: _buildChatView()),
       ],
     );
   }
 
-  Widget _buildErrorState(BuildContext context, Object err, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
+  // ナロースクリーン用のタブ切り替えレイアウト
+  Widget _buildNarrowLayout() {
+    return DefaultTabController(
+      length: 2,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, color: Colors.redAccent, size: 60),
-          const SizedBox(height: 16),
-          Text('おっと、問題が発生しました', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          Text(err.toString().replaceAll("Exception: ", ""), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => ref.invalidate(graphDataProvider),
-            icon: const Icon(Icons.refresh),
-            label: const Text('再試行'),
+          const TabBar(
+            labelColor: Colors.black87,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.deepPurple,
+            tabs: [
+              Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
+              Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline)),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [_buildGraphViewFuture(), _buildChatView()],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.insights, size: 80, color: Theme.of(context).hintColor.withOpacity(0.5)),
-          const SizedBox(height: 20),
-          Text('分析データがありません', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text('セッションを完了すると、あなたの心の繋がりがここに可視化されます。', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => ref.invalidate(graphDataProvider),
-            icon: const Icon(Icons.refresh),
-            label: const Text('更新する'),
-          ),
-        ],
+  // グラフを描画するウィジェット
+  Widget _buildGraphView() {
+    return InteractiveViewer(
+      constrained: false,
+      boundaryMargin: const EdgeInsets.all(200),
+      minScale: 0.05,
+      maxScale: 2.5,
+      child: GraphView(
+        graph: _graph,
+        algorithm: _algorithm,
+        paint: Paint()
+          ..color = Colors.transparent
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+        builder: (Node node) {
+          String nodeId = node.key!.value as String;
+          final nodeData = _nodeDataMap[nodeId];
+          return _buildNodeWidget(nodeData);
+        },
       ),
+    );
+  }
+
+  // 個々のノードを描画するウィジェット
+  Widget _buildNodeWidget(model.Node? nodeData) {
+    if (nodeData == null) {
+      return const SizedBox.shrink();
+    }
+
+    // ノードのタイプに応じて色をマッピング
+    final Map<String, Color> colorMap = {
+      'emotion': Colors.orange.shade300,
+      'topic': Colors.blue.shade300,
+      'keyword': Colors.purple.shade200,
+      'issue': Colors.red.shade300,
+    };
+    final color = colorMap[nodeData.type] ?? Colors.grey.shade400;
+    
+    // AIが指定したsizeに基づいて、表示上のサイズを計算
+    final double visualSize = nodeData.size.toDouble().clamp(10.0, 30.0) * 4.5;
+
+    return Tooltip(
+      message: "${nodeData.id}\nタイプ: ${nodeData.type}",
+      child: Container(
+        width: visualSize,
+        height: visualSize,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              spreadRadius: 1,
+              blurRadius: 4,
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            nodeData.id,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+            overflow: TextOverflow.fade,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // チャットUI（今回は変更なし）
+  Widget _buildChatView() {
+    return Column(
+      children: [
+        const Expanded(
+          child: Center(
+            child: Text(
+              'No messages here yet',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Message',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(icon: const Icon(Icons.send), onPressed: () {}),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
