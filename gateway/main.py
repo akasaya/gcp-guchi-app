@@ -317,7 +317,7 @@ def generate_chat_response(session_summary, chat_history, user_message):
     )
     
     try:
-        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
+        flash_model = os.getenv('GEMINI_PRO_NAME', 'gemini-2.5-pro-preview-05-20')
         model = GenerativeModel(flash_model)
         
         print(f"--- Calling Gemini ({flash_model}) for chat ---")
