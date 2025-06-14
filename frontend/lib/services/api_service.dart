@@ -98,6 +98,32 @@ class ApiService {
     }
   }
 
+    /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
+  Future<String> postChatMessage({
+    required List<Map<String, String>> chatHistory,
+    required String message,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/analysis/chat',
+        data: {
+          'chat_history': chatHistory,
+          'message': message,
+        },
+      );
+      return response.data['response'];
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? 'メッセージの送信に失敗しました。';
+      print(
+          'Error posting chat message: $errorMessage, Details: ${e.response?.data?['details']}');
+      throw Exception(errorMessage);
+    } catch (e) {
+      print('An unexpected error occurred while posting chat message: $e');
+      throw Exception('予期せぬエラーが発生しました。');
+    }
+  }
+
+
   /// セッションを開始する
   Future<Map<String, dynamic>> startSession(String topic) async {
     try {

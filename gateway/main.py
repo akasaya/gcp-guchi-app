@@ -160,6 +160,31 @@ GRAPH_ANALYSIS_PROMPT_TEMPLATE = """
 【セッション記録】
 """
 
+CHAT_PROMPT_TEMPLATE = """
+あなたは、ユーザーの心理分析の専門家であり、共感力と洞察力に優れたカウンセラーです。
+ユーザーは、あなたが行った過去のセッション分析（思考の関連性を可視化したグラフ）を見ながら、自分の内面について探求しようとしています。
+
+以下の情報を元に、ユーザーからの質問やコメントに誠実に、そして洞察に満ちた応答を返してください。
+
+【ユーザーのこれまでのセッション記録の要約】
+{session_summary}
+
+【これまでのチャット履歴】
+{chat_history}
+
+【ユーザーからの新しいメッセージ】
+{user_message}
+
+【あなたの役割と応答の指針】
+- ユーザーの言葉を肯定的に受け止め、共感を示してください。
+- セッション記録の要約から具体的なキーワードや関連性を引用し、ユーザーの気づきを促してください。（例：「『仕事の悩み』と『自己肯定感』が繋がっているようですが、何か思い当たることはありますか？」）
+- 決めつけたり、断定的な言い方は避けてください。あくまでユーザー自身が答えを見つける手助けをする、という姿勢を保ってください。
+- 応答は、簡潔かつ分かりやすい言葉で、2〜3文程度でまとめてください。
+- あなた自身のことを「AI」や「モデル」とは言わず、一貫してカウンセラーとして振る舞ってください。
+
+応答はテキストのみで、前置きや説明は一切不要です。
+"""
+
 
 # ===== Gemini 呼び出しヘルパー関数 (リトライ機能付き) =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
@@ -280,6 +305,31 @@ def generate_graph_data(all_insights_text):
         traceback.print_exc()
         # On failure, return an empty graph structure to avoid frontend errors.
         return {"nodes": [], "edges": []}
+
+def generate_chat_response(session_summary, chat_history, user_message):
+    """チャットの応答を生成する"""
+    history_str = "\n".join([f"{msg['author']}: {msg['text']}" for msg in chat_history])
+    
+    prompt = CHAT_PROMPT_TEMPLATE.format(
+        session_summary=session_summary,
+        chat_history=history_str,
+        user_message=user_message
+    )
+    
+    try:
+        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
+        model = GenerativeModel(flash_model)
+        
+        print(f"--- Calling Gemini ({flash_model}) for chat ---")
+        response = model.generate_content(prompt)
+        
+        return response.text.strip()
+        
+    except Exception as e:
+        print(f"Failed to generate chat response: {e}")
+        traceback.print_exc()
+        return "申し訳ありません、現在応答できません。しばらくしてからもう一度お試しください。"
+
 
 
 # ===== API Routes =====
@@ -601,6 +651,82 @@ def continue_session(session_id):
         print(f"Error in continue_session: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
+
+def _get_all_insights_as_text(user_id: str) -> str:
+    """指定されたユーザーの全セッションのインサイトを1つのテキストに結合する。"""
+    if not db_firestore:
+        return ""
+    
+    sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions')
+    sessions_query = sessions_ref.order_by('created_at', direction=firestore.Query.DESCENDING).limit(20)
+    sessions = list(sessions_query.stream())
+    sessions.reverse()
+
+    all_insights = []
+    for session in sessions:
+        try:
+            session_data = session.to_dict()
+            if not session_data: continue
+
+            topic = str(session_data.get('topic', ''))
+            title = str(session_data.get('title', ''))
+            all_insights.append(f"--- セッション: {topic} ({title}) ---\n")
+
+            analyses_ref = session.reference.collection('analyses').order_by('created_at')
+            for analysis in analyses_ref.stream():
+                analysis_data = analysis.to_dict()
+                if analysis_data and isinstance(analysis_data.get('insights'), str):
+                    all_insights.append(analysis_data['insights'] + "\n")
+        except Exception as inner_e:
+            print(f"Skipping potentially corrupted session {session.id} for chat context due to error: {inner_e}")
+            continue
+    
+    return "".join(all_insights)
+
+
+@app.route('/analysis/chat', methods=['POST'])
+def post_chat_message():
+    # Auth check
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
+        
+        id_token = auth_header.split('Bearer ')[1]
+        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        user_id = decoded_token['uid']
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
+    except Exception as e:
+        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
+        
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body is missing'}), 400
+        
+    chat_history = data.get('chat_history', [])
+    user_message = data.get('message', '')
+    
+    if not user_message:
+        return jsonify({'error': 'message is required'}), 400
+        
+    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
+    
+    try:
+        session_summary = _get_all_insights_as_text(user_id)
+        
+        if not session_summary:
+            ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
+        else:
+            ai_response = generate_chat_response(session_summary, chat_history, user_message)
+            
+        return jsonify({'response': ai_response})
+        
+    except Exception as e:
+        print(f"Error in post_chat_message: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred while processing the chat message.", "details": str(e)}), 500
+
 
 #
 # ===== ここからが完全に書き直された、新しいコードです =====

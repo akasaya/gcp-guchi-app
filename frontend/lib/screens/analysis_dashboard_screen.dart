@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:frontend/models/graph_data.dart' as model; // graphviewのクラスと名前が衝突するのを防ぐ
+import 'package:frontend/models/graph_data.dart' as model;
 import 'package:frontend/services/api_service.dart';
 import 'package:graphview/GraphView.dart';
+import 'package:flutter_chat_ui/flutter_chat_ui.dart';
+import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
+import 'package:uuid/uuid.dart';
 
-// Riverpodと連携するため、ConsumerStatefulWidgetに変更
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
   const AnalysisDashboardScreen({super.key});
 
@@ -16,39 +18,53 @@ class AnalysisDashboardScreen extends ConsumerStatefulWidget {
 class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScreen> {
   Future<model.GraphData>? _graphDataFuture;
   final Graph _graph = Graph();
-  // ノード同士の配置を計算するアルゴリズム
   final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
   Map<String, model.Node> _nodeDataMap = {};
 
+  // --- チャット用の状態変数 ---
+  final List<types.Message> _messages = [];
+  final _user = const types.User(id: 'user');
+  final _ai = const types.User(id: 'ai', firstName: 'カウンセラー');
+  bool _isAiTyping = false;
 
   @override
   void initState() {
     super.initState();
-    // initState内でRiverpodからApiServiceのインスタンスを取得
     final apiService = ref.read(apiServiceProvider);
-    // グラフデータを非同期で取得する処理を開始
     _graphDataFuture = _fetchAndBuildGraph(apiService);
+    _addInitialChatMessage();
+  }
+  
+  void _addInitialChatMessage() {
+    // 画面を開いたときに最初のメッセージを追加
+    final initialMessage = types.TextMessage(
+      author: _ai,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      id: const Uuid().v4(),
+      text: 'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？',
+    );
+    setState(() {
+      _messages.insert(0, initialMessage);
+    });
   }
 
   Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
+    // ... (既存のグラフ取得処理、変更なし) ...
     try {
       final graphData = await apiService.getAnalysisGraph();
       
       if (!mounted) return graphData;
 
-      // グラフを再描画する前に、以前のデータをクリア
       _graph.nodes.clear();
       _graph.edges.clear();
       _nodeDataMap = { for (var v in graphData.nodes) v.id: v };
 
-      // APIから取得したノードデータを、graphview用のNodeに変換
       final Map<String, Node> nodesForGraphView = {};
       for (var nodeData in graphData.nodes) {
         nodesForGraphView[nodeData.id] = Node.Id(nodeData.id);
         _graph.addNode(nodesForGraphView[nodeData.id]!);
       }
 
-      // APIから取得したエッジデータを、graphview用のEdgeに変換
       for (var edgeData in graphData.edges) {
         final fromNode = nodesForGraphView[edgeData.source];
         final toNode = nodesForGraphView[edgeData.target];
@@ -58,20 +74,80 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             toNode,
             paint: Paint()
               ..color = Colors.grey.withOpacity(0.7)
-              ..strokeWidth = edgeData.weight.toDouble().clamp(1.0, 8.0), // weightで線の太さを変える
+              ..strokeWidth = edgeData.weight.toDouble().clamp(1.0, 8.0),
           );
         }
       }
       
       return graphData;
     } catch (e) {
-      // エラーが発生した場合、FutureBuilderに伝えるために再スローする
       rethrow;
+    }
+  }
+
+  // --- チャットメッセージ送信処理 ---
+  Future<void> _handleSendPressed(types.PartialText message) async {
+    final userMessage = types.TextMessage(
+      author: _user,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      id: const Uuid().v4(),
+      text: message.text,
+    );
+
+    setState(() {
+      _messages.insert(0, userMessage);
+      _isAiTyping = true; // AIが考え中であることを示す
+    });
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      
+      // バックエンドに送るためのチャット履歴を作成
+      final historyForApi = _messages
+          .where((m) => m is types.TextMessage)
+          .map((m) => {
+                'author': m.author.id,
+                'text': (m as types.TextMessage).text,
+              })
+          .toList()
+          .reversed // 古い順に並び替え
+          .toList();
+
+      final aiResponseText = await apiService.postChatMessage(
+        chatHistory: historyForApi,
+        message: message.text,
+      );
+
+      final aiMessage = types.TextMessage(
+        author: _ai,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        id: const Uuid().v4(),
+        text: aiResponseText,
+      );
+
+      setState(() {
+        _messages.insert(0, aiMessage);
+      });
+    } catch (e) {
+      final errorMessage = types.TextMessage(
+        author: _ai,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        id: const Uuid().v4(),
+        text: '申し訳ありません、エラーが発生しました。$e',
+      );
+      setState(() {
+        _messages.insert(0, errorMessage);
+      });
+    } finally {
+      setState(() {
+        _isAiTyping = false; // AIの応答が完了
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // ... (既存のScaffoldとLayoutBuilder、変更なし) ...
     return Scaffold(
       appBar: AppBar(
         title: const Text('統合分析ダッシュボード'),
@@ -88,7 +164,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // FutureBuilderで非同期処理の状態を管理する
+  // ... (既存の _buildGraphViewFuture, _buildWideLayout, _buildNarrowLayout, _buildGraphView, _buildNodeWidget, 変更なし) ...
   Widget _buildGraphViewFuture() {
     return FutureBuilder<model.GraphData>(
       future: _graphDataFuture,
@@ -117,14 +193,12 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             ),
           );
         } else {
-          // データ取得成功時にグラフを描画
           return _buildGraphView();
         }
       },
     );
   }
 
-  // ワイドスクリーン用の左右分割レイアウト
   Widget _buildWideLayout() {
     return Row(
       children: [
@@ -135,7 +209,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // ナロースクリーン用のタブ切り替えレイアウト
   Widget _buildNarrowLayout() {
     return DefaultTabController(
       length: 2,
@@ -160,7 +233,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // グラフを描画するウィジェット
   Widget _buildGraphView() {
     return InteractiveViewer(
       constrained: false,
@@ -183,13 +255,10 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // 個々のノードを描画するウィジェット
   Widget _buildNodeWidget(model.Node? nodeData) {
     if (nodeData == null) {
       return const SizedBox.shrink();
     }
-
-    // ノードのタイプに応じて色をマッピング
     final Map<String, Color> colorMap = {
       'emotion': Colors.orange.shade300,
       'topic': Colors.blue.shade300,
@@ -197,10 +266,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       'issue': Colors.red.shade300,
     };
     final color = colorMap[nodeData.type] ?? Colors.grey.shade400;
-    
-    // AIが指定したsizeに基づいて、表示上のサイズを計算
     final double visualSize = nodeData.size.toDouble().clamp(10.0, 30.0) * 4.5;
-
     return Tooltip(
       message: "${nodeData.id}\nタイプ: ${nodeData.type}",
       child: Container(
@@ -230,38 +296,28 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
   
-  // チャットUI（今回は変更なし）
+  // --- チャットUIのウィジェット ---
   Widget _buildChatView() {
-    return Column(
-      children: [
-        const Expanded(
-          child: Center(
-            child: Text(
-              'No messages here yet',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-        ),
-        const Divider(height: 1),
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Message',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(icon: const Icon(Icons.send), onPressed: () {}),
-            ],
-          ),
-        ),
-      ],
+    return Chat(
+      messages: _messages,
+      onSendPressed: _handleSendPressed,
+      user: _user,
+      theme: DefaultChatTheme(
+        // チャットUIの見た目をカスタマイズ
+        primaryColor: Colors.deepPurple,
+        secondaryColor: Colors.grey.shade200,
+        inputBackgroundColor: Colors.white,
+        inputTextColor: Colors.black87,
+        receivedMessageBodyTextStyle: const TextStyle(color: Colors.black87),
+      ),
+      // isTyping パラメータを typingIndicatorOptions に変更
+      typingIndicatorOptions: TypingIndicatorOptions(
+        typingUsers: _isAiTyping ? [_ai] : [],
+      ),
+      l10n: const ChatL10nEn(
+        // 入力欄のプレースホルダーテキストを日本語化
+        inputPlaceholder: 'メッセージを入力',
+      ),
     );
   }
 }
