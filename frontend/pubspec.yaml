@@ -47,7 +47,7 @@ dependencies:
   graphview: ^1.2.0 #統合分析のグラフ表示用
 
   flutter_chat_ui: ^1.6.12
-  flutter_chat_types: ^3.6.3
+  flutter_chat_types: ^3.6.2
   uuid: ^4.4.0
 
 dev_dependencies:
