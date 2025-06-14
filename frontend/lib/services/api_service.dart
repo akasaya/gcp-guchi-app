@@ -40,14 +40,12 @@ class ApiService {
             final token = await user.getIdToken(true); // トークンを強制リフレッシュ
             options.headers['Authorization'] = 'Bearer $token';
           } catch (e) {
-            print("Error getting ID token: $e");
             return handler.reject(DioException(requestOptions: options, error: e));
           }
         }
         return handler.next(options);
       },
       onError: (DioException e, handler) {
-        print("Dio Error: ${e.response?.statusCode} - ${e.message}");
         return handler.next(e);
       },
     ));
@@ -68,28 +66,12 @@ class ApiService {
 
       // 安定している .get() メソッドでリクエストを実行します
       final response = await _dio.get('/analysis/graph');
-
-      // ★★★【根本原因の修正】★★★
-      // response.dataが標準的なJSON Mapではない可能性があるため、
-      // 一度JSON文字列に変換し、再度デコードすることで、
-      // 確実に Map<String, dynamic> 形式に変換します。
-      final responseBody = response.data;
-      final Map<String, dynamic> jsonMap;
-      if (responseBody is Map) {
-        jsonMap = json.decode(json.encode(responseBody)) as Map<String, dynamic>;
-      } else if (responseBody is String) {
-        jsonMap = json.decode(responseBody) as Map<String, dynamic>;
-      } else {
-        throw Exception('Received unexpected data format from server');
-      }
+      
       return GraphData.fromJson(response.data);
     } on DioException catch (e) {
       final errorMessage = e.response?.data?['error'] ?? '分析データの取得に失敗しました。';
-      print(
-          'Error fetching graph data: $errorMessage, Details: ${e.response?.data?['details']}');
       throw Exception(errorMessage);
     } catch (e) {
-      print('An unexpected error occurred while fetching graph data: $e');
       throw Exception('予期せぬエラーが発生しました。');
     } finally {
       // 通信が成功しても失敗しても、必ず元の設定に戻します
@@ -97,6 +79,7 @@ class ApiService {
       _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
+
 
     /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
   Future<String> postChatMessage({
@@ -114,14 +97,12 @@ class ApiService {
       return response.data['response'];
     } on DioException catch (e) {
       final errorMessage = e.response?.data?['error'] ?? 'メッセージの送信に失敗しました。';
-      print(
-          'Error posting chat message: $errorMessage, Details: ${e.response?.data?['details']}');
       throw Exception(errorMessage);
     } catch (e) {
-      print('An unexpected error occurred while posting chat message: $e');
       throw Exception('予期せぬエラーが発生しました。');
     }
   }
+
 
 
   /// セッションを開始する
@@ -134,8 +115,7 @@ class ApiService {
         data: {'topic': topic},
       );
       return response.data;
-    } on DioException catch (e) {
-      print("Error starting session: ${e.message}");
+    } on DioException catch (_) {
       throw Exception('セッションの開始に失敗しました。');
     }
   }
@@ -160,8 +140,7 @@ class ApiService {
           'turn': turn,
         },
       );
-    } on DioException catch (e) {
-      print("Error recording swipe: ${e.message}");
+    } on DioException catch (_) {
       throw Exception('回答の記録に失敗しました。');
     }
   }
@@ -186,8 +165,7 @@ class ApiService {
         data: {'swipes': formattedSwipes}, // ★★★ 整形後のデータを送信 ★★★
       );
       return response.data;
-    } on DioException catch (e) {
-      print("Error posting summary: ${e.message}");
+    } on DioException catch (_) {
       throw Exception('分析結果の取得に失敗しました。');
     }
   }
@@ -203,8 +181,7 @@ class ApiService {
         data: {'insights': insights},
       );
       return response.data;
-    } on DioException catch (e) {
-      print("Error continuing session: ${e.message}");
+    } on DioException catch (_) {
       throw Exception('セッションの継続に失敗しました。');
     }
   }

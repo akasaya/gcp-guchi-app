@@ -74,7 +74,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             fromNode,
             toNode,
             paint: Paint()
-              ..color = Colors.grey.withOpacity(0.7)
+              ..color = Colors.grey.withAlpha((255 * 0.7).round())
               ..strokeWidth = edgeData.weight.toDouble().clamp(1.0, 8.0),
           );
         }
@@ -105,14 +105,15 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       
       // バックエンドに送るためのチャット履歴を作成
       final historyForApi = _messages
-          .where((m) => m is types.TextMessage)
+          .whereType<types.TextMessage>()
           .map((m) => {
                 'author': m.author.id,
-                'text': (m as types.TextMessage).text,
+                'text': m.text,
               })
           .toList()
           .reversed // 古い順に並び替え
           .toList();
+
 
       final aiResponseText = await apiService.postChatMessage(
         chatHistory: historyForApi,
@@ -278,7 +279,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
           color: color,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withAlpha((255 * 0.15).round()),
               blurRadius: 3,
             )
           ],
