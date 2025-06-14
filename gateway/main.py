@@ -7,6 +7,7 @@ import os
 import json
 import re
 import traceback
+import threading
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 import vertexai
@@ -331,7 +332,78 @@ def generate_chat_response(session_summary, chat_history, user_message):
         traceback.print_exc()
         return "申し訳ありません、現在応答できません。しばらくしてからもう一度お試しください。"
 
+def _update_graph_cache(user_id: str):
+    """
+    【新規追加】全セッション履歴からグラフデータを生成し、Firestoreにキャッシュとして保存する。
+    """
+    print(f"--- Triggered graph cache update for user: {user_id} ---")
+    try:
+        # 1. 全セッションの分析結果をテキストとして取得
+        all_insights_text = _get_all_insights_as_text(user_id)
+        if not all_insights_text:
+            print(f"No insights found for user {user_id}. Skipping cache update.")
+            return
 
+        # 2. AIを呼び出してグラフデータを生成
+        raw_graph_data = generate_graph_data(all_insights_text)
+
+        # 3. AIが生成したデータを安全な形式に整形（サニタイズ）
+        sanitized_nodes = []
+        nodes_from_ai = raw_graph_data.get('nodes', [])
+        if isinstance(nodes_from_ai, list):
+            for node in nodes_from_ai:
+                if not isinstance(node, dict) or 'id' not in node or not isinstance(node['id'], str) or not node['id'].strip():
+                    continue
+                try:
+                    size = int(float(node.get('size', 10) or 10))
+                except (ValueError, TypeError):
+                    size = 10
+                
+                sanitized_nodes.append({
+                    'id': node['id'],
+                    'type': node.get('type', 'keyword'),
+                    'size': size
+                })
+
+        valid_node_ids = {node['id'] for node in sanitized_nodes}
+        
+        sanitized_edges = []
+        edges_from_ai = raw_graph_data.get('edges', [])
+        if isinstance(edges_from_ai, list):
+            for edge in edges_from_ai:
+                if not isinstance(edge, dict):
+                    continue
+                
+                source = edge.get('source')
+                target = edge.get('target')
+
+                if source in valid_node_ids and target in valid_node_ids:
+                    try:
+                        weight = int(float(edge.get('weight', 1) or 1))
+                    except (ValueError, TypeError):
+                        weight = 1
+                    
+                    sanitized_edges.append({
+                        'source': source,
+                        'target': target,
+                        'weight': weight
+                    })
+        
+        final_graph_data = {"nodes": sanitized_nodes, "edges": sanitized_edges}
+
+        # 4. 整形したグラフデータをFirestoreのキャッシュ用ドキュメントに保存
+        cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
+        cache_doc_ref.set({
+            'data': final_graph_data,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        print(f"✅ Successfully updated graph cache for user: {user_id}")
+
+    except Exception as e:
+        # この処理はバックグラウンド的なものなので、ここでエラーが起きても
+        # メインのAPIリクエスト（/summary）は失敗させない
+        print(f"❌ Failed to update graph cache for user {user_id}: {e}")
+        traceback.print_exc()
 
 # ===== API Routes =====
 @app.route('/session/start', methods=['POST'])
@@ -543,6 +615,14 @@ def post_summary(session_id):
             session_update_data['title'] = title
         
         session_doc_ref.update(session_update_data)
+
+        # ★★★ ここからが置き換えるコードです ★★★
+        # 時間のかかるグラフキャッシュの更新を、別スレッドで非同期に実行する
+        # これにより、このAPIはAIの応答を待たずにすぐレスポンスを返せるようになります
+        print("--- Starting background thread for graph cache update... ---")
+        cache_update_thread = threading.Thread(target=_update_graph_cache, args=(user_id,))
+        cache_update_thread.start()
+        # ★★★ 置き換えここまで ★★★
         
         return jsonify({
             'title': title,
@@ -744,11 +824,10 @@ def post_chat_message():
 @app.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():
     """
-    【最終・完全修正】
-    AIが生成したデータを、フロントエンドに送る前に徹底的に検証・洗浄（サニタイズ）します。
-    これにより、データの不整合が原因でフロントエンドがクラッシュするのを完全に防ぎます。
+    【役割変更】このAPIはAIを呼び出さず、Firestoreにキャッシュされたグラフデータを読み込んで返すだけになります。
+    これにより、ダッシュボードの表示が非常に高速になります。
     """
-    # 1. 認証 (変更なし)
+    # 1. 認証
     try:
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
@@ -765,101 +844,25 @@ def get_analysis_graph():
     if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
     
     try:
-        # 2. Firestoreからセッションデータを取得 (変更なし)
-        sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions')
-        sessions_query = sessions_ref.order_by('created_at', direction=firestore.Query.DESCENDING).limit(20)
-        sessions = list(sessions_query.stream())
-        sessions.reverse()
+        # 2. Firestoreからキャッシュされたドキュメントを読み込む
+        cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
+        cache_doc = cache_doc_ref.get()
 
-        all_insights = []
-        for session in sessions:
-            try:
-                session_data = session.to_dict()
-                if not session_data: continue
-
-                topic = str(session_data.get('topic', ''))
-                title = str(session_data.get('title', ''))
-                all_insights.append(f"--- セッション: {topic} ({title}) ---\n")
-
-                analyses_ref = session.reference.collection('analyses').order_by('created_at')
-                for analysis in analyses_ref.stream():
-                    analysis_data = analysis.to_dict()
-                    if analysis_data and isinstance(analysis_data.get('insights'), str):
-                        all_insights.append(analysis_data['insights'] + "\n")
-            except Exception as inner_e:
-                print(f"Skipping potentially corrupted session {session.id} due to error: {inner_e}")
-                continue
-
-        if not all_insights:
+        if cache_doc.exists:
+            # キャッシュが存在すれば、そのデータを返す
+            print(f"--- Reading graph from cache for user: {user_id} ---")
+            return jsonify(cache_doc.to_dict().get('data', {"nodes": [], "edges": []}))
+        else:
+            # キャッシュが存在しない場合（例：初めてのユーザー）、空のグラフを返す
+            print(f"--- No graph cache found for user: {user_id}. Returning empty graph. ---")
+            # 念の為、このタイミングでもキャッシュ生成を試みる
+            _update_graph_cache(user_id)
             return jsonify({"nodes": [], "edges": []})
 
-        all_insights_text = "".join(all_insights)
-        
-        # 3. AIを呼び出してグラフデータを生成 (変更なし)
-        raw_graph_data = generate_graph_data(all_insights_text)
-        
-        # 4. 【最重要】AIが生成したデータを徹底的に洗浄・再構築する
-        sanitized_nodes = []
-        nodes_from_ai = raw_graph_data.get('nodes', [])
-        if isinstance(nodes_from_ai, list):
-            for node in nodes_from_ai:
-                if not isinstance(node, dict) or 'id' not in node:
-                    continue # 不正な形式のノードは無視
-                try:
-                    # 'size'をnull/float/strでも安全に整数に変換
-                    size = int(float(node.get('size', 10) or 10))
-                except (ValueError, TypeError):
-                    size = 10 # 変換失敗時のデフォルト値
-                
-                sanitized_nodes.append({
-                    'id': node['id'],
-                    'type': node.get('type', 'keyword'),
-                    'size': size
-                })
-
-        valid_node_ids = {node['id'] for node in sanitized_nodes}
-        
-        sanitized_edges = []
-        edges_from_ai = raw_graph_data.get('edges', [])
-        if isinstance(edges_from_ai, list):
-            for edge in edges_from_ai:
-                if not isinstance(edge, dict):
-                    continue # 不正な形式のエッジは無視
-                
-                source = edge.get('source')
-                target = edge.get('target')
-
-                # 参照整合性チェック：始点・終点が有効なノードリストに存在するか
-                if source in valid_node_ids and target in valid_node_ids:
-                    try:
-                        # 'weight'をnull/float/strでも安全に整数に変換
-                        weight = int(float(edge.get('weight', 1) or 1))
-                    except (ValueError, TypeError):
-                        weight = 1 # 変換失敗時のデフォルト値
-                    
-                    sanitized_edges.append({
-                        'source': source,
-                        'target': target,
-                        'weight': weight
-                    })
-
-        final_graph_data = {
-            "nodes": sanitized_nodes,
-            "edges": sanitized_edges
-        }
-
-        # 5. 完全に安全になったデータをフロントエンドに送信
-        print("--- Final Graph Data Sent to Frontend ---")
-        print(json.dumps(final_graph_data, indent=2, ensure_ascii=False))
-        print("-----------------------------------------")
-
-        return jsonify(final_graph_data)
-
     except Exception as e:
-        print(f"Error in get_analysis_graph: {e}")
+        print(f"Error in get_analysis_graph (reading cache): {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred creating the graph.", "details": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
