@@ -13,21 +13,16 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 
-# --- GCP & Firebase 初期化 (推奨される方法に修正) ---
+# --- GCP & Firebase 初期化 ---
 try:
     print("Initializing GCP services using Application Default Credentials...")
-    
-    # 引数なしで初期化することで、Cloud Run環境やローカルのgcloud設定から
-    # 認証情報とプロジェクトIDを自動で取得します。
     firebase_admin.initialize_app()
     db_firestore = firestore.client()
     
-    # 初期化されたアプリからプロジェクトIDを取得
     app_instance = firebase_admin.get_app()
     project_id = app_instance.project_id
     print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
-    # Vertex AIを初期化
     vertex_ai_region = os.getenv('GCP_VERTEX_AI_REGION', 'us-central1')
     vertexai.init(project=project_id, location=vertex_ai_region)
     print(f"✅ Vertex AI initialized for project: {project_id} in {vertex_ai_region}")
@@ -36,28 +31,20 @@ except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
     traceback.print_exc()
-    # 本番環境で初期化に失敗したら、起動を中止してログにエラーを残します
     if 'K_SERVICE' in os.environ:
         raise
 
 app = Flask(__name__)
-# CORS設定: Firebase Hostingからのリクエストを明示的に許可
+# --- CORS設定 ---
 prod_origin = "https://guchi-app-flutter.web.app"
-
-# 'K_SERVICE'環境変数はCloud Runで設定されるため、その有無で環境を判定
 if 'K_SERVICE' in os.environ:
-    # 本番環境では、デプロイされたWebアプリからのリクエストのみを許可
     origins = [prod_origin]
 else:
-    # ローカル開発環境では、本番サイトとローカルからのリクエストの両方を許可
-    # Flutter Webはデバッグ時にランダムなポートを使用するため、正規表現で対応
     origins = [
         prod_origin,
         re.compile(r"http://localhost:.*"),
         re.compile(r"http://127.0.0.1:.*"),
     ]
-
-# CORS設定: 上記で決定した許可リストに基づいてリクエストを許可
 CORS(app, resources={r"/*": {"origins": origins}})
 
 # ===== JSONスキーマ定義 =====
@@ -68,9 +55,7 @@ QUESTIONS_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {
-                    "question_text": {"type": "string"}
-                },
+                "properties": {"question_text": {"type": "string"}},
                 "required": ["question_text"]
             }
         }
@@ -78,17 +63,12 @@ QUESTIONS_SCHEMA = {
     "required": ["questions"]
 }
 
+# 【復活】要約生成専用のスキーマ
 SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {
-            "type": "string",
-            "description": "このセッション全体を要約する15文字程度の短いタイトル"
-        },
-        "insights": {
-            "type": "string",
-            "description": "指定されたMarkdown形式でのユーザーの心理分析レポート"
-        }
+        "title": {"type": "string", "description": "このセッション全体を要約する15文字程度の短いタイトル"},
+        "insights": {"type": "string", "description": "指定されたMarkdown形式でのユーザーの心理分析レポート"}
     },
     "required": ["title", "insights"]
 }
@@ -124,145 +104,10 @@ GRAPH_SCHEMA = {
     "required": ["nodes", "edges"]
 }
 
+# ===== プロンプトテンプレート =====
 
-GRAPH_ANALYSIS_PROMPT_TEMPLATE = """
-あなたはデータサイエンティストであり、臨床心理士でもあります。
-これから渡すテキストは、あるユーザーの複数回のカウンセリングセッション（ココロヒモトク）の記録です。
-この記録全体を分析し、ユーザーの心理状態の核となる要素（感情、悩み、トピック、重要なキーワード）を抽出し、それらの関連性を表現するグラフデータを生成してください。
-
-出力は、以下の仕様に厳密に従ったJSON形式のみとしてください。説明や前置きは一切不要です。
-
-【出力JSONの仕様】
-★★★重要: `id` は必ず日本語の単語または短いフレーズにしてください。ローマ字や英語は使用しないでください。★★★
-{
-  "nodes": [
-    {
-      "id": "string",  // ノードの名称（感情、トピック、キーワードなど）
-      "type": "string",  // ノードの種類 ('emotion', 'topic', 'keyword', 'issue')
-      "size": "integer" // ノードの重要度や出現頻度。10から30の範囲の整数。
-    }
-  ],
-  "edges": [
-    {
-      "source": "string", // エッジの始点となるノードのid
-      "target": "string", // エッジの終点となるノードのid
-      "weight": "integer"  // 関連性の強さ。1から10の範囲の整数。
-    }
-  ]
-}
-
-【分析のヒント】
-- 複数のセッションで繰り返し出現する感情や単語は重要です。sizeを大きく設定してください。
-- セッションの主題(topic)は中心的なノードとなる可能性があります。
-- AIの分析結果内（「気になった受け答え」や「根本的な問題」など）で言及されている要素は重要です。
-- 関連性の強さ(weight)は、単語が同じ文脈で出現する頻度や、因果関係が示唆されている度合いを考慮してください。
-- ノードの数は10個から20個程度に収め、ユーザーの心理状態の全体像が把握できるように要約してください。
-- `type` は 'emotion' (感情: 不安, 喜び), 'topic' (主題: 仕事, 家族), 'keyword' (その他キーワード: 自己肯定感, コミュニケーション), 'issue' (課題: 完璧主義, 依存) のいずれかに分類してください。
-
-【セッション記録】
-"""
-
-CHAT_PROMPT_TEMPLATE = """
-あなたは、ユーザーの心理分析の専門家であり、共感力と洞察力に優れたカウンセラーです。
-ユーザーは、あなたが行った過去のセッション分析（思考の関連性を可視化したグラフ）を見ながら、自分の内面について探求しようとしています。
-
-以下の情報を元に、ユーザーからの質問やコメントに誠実に、そして洞察に満ちた応答を返してください。
-
-【ユーザーのこれまでのセッション記録の要約】
-{session_summary}
-
-【これまでのチャット履歴】
-{chat_history}
-
-【ユーザーからの新しいメッセージ】
-{user_message}
-
-【あなたの役割と応答の指針】
-- ユーザーの言葉を肯定的に受け止め、共感を示してください。
-- ★★★ユーザーの質問や指示には、まず直接的かつ忠実に応答してください。その上で、カウンセラーとしての洞察を加えてください。★★★
-- セッション記録の要約から具体的なキーワードや関連性を引用し、ユーザーの気づきを促してください。（例：「『仕事の悩み』と『自己肯定感』が繋がっているようですが、何か思い当たることはありますか？」）
-- 決めつけたり、断定的な言い方は避けてください。あくまでユーザー自身が答えを見つける手助けをする、という姿勢を保ってください。
-- 応答は、簡潔かつ分かりやすい言葉で、2〜3文程度でまとめてください。
-
-応答はテキストのみで、前置きや説明は一切不要です。
-"""
-
-
-# ===== Gemini 呼び出しヘルパー関数 (リトライ機能付き) =====
-@retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
-def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict:
-    """指定されたモデルを使い、構造化出力でGeminiを呼び出し、JSONを返す。"""
-    model = GenerativeModel(model_name)
-    
-    attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
-    print(f"--- Calling Gemini ({model_name}) with schema (Attempt: {attempt_num}) ---")
-
-    response_text = ""
-    try:
-        response = model.generate_content(
-            prompt,
-            generation_config=GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
-        )
-        response_text = response.text
-        
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}')
-        if json_start != -1 and json_end != -1 and json_end > json_start:
-            cleaned_text = response_text[json_start:json_end+1]
-            return json.loads(cleaned_text)
-        
-        return json.loads(response_text)
-
-    except Exception as e:
-        print(f"Error on attempt {attempt_num} with model {model_name}: {e}")
-        print(f"--- Gemini Response Text on Error ---\n{response_text if response_text else 'Response text was empty.'}\n------------------------------------")
-        traceback.print_exc()
-        raise
-
-# ===== Gemini 呼び出しメイン関数 =====
-def generate_initial_questions(topic):
-    prompt = f"""
-あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーが選択したトピック「{topic}」について、対話を深めるための「はい」か「いいえ」で答えられる質問を5つ生成してください。
-質問は、前の質問からの流れを汲み、徐々に核心に迫るように構成してください。
-"""
-    try:
-        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-        data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model)
-        return data.get("questions", [])
-    except Exception as e:
-        print(f"Failed to generate initial questions after retries: {e}")
-        traceback.print_exc()
-        return [{"question_text": q} for q in [
-            "最近、特にストレスを感じることはありますか？", "何か新しい挑戦をしたいと思っていますか？", "自分の時間をもっと大切にしたいですか？",
-            "人間関係で何か改善したい点はありますか？", "今の生活に満足していますか？"
-        ]]
-
-def generate_follow_up_questions(insights):
-    """
-    【修正1: 予防的なバグ修正】
-    この関数では、AIを呼び出す際に必要なモデル名の指定が抜けていました。
-    将来の「深掘り」機能でエラーが発生しないように、ここで修正します。
-    """
-    prompt = f"""
-あなたは、ユーザーの悩みに寄り添う、思慮深いカウンセラーです。
-ユーザーとのこれまでの対話から、あなたは以下のような深い洞察を得ました。
-
-# あなたの分析(洞察)
-{insights}
-
-この洞察をさらに深め、ユーザーが自身の気持ちをより明確に理解できるよう、核心に迫る「はい」か「いいえ」で答えられる質問を新たに5つ生成してください。
-質問は、分析結果から浮かび上がったテーマや葛藤に直接関連するものにしてください。
-"""
-    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-    data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model)
-    return data.get("questions", [])
-
-def generate_summary_and_title(topic, swipes_text):
-    prompt = f"""
+# 【復活】要約生成専用のプロンプト
+SUMMARY_ONLY_PROMPT_TEMPLATE = """
 あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。
 ユーザーは「{topic}」というテーマについて対話しています。
 以下のユーザーとの会話履歴を分析し、必ず指示通りのJSON形式で分析レポートとタイトルを出力してください。
@@ -291,188 +136,185 @@ def generate_summary_and_title(topic, swipes_text):
 ここに全体をまとめた結論や、次へのアドバイスを記述します。
 ```
 """
-    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
+
+GRAPH_ANALYSIS_PROMPT_TEMPLATE = """
+あなたはデータサイエンティストであり、臨床心理士でもあります。
+これから渡すテキストは、あるユーザーの複数回のカウンセリングセッション（ココロヒモトク）の記録です。
+この記録全体を分析し、ユーザーの心理状態の核となる要素（感情、悩み、トピック、重要なキーワード）を抽出し、それらの関連性を表現するグラフデータを生成してください。
+出力は、以下の仕様に厳密に従ったJSON形式のみとしてください。説明や前置きは一切不要です。
+【出力JSONの仕様】
+★★★重要: `id` は必ず日本語の単語または短いフレーズにしてください。ローマ字や英語は使用しないでください。★★★
+{ "nodes": [ ... ], "edges": [ ... ] }
+【分析のヒント】
+...
+【セッション記録】
+"""
+
+CHAT_PROMPT_TEMPLATE = """
+あなたは、ユーザーの心理分析の専門家であり、共感力と洞察力に優れたカウンセラーです。
+...
+"""
+
+# ===== Gemini ヘルパー関数群 =====
+@retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict:
+    model = GenerativeModel(model_name)
+    attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
+    print(f"--- Calling Gemini ({model_name}) with schema (Attempt: {attempt_num}) ---")
+    response_text = ""
+    try:
+        response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=schema))
+        response_text = response.text
+        json_start = response_text.find('{')
+        json_end = response_text.rfind('}')
+        if json_start != -1 and json_end != -1 and json_end > json_start:
+            return json.loads(response_text[json_start:json_end+1])
+        return json.loads(response_text)
+    except Exception as e:
+        print(f"Error on attempt {attempt_num} with model {model_name}: {e}\n--- Gemini Response ---\n{response_text if response_text else 'Empty'}\n---")
+        traceback.print_exc()
+        raise
+
+def generate_initial_questions(topic):
+    prompt = f"あなたはカウンセラーです。トピック「{topic}」について、「はい」か「いいえ」で答えられる質問を5つ生成してください。"
+    try:
+        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+        data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model)
+        return data.get("questions", [])
+    except Exception as e:
+        print(f"Failed to generate initial questions: {e}")
+        return [{"question_text": "最近、特にストレスを感じることはありますか？"}] # Fallback
+
+# 【復活】深掘り質問を生成する専用の関数
+def generate_follow_up_questions(insights):
+    prompt = f"""
+あなたはカウンセラーです。以下の分析結果をさらに深める、「はい」か「いいえ」で答えられる質問を5つ生成してください。
+# 分析結果
+{insights}
+"""
+    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+    data = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model)
+    return data.get("questions", [])
+
+# 【復活】要約とタイトルのみを生成する高速な関数
+def generate_summary_only(topic, swipes_text):
+    prompt = SUMMARY_ONLY_PROMPT_TEMPLATE.format(topic=topic, swipes_text=swipes_text)
+    flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
     return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA, model_name=flash_model)
 
 def generate_graph_data(all_insights_text):
-    """全セッションのインサイトからグラフデータを生成する"""
     prompt = GRAPH_ANALYSIS_PROMPT_TEMPLATE + all_insights_text
-    try:
-        # グラフ生成には、ユーザー指定の高性能なProモデルを使用
-        pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-2.5-pro-preview-05-06')
-        data = _call_gemini_with_schema(prompt, GRAPH_SCHEMA, model_name=pro_model)
-        return data
-    except Exception as e:
-        print(f"Failed to generate graph data after retries: {e}")
-        traceback.print_exc()
-        # On failure, return an empty graph structure to avoid frontend errors.
-        return {"nodes": [], "edges": []}
+    pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    return _call_gemini_with_schema(prompt, GRAPH_SCHEMA, model_name=pro_model)
 
 def generate_chat_response(session_summary, chat_history, user_message):
-    """チャットの応答を生成する"""
     history_str = "\n".join([f"{msg['author']}: {msg['text']}" for msg in chat_history])
-    
-    prompt = CHAT_PROMPT_TEMPLATE.format(
-        session_summary=session_summary,
-        chat_history=history_str,
-        user_message=user_message
-    )
-    
-    try:
-        flash_model = os.getenv('GEMINI_PRO_NAME', 'gemini-2.5-pro-preview-05-20')
-        model = GenerativeModel(flash_model)
-        
-        print(f"--- Calling Gemini ({flash_model}) for chat ---")
-        response = model.generate_content(prompt)
-        
-        return response.text.strip()
-        
-    except Exception as e:
-        print(f"Failed to generate chat response: {e}")
-        traceback.print_exc()
-        return "申し訳ありません、現在応答できません。しばらくしてからもう一度お試しください。"
+    prompt = CHAT_PROMPT_TEMPLATE.format(session_summary=session_summary, chat_history=history_str, user_message=user_message)
+    pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    model = GenerativeModel(pro_model)
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
-def _update_graph_cache(user_id: str):
-    """
-    【新規追加】全セッション履歴からグラフデータを生成し、Firestoreにキャッシュとして保存する。
-    """
-    print(f"--- Triggered graph cache update for user: {user_id} ---")
+# --- バックグラウンド処理 ---
+
+# 【新規追加】次の質問を裏側で生成し、Firestoreに保存する関数
+def _prefetch_questions_and_save(session_id: str, user_id: str, insights_md: str, current_turn: int, max_turns: int):
+    print(f"--- Triggered question prefetch for user: {user_id}, session: {session_id}, next_turn: {current_turn + 1} ---")
+    if current_turn >= max_turns:
+        print("Max turns reached. Skipping question prefetch.")
+        return
     try:
-        # 1. 全セッションの分析結果をテキストとして取得
-        all_insights_text = _get_all_insights_as_text(user_id)
-        if not all_insights_text:
-            print(f"No insights found for user {user_id}. Skipping cache update.")
+        questions = generate_follow_up_questions(insights=insights_md)
+        if not questions:
+            print(f"⚠️ AI failed to generate prefetch questions for session {session_id}.")
             return
 
-        # 2. AIを呼び出してグラフデータを生成
-        raw_graph_data = generate_graph_data(all_insights_text)
-
-        # 3. AIが生成したデータを安全な形式に整形（サニタイズ）
-        sanitized_nodes = []
-        nodes_from_ai = raw_graph_data.get('nodes', [])
-        if isinstance(nodes_from_ai, list):
-            for node in nodes_from_ai:
-                if not isinstance(node, dict) or 'id' not in node or not isinstance(node['id'], str) or not node['id'].strip():
-                    continue
-                try:
-                    size = int(float(node.get('size', 10) or 10))
-                except (ValueError, TypeError):
-                    size = 10
-                
-                sanitized_nodes.append({
-                    'id': node['id'],
-                    'type': node.get('type', 'keyword'),
-                    'size': size
-                })
-
-        valid_node_ids = {node['id'] for node in sanitized_nodes}
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+        next_turn = current_turn + 1
+        questions_collection = session_doc_ref.collection('questions')
         
-        sanitized_edges = []
-        edges_from_ai = raw_graph_data.get('edges', [])
-        if isinstance(edges_from_ai, list):
-            for edge in edges_from_ai:
-                if not isinstance(edge, dict):
-                    continue
-                
-                source = edge.get('source')
-                target = edge.get('target')
+        last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
+        last_order = next(last_question_query, None)
+        start_order = last_order.to_dict().get('order', -1) + 1 if last_order else 0
 
-                if source in valid_node_ids and target in valid_node_ids:
-                    try:
-                        weight = int(float(edge.get('weight', 1) or 1))
-                    except (ValueError, TypeError):
-                        weight = 1
-                    
-                    sanitized_edges.append({
-                        'source': source,
-                        'target': target,
-                        'weight': weight
-                    })
-        
-        final_graph_data = {"nodes": sanitized_nodes, "edges": sanitized_edges}
-
-        # 4. 整形したグラフデータをFirestoreのキャッシュ用ドキュメントに保存
-        cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
-        cache_doc_ref.set({
-            'data': final_graph_data,
-            'updated_at': firestore.SERVER_TIMESTAMP
-        })
-        print(f"✅ Successfully updated graph cache for user: {user_id}")
-
+        batch = db_firestore.batch()
+        count = 0
+        for i, q_data in enumerate(questions):
+            if q_text := q_data.get("question_text"):
+                q_doc_ref = questions_collection.document()
+                batch.set(q_doc_ref, {'text': q_text, 'turn': next_turn, 'order': start_order + i, 'created_at': firestore.SERVER_TIMESTAMP, 'is_prefetched': True})
+                count += 1
+        batch.commit()
+        print(f"✅ Successfully prefetched and saved {count} questions for turn {next_turn}.")
     except Exception as e:
-        # この処理はバックグラウンド的なものなので、ここでエラーが起きても
-        # メインのAPIリクエスト（/summary）は失敗させない
+        print(f"❌ Failed to prefetch questions for session {session_id}: {e}")
+        traceback.print_exc()
+
+def _update_graph_cache(user_id: str):
+    print(f"--- Triggered graph cache update for user: {user_id} ---")
+    try:
+        all_insights_text = _get_all_insights_as_text(user_id)
+        if not all_insights_text: return
+        
+        raw_graph_data = generate_graph_data(all_insights_text)
+        
+        # データサニタイズ
+        nodes = raw_graph_data.get('nodes', [])
+        edges = raw_graph_data.get('edges', [])
+        sanitized_nodes = [n for n in nodes if isinstance(n, dict) and n.get('id')]
+        valid_node_ids = {n['id'] for n in sanitized_nodes}
+        sanitized_edges = [e for e in edges if isinstance(e, dict) and e.get('source') in valid_node_ids and e.get('target') in valid_node_ids]
+
+        final_graph_data = {"nodes": sanitized_nodes, "edges": sanitized_edges}
+        cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
+        cache_doc_ref.set({'data': final_graph_data, 'updated_at': firestore.SERVER_TIMESTAMP})
+        print(f"✅ Successfully updated graph cache for user: {user_id}")
+    except Exception as e:
         print(f"❌ Failed to update graph cache for user {user_id}: {e}")
         traceback.print_exc()
+
+# ===== 認証ヘルパー =====
+def _verify_token(request):
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        raise auth.InvalidIdTokenError("Authorization token is missing or invalid")
+    id_token = auth_header.split('Bearer ')[1]
+    return auth.verify_id_token(id_token, clock_skew_seconds=15)
 
 # ===== API Routes =====
 @app.route('/session/start', methods=['POST'])
 def start_session():
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-        
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
+        
+        data = request.get_json()
+        if not data or 'topic' not in data: 
+            return jsonify({'error': 'Topic is required'}), 400
+        topic = data['topic']
+
+        questions = generate_initial_questions(topic)
+        if not questions: 
+            raise Exception("AI failed to generate questions.")
+
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document()
+        session_doc_ref.set({'topic': topic, 'status': 'in_progress', 'created_at': firestore.SERVER_TIMESTAMP, 'turn': 1, 'max_turns': 3})
+        
+        questions_collection = session_doc_ref.collection('questions')
+        question_docs = []
+        for i, q_data in enumerate(questions):
+            if q_text := q_data.get("question_text"):
+                q_doc_ref = questions_collection.document()
+                q_doc_ref.set({'text': q_text, 'order': i, 'turn': 1})
+                question_docs.append({'question_id': q_doc_ref.id, 'question_text': q_text})
+        
+        if not question_docs: 
+            raise Exception("All generated questions were empty.")
+        
+        return jsonify({'session_id': session_doc_ref.id, 'questions': question_docs}), 200
     except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
         print(f"Auth Error in start_session: {e}")
-        traceback.print_exc()
         return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        print(f"Token verification failed in start_session: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
-
-    data = request.get_json()
-    if not data or 'topic' not in data:
-        return jsonify({'error': 'Topic is required in request body'}), 400
-    topic = data['topic']
-
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-
-    try:
-        questions = generate_initial_questions(topic)
-        if not questions or len(questions) < 1:
-            raise Exception("AI failed to generate sufficient questions.")
-
-        user_doc_ref = db_firestore.collection('users').document(user_id)
-        session_doc_ref = user_doc_ref.collection('sessions').document()
-        
-        session_doc_ref.set({
-            'topic': topic,
-            'status': 'in_progress',
-            'created_at': firestore.SERVER_TIMESTAMP,
-            'turn': 1,
-            'max_turns': 3,
-        })
-        session_id = session_doc_ref.id
-
-        questions_collection = session_doc_ref.collection('questions')
-        question_docs_for_frontend = []
-        for i, q_data in enumerate(questions):
-            q_text = q_data.get("question_text")
-            if q_text and q_text.strip():
-                q_doc_ref = questions_collection.document()
-                q_doc_ref.set({
-                    'text': q_text,
-                    'order': i,
-                    'turn': 1
-                })
-                question_docs_for_frontend.append({
-                    'question_id': q_doc_ref.id,
-                    'question_text': q_text
-                })
-        
-        if not question_docs_for_frontend:
-             raise Exception("All generated questions were empty.")
-
-        return jsonify({
-            'session_id': session_id,
-            'questions': question_docs_for_frontend
-        }), 200
-
     except Exception as e:
         print(f"Error in start_session: {e}")
         traceback.print_exc()
@@ -481,43 +323,25 @@ def start_session():
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        print(f"Auth Error in record_swipe: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        print(f"Token verification failed in record_swipe: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
+        
+        data = request.get_json()
+        if not data: return jsonify({'error': 'Request body is missing'}), 400
 
-    data = request.get_json()
-    if not data: return jsonify({'error': 'Request body is missing'}), 400
+        question_id = data.get('question_id')
+        answer = data.get('answer') 
+        hesitation_time = data.get('hesitation_time')
+        speed = data.get('speed')
+        turn = data.get('turn')
 
-    question_id = data.get('question_id')
-    answer = data.get('answer') 
-    hesitation_time = data.get('hesitation_time')
-    speed = data.get('speed')
-    turn = data.get('turn')
+        if not all([question_id, turn is not None]) or not isinstance(answer, bool):
+            return jsonify({'error': 'Missing or invalid type for required fields in swipe data'}), 400
 
-    if not all([question_id, turn is not None]) or not isinstance(answer, bool):
-        return jsonify({'error': 'Missing or invalid type for required fields in swipe data'}), 400
-
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-    
-    try:
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         
-        swipes_collection = session_doc_ref.collection('swipes')
-        swipes_collection.add({
+        session_doc_ref.collection('swipes').add({
             'question_id': question_id,
-            'question_ref': session_doc_ref.collection('questions').document(question_id),
             'answer': answer,
             'hesitation_time_sec': hesitation_time,
             'swipe_duration_ms': speed,
@@ -526,222 +350,134 @@ def record_swipe(session_id):
         })
         
         return jsonify({'status': 'swipe_recorded'}), 200
-
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        print(f"Auth Error in record_swipe: {e}")
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
     except Exception as e:
         print(f"Error recording swipe: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Failed to record swipe', 'details': str(e)}), 500
 
+
+# 【全面改修】タイムアウトしないように、重い処理を全てバックグラウンドに移動
 @app.route('/session/<string:session_id>/summary', methods=['POST'])
 def post_summary(session_id):
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        print(f"Auth Error in post_summary: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        print(f"Token verification failed in post_summary: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
-
-    data = request.get_json()
-    if not data or 'swipes' not in data:
-        return jsonify({'error': 'Swipes data is required in request body'}), 400
-    swipes_from_frontend = data['swipes']
-
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-
-    try:
+        data = request.get_json()
+        if not data or 'swipes' not in data: return jsonify({'error': 'Swipes data is required'}), 400
+        
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         session_doc = session_doc_ref.get()
-        if not session_doc.exists:
-            return jsonify({'error': 'Session not found'}), 404
+        if not session_doc.exists: return jsonify({'error': 'Session not found'}), 404
         
         session_data = session_doc.to_dict()
-        topic = session_data.get('topic', '不明なトピック')
+        topic = session_data.get('topic', '不明')
         current_turn = session_data.get('turn', 1)
         max_turns = session_data.get('max_turns', 3)
-
-        swipes_text_list = []
-        for swipe in swipes_from_frontend:
-            q_text = swipe.get('question_text', '不明な質問')
-            answer_bool = swipe.get('answer')
-            if not isinstance(answer_bool, bool):
-                continue
-
-            answer_text = "はい" if answer_bool else "いいえ"
-            
-            hesitation = swipe.get('hesitation_time', 0.0)
-            if not isinstance(hesitation, (int, float)):
-                hesitation = 0.0
-
-            hesitation_comment = ""
-            if hesitation >= 3.0:
-                hesitation_comment = f"（回答に{hesitation:.1f}秒かかっており、特に迷いが見られました）"
-
-            swipes_text_list.append(f"Q: {q_text}\nA: {answer_text} {hesitation_comment}")
-            
-        if not swipes_text_list:
-            return jsonify({'error': 'No valid swipe data received to generate summary.'}), 400
-
-        swipes_text = "\n".join(swipes_text_list)
         
-        summary_data = generate_summary_and_title(topic, swipes_text)
+        swipes_text = "\n".join([f"Q: {s.get('question_text')}\nA: {'はい' if s.get('answer') else 'いいえ'}" for s in data['swipes']])
+
+        # 1. 要約のみを高速に生成
+        summary_data = generate_summary_only(topic, swipes_text)
         insights_md = summary_data.get('insights')
         title = summary_data.get('title')
-        if not insights_md or not title:
-            raise Exception("AI failed to generate summary or title.")
+        if not insights_md or not title: raise Exception("AI failed to generate summary or title.")
 
-        analyses_collection = session_doc_ref.collection('analyses')
-        analyses_collection.add({
-            'turn': current_turn,
-            'insights': insights_md,
-            'created_at': firestore.SERVER_TIMESTAMP
-        })
-        
-        session_update_data = {
-            'status': 'completed',
-            'updated_at': firestore.SERVER_TIMESTAMP,
-            'latest_insights': insights_md
-        }
-        if current_turn == 1:
-            session_update_data['title'] = title
-        
-        session_doc_ref.update(session_update_data)
+        # 2. 要約をDBに保存
+        session_doc_ref.collection('analyses').add({'turn': current_turn, 'insights': insights_md, 'created_at': firestore.SERVER_TIMESTAMP})
+        update_data = {'status': 'completed', 'updated_at': firestore.SERVER_TIMESTAMP, 'latest_insights': insights_md}
+        if current_turn == 1: update_data['title'] = title
+        session_doc_ref.update(update_data)
 
-        # ★★★ ここからが置き換えるコードです ★★★
-        # 時間のかかるグラフキャッシュの更新を、別スレッドで非同期に実行する
-        # これにより、このAPIはAIの応答を待たずにすぐレスポンスを返せるようになります
-        print("--- Starting background thread for graph cache update... ---")
-        cache_update_thread = threading.Thread(target=_update_graph_cache, args=(user_id,))
-        cache_update_thread.start()
-        # ★★★ 置き換えここまで ★★★
+        # 3. 重い処理をバックグラウンドで開始
+        threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
+        threading.Thread(target=_prefetch_questions_and_save, args=(session_id, user_id, insights_md, current_turn, max_turns)).start()
+        print("--- Started background threads for graph cache and question prefetch. ---")
         
-        return jsonify({
-            'title': title,
-            'insights': insights_md,
-            'turn': current_turn,
-            'max_turns': max_turns
-        }), 200
+        # 4. すぐにレスポンスを返す
+        return jsonify({'title': title, 'insights': insights_md, 'turn': current_turn, 'max_turns': max_turns}), 200
 
     except Exception as e:
         print(f"Error in post_summary: {e}")
-        traceback.print_exc()
         return jsonify({'error': 'Failed to generate summary', 'details': str(e)}), 500
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-        
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        print(f"Auth Error in continue_session: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        print(f"Token verification failed in continue_session: {e}")
-        traceback.print_exc()
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
-
-    data = request.get_json()
-    if not data or 'insights' not in data:
-        return jsonify({'error': 'Insights are required'}), 400
-    
-    insights = data['insights']
-
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-
-    try:
+        
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         
         @firestore.transactional
-        def update_turn_in_transaction(transaction, session_ref):
-            snapshot = session_ref.get(transaction=transaction)
-            if not snapshot.exists:
-                raise Exception("Session not found in transaction")
-            
-            session_data = snapshot.to_dict()
-            current_turn = session_data.get('turn', 1)
-            max_turns = session_data.get('max_turns', 3)
-            
-            if current_turn >= max_turns:
-                raise Exception(f"Cannot continue session. Maximum turns ({max_turns}) reached.")
-
-            new_turn = current_turn + 1
-            
-            transaction.update(session_ref, {
-                'status': 'in_progress',
-                'updated_at': firestore.SERVER_TIMESTAMP,
-                'turn': new_turn
-            })
+        def update_turn(transaction, ref):
+            snapshot = ref.get(transaction=transaction)
+            if not snapshot.exists: raise Exception("Session not found")
+            data = snapshot.to_dict()
+            if data.get('turn', 1) >= data.get('max_turns', 3): raise Exception("Max turns reached.")
+            new_turn = data.get('turn', 1) + 1
+            transaction.update(ref, {'status': 'in_progress', 'turn': new_turn, 'updated_at': firestore.SERVER_TIMESTAMP})
             return new_turn
-
+        
         transaction = db_firestore.transaction()
-        new_turn = update_turn_in_transaction(transaction, session_doc_ref)
-
-        questions = generate_follow_up_questions(insights=insights)
-        if not questions or len(questions) < 1:
-            raise Exception("AI failed to generate sufficient follow-up questions.")
+        new_turn = update_turn(transaction, session_doc_ref)
 
         questions_collection = session_doc_ref.collection('questions')
+        query = questions_collection.where('turn', '==', new_turn).order_by('order')
+        question_docs = [{'question_id': doc.id, 'question_text': doc.to_dict().get('text')} for doc in query.stream()]
 
-        last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
-        last_order = -1
-        for q in last_question_query:
-            last_order = q.to_dict().get('order', -1)
-        start_order = last_order + 1
+        if not question_docs:
+            print(f"⚠️ Prefetched questions not found for turn {new_turn}. Generating and SAVING now (fallback).")
+            last_analysis_doc = next(session_doc_ref.collection('analyses').order_by('created_at', direction=firestore.Query.DESCENDING).limit(1).stream(), None)
+            if not last_analysis_doc: raise Exception("Cannot generate fallback questions: no analysis found.")
+            
+            fallback_questions = generate_follow_up_questions(last_analysis_doc.to_dict().get('insights'))
+            if not fallback_questions: raise Exception("AI failed to generate fallback questions.")
 
-        question_docs_for_frontend = []
-        for i, q_data in enumerate(questions):
-            q_text = q_data.get("question_text")
-            if q_text and q_text.strip():
-                q_doc_ref = questions_collection.document()
-                q_doc_ref.set({
-                    'text': q_text,
-                    'turn': new_turn,
-                    'order': start_order + i,
-                    'created_at': firestore.SERVER_TIMESTAMP
-                })
-                question_docs_for_frontend.append({
-                    'question_id': q_doc_ref.id,
-                    'question_text': q_text
-                })
+            # --- ここからが修正の核心部分です ---
+            # フォールバックで生成した質問も、必ずDBに保存してからユーザーに返す
+            last_question_query = questions_collection.order_by('order', direction=firestore.Query.DESCENDING).limit(1).stream()
+            last_order = next(last_question_query, None)
+            start_order = last_order.to_dict().get('order', -1) + 1 if last_order else 0
+
+            batch = db_firestore.batch()
+            for i, q_data in enumerate(fallback_questions):
+                if q_text := q_data.get("question_text"):
+                    # DBに保存するための新しいドキュメントIDを作成
+                    q_doc_ref = questions_collection.document()
+                    batch.set(q_doc_ref, {
+                        'text': q_text,
+                        'turn': new_turn,
+                        'order': start_order + i,
+                        'created_at': firestore.SERVER_TIMESTAMP,
+                        'is_prefetched': False # フォールバックで生成されたことを示す
+                    })
+                    # DBに保存するIDと同じIDを使って、フロントに返すデータを作成
+                    question_docs.append({
+                        'question_id': q_doc_ref.id,
+                        'question_text': q_text
+                    })
+            batch.commit() # DBへの保存を確定
+            print(f"✅ Saved {len(fallback_questions)} fallback questions to Firestore.")
+            # --- 修正の核心部分ここまで ---
         
-        if not question_docs_for_frontend:
-             raise Exception("All generated follow-up questions were empty.")
-
-        return jsonify({
-            'session_id': session_id,
-            'questions': question_docs_for_frontend,
-            'turn': new_turn
-        }), 200
-
+        if not question_docs: raise Exception("Failed to get any questions for the user.")
+        return jsonify({'session_id': session_id, 'questions': question_docs, 'turn': new_turn}), 200
     except Exception as e:
         print(f"Error in continue_session: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
 
+# --- 分析系API ---
+
 def _get_all_insights_as_text(user_id: str) -> str:
-    """指定されたユーザーの全セッションのインサイトを1つのテキストに結合する。"""
-    if not db_firestore:
-        return ""
+    if not db_firestore: return ""
+    sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').order_by('created_at').limit_to_last(20)
     
-    sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions')
-    sessions_query = sessions_ref.order_by('created_at', direction=firestore.Query.DESCENDING).limit(20)
-    sessions = list(sessions_query.stream())
-    sessions.reverse()
+    # ★★★ 修正点2: .stream() を .get() に変更 ★★★
+    sessions = sessions_ref.get() 
 
     all_insights = []
     for session in sessions:
@@ -759,110 +495,45 @@ def _get_all_insights_as_text(user_id: str) -> str:
                 if analysis_data and isinstance(analysis_data.get('insights'), str):
                     all_insights.append(analysis_data['insights'] + "\n")
         except Exception as inner_e:
-            print(f"Skipping potentially corrupted session {session.id} for chat context due to error: {inner_e}")
+            print(f"Skipping potentially corrupted session {session.id} for insight aggregation due to error: {inner_e}")
             continue
     
     return "".join(all_insights)
 
-
 @app.route('/analysis/chat', methods=['POST'])
 def post_chat_message():
-    # Auth check
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-        
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
+        data = request.get_json()
+        if not data or not (user_message := data.get('message')): return jsonify({'error': 'message is required'}), 400
         
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'Request body is missing'}), 400
-        
-    chat_history = data.get('chat_history', [])
-    user_message = data.get('message', '')
-    
-    if not user_message:
-        return jsonify({'error': 'message is required'}), 400
-        
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-    
-    try:
-        # RAG(Vertex AI Search)のトリガーキーワード
-        rag_keywords = ["改善案", "具体的", "どうすれば", "方法", "アクションプラン", "アドバイス"]
-        
-        # メッセージにキーワードが含まれているかチェック
-        if any(keyword in user_message for keyword in rag_keywords):
-            # 現時点ではVertex AI Searchを呼び出さず、RAGの準備ができたことを示す応答を返す
-            ai_response = "具体的な改善策についてですね。承知いたしました。現在、ご状況に合わせた専門家の知見や信頼できる情報源を探しています。この機能はまもなく利用可能になりますので、もう少々お待ちください。"
-            return jsonify({'response': ai_response})
-
         session_summary = _get_all_insights_as_text(user_id)
-        
         if not session_summary:
             ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
         else:
-            ai_response = generate_chat_response(session_summary, chat_history, user_message)
-            
+            ai_response = generate_chat_response(session_summary, data.get('chat_history', []), user_message)
         return jsonify({'response': ai_response})
-        
     except Exception as e:
         print(f"Error in post_chat_message: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal error occurred while processing the chat message.", "details": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
-
-#
-# ===== ここからが完全に書き直された、新しいコードです =====
-#
 @app.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():
-    """
-    【役割変更】このAPIはAIを呼び出さず、Firestoreにキャッシュされたグラフデータを読み込んで返すだけになります。
-    これにより、ダッシュボードの表示が非常に高速になります。
-    """
-    # 1. 認証
     try:
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
-        
-        id_token = auth_header.split('Bearer ')[1]
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=15)
+        decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
-    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
-        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
-    except Exception as e:
-        return jsonify({'error': 'Token verification failed', 'details': str(e)}), 500
-
-    if not db_firestore: return jsonify({'error': 'Firestore not available'}), 500
-    
-    try:
-        # 2. Firestoreからキャッシュされたドキュメントを読み込む
         cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
         cache_doc = cache_doc_ref.get()
-
         if cache_doc.exists:
-            # キャッシュが存在すれば、そのデータを返す
-            print(f"--- Reading graph from cache for user: {user_id} ---")
             return jsonify(cache_doc.to_dict().get('data', {"nodes": [], "edges": []}))
         else:
-            # キャッシュが存在しない場合（例：初めてのユーザー）、空のグラフを返す
-            print(f"--- No graph cache found for user: {user_id}. Returning empty graph. ---")
-            # 念の為、このタイミングでもキャッシュ生成を試みる
-            _update_graph_cache(user_id)
+            print(f"--- No graph cache for user: {user_id}. Returning empty and triggering update. ---")
+            threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
             return jsonify({"nodes": [], "edges": []})
-
     except Exception as e:
-        print(f"Error in get_analysis_graph (reading cache): {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal error occurred creating the graph.", "details": str(e)}), 500
+        print(f"Error in get_analysis_graph: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

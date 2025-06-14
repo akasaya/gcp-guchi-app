@@ -261,7 +261,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       return const SizedBox.shrink();
     }
 
-    // ノードのタイプに応じて色をマッピング
     final Map<String, Color> colorMap = {
       'emotion': Colors.orange.shade300,
       'topic': Colors.blue.shade300,
@@ -269,38 +268,34 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       'issue': Colors.red.shade300,
     };
     final color = colorMap[nodeData.type] ?? Colors.grey.shade400;
-    
-    // 表示サイズを少し小さくして、重なりを緩和する (4.5 -> 4.0)
-    final double visualSize = nodeData.size.toDouble().clamp(10.0, 30.0) * 4.0;
 
     return Tooltip(
       message: "${nodeData.id}\nタイプ: ${nodeData.type}",
       child: Container(
-        width: visualSize,
-        height: visualSize,
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(20),
           color: color,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              spreadRadius: 1,
-              blurRadius: 4,
-            ),
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 3,
+            )
           ],
         ),
-        child: Center(
-          child: Text(
-            nodeData.id,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
-            overflow: TextOverflow.fade,
+        child: Text(
+          nodeData.id,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
           ),
+          textAlign: TextAlign.center,
         ),
       ),
     );
   }
+  // ↑↑↑ 置き換えここまで ↑↑↑
   
   // --- チャットUIのウィジェット ---
   Widget _buildChatView() {
