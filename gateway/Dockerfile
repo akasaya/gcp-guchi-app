@@ -14,6 +14,10 @@ WORKDIR /app
 # まず requirements.txt だけをコピーして先にインストールすることで、
 # アプリケーションコードの変更時に毎回ライブラリを再インストールするのを防ぎ、ビルド時間を短縮できます。
 COPY requirements.txt requirements.txt
+
+# beautifulsoup4 のインストールエラーを回避するため、ビルドツールを先にアップグレード
+RUN python -m pip install --upgrade pip setuptools
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションのソースコードをコピー
