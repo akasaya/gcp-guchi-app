@@ -28,18 +28,24 @@ jobs:
         working-directory: ./gateway
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python
+
+    - name: Set up Python and cache dependencies
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-    - name: Upgrade build tools
-      run: python -m pip install --upgrade pip setuptools
+        # pipのキャッシュを有効にし、requirements.txtの内容に基づいてキャッシュを管理
+        cache: 'pip'
+        cache-dependency-path: gateway/requirements.txt
+
     - name: Install dependencies
-      run: pip install -r requirements.txt
+      # ネットワークの不安定さに備え、タイムアウトを60秒に延長
+      run: pip install -r requirements.txt --timeout=60
+
     - name: Run Lint (flake8)
       run: |
         pip install flake8
         flake8 . --exclude=venv,.venv,__pycache__ --count --select=E9,F63,F7,F82 --show-source --statistics
+
     - name: Check if Flask app runs
       run: python -m py_compile main.py
 
@@ -86,4 +92,4 @@ jobs:
           --quiet \
           --allow-unauthenticated \
           --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
-          --update-env-vars='GEMINI_FLASH_NAME=gemini-2.5-flash-preview-05-20,GCP_VERTEX_AI_REGION=us-central1,SIMILAR_CASES_DATA_STORE_ID=${{ secrets.SIMILAR_CASES_DATA_STORE_ID }},SUGGESTIONS_DATA_STORE_ID=${{ secrets.SUGGESTIONS_DATA_STORE_ID }}'
+          --update-env-vars='GEMINI_FLASH_NAME=gemini-2.5-flash-preview-05-20,GEMINI_PRO_NAME=gemini-2.5-pro-preview-05-06,GCP_VERTEX_AI_REGION=us-central1,SIMILAR_CASES_DATA_STORE_ID=${{ secrets.SIMILAR_CASES_DATA_STORE_ID }},SUGGESTIONS_DATA_STORE_ID=${{ secrets.SUGGESTIONS_DATA_STORE_ID }}'
