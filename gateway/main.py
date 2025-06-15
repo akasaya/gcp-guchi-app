@@ -293,6 +293,10 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_store_
 
     # 4. Generate final advice with LLM
     print("--- RAG: Generating final advice with Gemini... ---")
+
+    # f-string内でのバックスラッシュ使用によるSyntaxError (E999) を回避するため、先に文字列を結合
+    context_text = "\n---\n".join(relevant_chunks)
+
     prompt = f"""
 あなたは、ユーザーの心の状態を分析し、科学的根拠に基づいた客観的なアドバイスを提供するAIカウンセラーです。
 以下のユーザー分析結果と、関連する参考情報（類似ケースや具体的な改善案など）を読んで、ユーザーへの具体的で実践的なアドバイスを生成してください。
@@ -303,12 +307,12 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_store_
 
 # 参考情報 (類似ケースや改善案のヒント)
 ---
-{"\n---\n".join(relevant_chunks)}
+{context_text}
 ---
 
 # アドバイス
 """
-    pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-2.5-pro-preview-05-06')
     model = GenerativeModel(pro_model_name)
     response = model.generate_content(
         prompt,
