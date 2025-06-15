@@ -8,10 +8,16 @@ import json
 import re
 import traceback
 import threading
+import requests
+from bs4 import BeautifulSoup
+import numpy as np
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
+from vertexai.language_models import TextEmbeddingModel
+from google.cloud import discoveryengine_v1 as discoveryengine
+
 
 # --- GCP & Firebase 初期化 ---
 try:
@@ -26,6 +32,14 @@ try:
     vertex_ai_region = os.getenv('GCP_VERTEX_AI_REGION', 'us-central1')
     vertexai.init(project=project_id, location=vertex_ai_region)
     print(f"✅ Vertex AI initialized for project: {project_id} in {vertex_ai_region}")
+
+    # RAG用設定 (2つのデータストアに対応)
+    SIMILAR_CASES_DATA_STORE_ID = os.getenv('SIMILAR_CASES_DATA_STORE_ID')
+    SUGGESTIONS_DATA_STORE_ID = os.getenv('SUGGESTIONS_DATA_STORE_ID')
+    if 'K_SERVICE' in os.environ and (not SIMILAR_CASES_DATA_STORE_ID or not SUGGESTIONS_DATA_STORE_ID):
+        print("⚠️ WARNING: One or both of SIMILAR_CASES_DATA_STORE_ID and SUGGESTIONS_DATA_STORE_ID environment variables are not set.")
+
+
 
 except Exception as e:
     db_firestore = None
@@ -213,6 +227,180 @@ def generate_chat_response(session_summary, chat_history, user_message):
     model = GenerativeModel(pro_model)
     response = model.generate_content(prompt)
     return response.text.strip()
+
+# ===== RAG (Retrieval-Augmented Generation) Helper Functions =====
+
+def _generate_rag_based_advice(query: str, project_id: str, similar_cases_store_id: str, suggestions_store_id: str):
+    """
+    Executes the RAG pipeline to generate advice, using two separate data stores.
+    """
+    all_urls = set()
+
+    # 1a. Search for similar cases
+    if similar_cases_store_id:
+        print(f"--- RAG: Searching for similar cases in '{similar_cases_store_id}'---")
+        case_urls = _search_with_vertex_ai_search(
+            project_id=project_id,
+            location="global",
+            engine_id=similar_cases_store_id,
+            query=query
+        )
+        all_urls.update(case_urls)
+
+    # 1b. Search for suggestions
+    if suggestions_store_id:
+        print(f"--- RAG: Searching for suggestions in '{suggestions_store_id}' ---")
+        suggestion_urls = _search_with_vertex_ai_search(
+            project_id=project_id,
+            location="global",
+            engine_id=suggestions_store_id,
+            query=query
+        )
+        all_urls.update(suggestion_urls)
+
+    if not all_urls:
+        print("⚠️ RAG: No relevant URLs found from any data store.")
+        return "関連する外部情報を見つけることができませんでした。あなたの分析結果に基づくと、まずはご自身の感情を認識し、受け入れることから始めるのが良いかもしれません。"
+    
+    urls_to_process = list(all_urls)
+
+    # 2. Scrape and chunk documents
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+    
+    all_chunks = []
+    print(f"--- RAG: Scraping up to 5 unique URLs: {urls_to_process[:5]} ---")
+    for url in urls_to_process[:5]:
+        try:
+            page_content = _scrape_text_from_url(url)
+            if page_content:
+                chunks = text_splitter.split_text(page_content)
+                all_chunks.extend(chunks)
+        except Exception as e:
+            print(f"❌ RAG: Failed to scrape or chunk {url}: {e}")
+
+    if not all_chunks:
+        print("⚠️ RAG: Could not extract any text chunks from URLs.")
+        return "関連する外部情報を見つけましたが、内容を読み取ることができませんでした。ウェブサイトの構造が原因かもしれません。"
+
+    # 3. Find relevant chunks using vector search
+    print(f"--- RAG: Finding relevant chunks from {len(all_chunks)} total chunks... ---")
+    relevant_chunks = _find_relevant_chunks(query, all_chunks)
+
+    if not relevant_chunks:
+        print("⚠️ RAG: No relevant chunks found after vector search.")
+        return "関連情報の中から、あなたの状況に特に合致する部分を見つけ出すことができませんでした。もう少し対話を続けると、より的確な情報が見つかるかもしれません。"
+
+    # 4. Generate final advice with LLM
+    print("--- RAG: Generating final advice with Gemini... ---")
+    prompt = f"""
+あなたは、ユーザーの心の状態を分析し、科学的根拠に基づいた客観的なアドバイスを提供するAIカウンセラーです。
+以下のユーザー分析結果と、関連する参考情報（類似ケースや具体的な改善案など）を読んで、ユーザーへの具体的で実践的なアドバイスを生成してください。
+アドバイスは、ユーザーが次の一歩を踏み出せるように、優しく、共感的で、肯定的なトーンで記述してください。Markdown形式で出力してください。
+
+# ユーザー分析結果
+{query}
+
+# 参考情報 (類似ケースや改善案のヒント)
+---
+{"\n---\n".join(relevant_chunks)}
+---
+
+# アドバイス
+"""
+    pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    model = GenerativeModel(pro_model_name)
+    response = model.generate_content(
+        prompt,
+        generation_config=GenerationConfig(temperature=0.7)
+    )
+
+    return response.text
+
+def _search_with_vertex_ai_search(project_id: str, location: str, engine_id: str, query: str) -> list[str]:
+    """
+    Searches for documents using Vertex AI Search and returns a list of URLs.
+    """
+    if not engine_id:
+        print("❌ RAG: SEARCH_DATA_STORE_ID is not configured.")
+        return []
+
+    client = discoveryengine.SearchServiceClient()
+    serving_config = client.serving_config_path(
+        project=project_id,
+        location=location,
+        data_store=engine_id,
+        serving_config="default_config",
+    )
+
+    request = discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query=query,
+        page_size=5,
+    )
+    
+    try:
+        response = client.search(request)
+        urls = [
+            result.document.derived_struct_data.get('link')
+            for result in response.results
+            if result.document.derived_struct_data.get('link')
+        ]
+        print(f"✅ RAG: Found URLs from Vertex AI Search: {urls}")
+        return urls
+    except Exception as e:
+        print(f"❌ RAG: Vertex AI Search failed: {e}")
+        traceback.print_exc()
+        return []
+
+def _scrape_text_from_url(url: str) -> str:
+    """Scrapes text content from a given URL."""
+    print(f"--- RAG: Scraping text from {url} ---")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        response = requests.get(url, timeout=10, headers=headers)
+        response.raise_for_status()
+        response.encoding = response.apparent_encoding # For Japanese sites
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        for script_or_style in soup(["script", "style", "header", "footer", "nav", "aside"]):
+            script_or_style.decompose()
+
+        text = soup.get_text(separator=' ', strip=True)
+        return text
+    except requests.exceptions.RequestException as e:
+        print(f"❌ RAG: Error fetching URL {url}: {e}")
+        return ""
+
+
+def _find_relevant_chunks(query: str, chunks: list[str], top_k=3) -> list[str]:
+    """Finds the most relevant chunks to a query using text embeddings."""
+    model_name = "textembedding-gecko@003"
+    print(f"--- RAG: Getting embeddings using {model_name} ---")
+    model = TextEmbeddingModel.from_pretrained(model_name)
+    
+    try:
+        embeddings = model.get_embeddings([query] + chunks)
+        query_embedding = np.array(embeddings[0].values)
+        chunk_embeddings = np.array([e.values for e in embeddings[1:]])
+
+        dot_products = np.dot(chunk_embeddings, query_embedding)
+        norm_query = np.linalg.norm(query_embedding)
+        norm_chunks = np.linalg.norm(chunk_embeddings, axis=1)
+        
+        if norm_query == 0:
+            return []
+        
+        similarities = np.divide(dot_products, norm_query * norm_chunks, out=np.zeros_like(dot_products), where=norm_chunks!=0)
+
+        top_k_indices = np.argsort(similarities)[::-1][:top_k]
+        print(f"✅ RAG: Found top {top_k} relevant chunks.")
+        return [chunks[i] for i in top_k_indices]
+    except Exception as e:
+        print(f"❌ RAG: Failed to find relevant chunks: {e}")
+        traceback.print_exc()
+        return []
+
 
 # --- バックグラウンド処理 ---
 
@@ -468,6 +656,46 @@ def continue_session(session_id):
         print(f"Error in continue_session: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Failed to continue session', 'details': str(e)}), 500
+
+@app.route('/session/<string:session_id>/grounded-advice', methods=['POST'])
+def get_grounded_advice(session_id):
+    try:
+        decoded_token = _verify_token(request)
+        user_id = decoded_token['uid']
+
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+        session_doc = session_doc_ref.get()
+
+        if not session_doc.exists:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = session_doc.to_dict()
+        latest_insight = session_data.get('latest_insights')
+
+        if not latest_insight:
+            return jsonify({"error": "No insight found for this session"}), 404
+
+        advice = _generate_rag_based_advice(
+            latest_insight,
+            project_id,
+            SIMILAR_CASES_DATA_STORE_ID,
+            SUGGESTIONS_DATA_STORE_ID
+        )
+
+        session_doc_ref.update({
+            'grounded_advice': advice,
+            'grounded_advice_at': firestore.SERVER_TIMESTAMP
+        })
+
+        return jsonify({"session_id": session_id, "grounded_advice": advice})
+
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        print(f"Auth Error in get_grounded_advice: {e}")
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
+    except Exception as e:
+        print(f"Error generating grounded advice for session {session_id}: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Internal server error"}), 500
 
 # --- 分析系API ---
 
