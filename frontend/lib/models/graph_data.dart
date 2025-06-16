@@ -1,17 +1,25 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
-/// APIからのデータを安全に整数に変換するヘルパー関数
-int _parseInt(dynamic source, int defaultValue) {
+/// APIからのデータを安全に数値に変換するヘルパー関数
+double _parseDouble(dynamic source, double defaultValue) {
   if (source == null) return defaultValue;
-  if (source is int) return source;
-  if (source is double) return source.toInt();
-  return int.tryParse(source.toString()) ?? defaultValue;
+  if (source is double) return source;
+  if (source is int) return source.toDouble();
+  return double.tryParse(source.toString()) ?? defaultValue;
+}
+
+Color _colorFromHex(String hexColor) {
+  final hexCode = hexColor.replaceAll('#', '');
+  if (hexCode.length == 6) {
+    return Color(int.parse('FF$hexCode', radix: 16));
+  }
+  return Colors.grey; // デフォルト色
 }
 
 @immutable
 class GraphData {
-  final List<Node> nodes;
-  final List<Edge> edges;
+  final List<NodeData> nodes;
+  final List<EdgeData> edges;
 
   const GraphData({
     required this.nodes,
@@ -23,13 +31,12 @@ class GraphData {
     final rawEdges = json['edges'] as List<dynamic>? ?? [];
 
     final nodes = rawNodes
-        .map((nodeJson) => Node.fromJson(nodeJson as Map<String, dynamic>))
+        .map((nodeJson) => NodeData.fromJson(nodeJson as Map<String, dynamic>))
         .toList();
 
-    // 存在しないノードを指すエッジを除去するための参照整合性チェック
     final nodeIds = nodes.map((n) => n.id).toSet();
     final edges = rawEdges
-        .map((edgeJson) => Edge.fromJson(edgeJson as Map<String, dynamic>))
+        .map((edgeJson) => EdgeData.fromJson(edgeJson as Map<String, dynamic>))
         .where((edge) => nodeIds.contains(edge.source) && nodeIds.contains(edge.target))
         .toList();
 
@@ -38,45 +45,55 @@ class GraphData {
 }
 
 @immutable
-class Node {
+class NodeData {
   final String id;
+  final String label;
   final String type;
-  final int size;
+  final int turn;
+  final double size;
+  final Color color;
 
-  const Node({
+  const NodeData({
     required this.id,
+    required this.label,
     required this.type,
+    required this.turn,
     required this.size,
+    required this.color,
   });
 
-  factory Node.fromJson(Map<String, dynamic> json) {
-    return Node(
+  factory NodeData.fromJson(Map<String, dynamic> json) {
+    return NodeData(
       id: json['id'] as String? ?? 'unknown_id',
+      label: json['label'] as String? ?? json['id'] as String? ?? '',
       type: json['type'] as String? ?? 'keyword',
-      // AIがどんな形式でsizeを返しても、安全に整数に変換します
-      size: _parseInt(json['size'], 15),
+      turn: json['turn'] as int? ?? 0,
+      size: _parseDouble(json['size'], 15.0),
+      color: _colorFromHex(json['color'] as String? ?? '#CCCCCC'),
     );
   }
 }
 
 @immutable
-class Edge {
+class EdgeData {
   final String source;
   final String target;
-  final int weight;
+  final double weight;
+  final String label;
 
-  const Edge({
+  const EdgeData({
     required this.source,
     required this.target,
     required this.weight,
+    required this.label,
   });
 
-  factory Edge.fromJson(Map<String, dynamic> json) {
-    return Edge(
+  factory EdgeData.fromJson(Map<String, dynamic> json) {
+    return EdgeData(
       source: json['source'] as String? ?? '',
       target: json['target'] as String? ?? '',
-      // AIがどんな形式でweightを返しても、安全に整数に変換します
-      weight: _parseInt(json['weight'], 1),
+      weight: _parseDouble(json['weight'], 1.0),
+      label: json['label'] as String? ?? '',
     );
   }
 }

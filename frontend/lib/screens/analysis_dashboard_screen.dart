@@ -18,14 +18,11 @@ class AnalysisDashboardScreen extends ConsumerStatefulWidget {
 class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScreen> {
   Future<model.GraphData>? _graphDataFuture;
   final Graph _graph = Graph();
-  // iterationsを200から150に減らし、計算速度を少し上げる
-  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 150);
-  Map<String, model.Node> _nodeDataMap = {};
-
-  // --- チャット用の状態変数 ---
+  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
+  Map<String, model.NodeData> _nodeDataMap = {};
   final List<types.Message> _messages = [];
   final _user = const types.User(id: 'user');
-  final _ai = const types.User(id: 'ai', firstName: 'カウンセラー');
+  final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
   bool _isAiTyping = false;
 
   @override
@@ -34,10 +31,11 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     final apiService = ref.read(apiServiceProvider);
     _graphDataFuture = _fetchAndBuildGraph(apiService);
     _addInitialChatMessage();
+
+    // SugiyamaConfigurationの関連コードは不要になったため削除
   }
-  
+
   void _addInitialChatMessage() {
-    // 画面を開いたときに最初のメッセージを追加
     final initialMessage = types.TextMessage(
       author: _ai,
       createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -50,10 +48,9 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   }
 
   Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
-    // ... (既存のグラフ取得処理、変更なし) ...
     try {
       final graphData = await apiService.getAnalysisGraph();
-      
+
       if (!mounted) return graphData;
 
       _graph.nodes.clear();
@@ -74,19 +71,17 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             fromNode,
             toNode,
             paint: Paint()
-              ..color = Colors.grey.withAlpha((255 * 0.7).round())
-              ..strokeWidth = edgeData.weight.toDouble().clamp(1.0, 8.0),
+              ..color = Colors.grey.withAlpha(150) // 少し薄くして見やすくする
+              ..strokeWidth = edgeData.weight.clamp(0.5, 4.0), // 線を少し細くする
           );
         }
       }
-      
       return graphData;
     } catch (e) {
       rethrow;
     }
   }
 
-  // --- チャットメッセージ送信処理 ---
   Future<void> _handleSendPressed(types.PartialText message) async {
     final userMessage = types.TextMessage(
       author: _user,
@@ -97,23 +92,21 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
 
     setState(() {
       _messages.insert(0, userMessage);
-      _isAiTyping = true; // AIが考え中であることを示す
+      _isAiTyping = true;
     });
 
     try {
       final apiService = ref.read(apiServiceProvider);
-      
-      // バックエンドに送るためのチャット履歴を作成
       final historyForApi = _messages
           .whereType<types.TextMessage>()
           .map((m) => {
+                // バックエンドの仕様に合わせてキーを元に戻します
                 'author': m.author.id,
                 'text': m.text,
               })
           .toList()
-          .reversed // 古い順に並び替え
+          .reversed
           .toList();
-
 
       final aiResponseText = await apiService.postChatMessage(
         chatHistory: historyForApi,
@@ -142,14 +135,13 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       });
     } finally {
       setState(() {
-        _isAiTyping = false; // AIの応答が完了
+        _isAiTyping = false;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // ... (既存のScaffoldとLayoutBuilder、変更なし) ...
     return Scaffold(
       appBar: AppBar(
         title: const Text('統合分析ダッシュボード'),
@@ -166,7 +158,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // ... (既存の _buildGraphViewFuture, _buildWideLayout, _buildNarrowLayout, _buildGraphView, _buildNodeWidget, 変更なし) ...
   Widget _buildGraphViewFuture() {
     return FutureBuilder<model.GraphData>(
       future: _graphDataFuture,
@@ -238,12 +229,12 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   Widget _buildGraphView() {
     return InteractiveViewer(
       constrained: false,
-      boundaryMargin: const EdgeInsets.all(200),
+      boundaryMargin: const EdgeInsets.all(100),
       minScale: 0.05,
       maxScale: 2.5,
       child: GraphView(
         graph: _graph,
-        algorithm: _algorithm,
+        algorithm: _algorithm, // 新しいアルゴリズムを適用
         paint: Paint()
           ..color = Colors.transparent
           ..strokeWidth = 1
@@ -257,69 +248,98 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  Widget _buildNodeWidget(model.Node? nodeData) {
+  Widget _buildNodeWidget(model.NodeData? nodeData) {
     if (nodeData == null) {
       return const SizedBox.shrink();
     }
 
+    // --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
+    // ノードの種類に応じて色を決定するマップ
     final Map<String, Color> colorMap = {
+      'topic': Colors.purple.shade400,
+      'issue': Colors.red.shade400,
       'emotion': Colors.orange.shade300,
-      'topic': Colors.blue.shade300,
-      'keyword': Colors.purple.shade200,
-      'issue': Colors.red.shade300,
+      'keyword': Colors.blueGrey.shade400,
     };
-    final color = colorMap[nodeData.type] ?? Colors.grey.shade400;
+    // マップから色を取得し、なければデフォルト色（グレー）を使用
+    final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
 
     return Tooltip(
-      message: "${nodeData.id}\nタイプ: ${nodeData.type}",
+      message: "${nodeData.label}\nタイプ: ${nodeData.type}",
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        constraints: const BoxConstraints(maxWidth: 150),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          color: color,
+          borderRadius: BorderRadius.circular(8),
+          color: nodeColor, // ★★★ 決定した色を使用 ★★★
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha((255 * 0.15).round()),
-              blurRadius: 3,
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 4,
+              offset: const Offset(1, 1),
             )
           ],
         ),
         child: Text(
-          nodeData.id,
+          nodeData.label,
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 12,
+            fontSize: 14,
           ),
           textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );
   }
-  // ↑↑↑ 置き換えここまで ↑↑↑
-  
-  // --- チャットUIのウィジェット ---
+
   Widget _buildChatView() {
-    return Chat(
-      messages: _messages,
-      onSendPressed: _handleSendPressed,
-      user: _user,
-      theme: DefaultChatTheme(
-        // チャットUIの見た目をカスタマイズ
-        primaryColor: Colors.deepPurple,
-        secondaryColor: Colors.grey.shade200,
-        inputBackgroundColor: Colors.white,
-        inputTextColor: Colors.black87,
-        receivedMessageBodyTextStyle: const TextStyle(color: Colors.black87),
-      ),
-      // isTyping パラメータを typingIndicatorOptions に変更
-      typingIndicatorOptions: TypingIndicatorOptions(
-        typingUsers: _isAiTyping ? [_ai] : [],
-      ),
-      l10n: const ChatL10nEn(
-        // 入力欄のプレースホルダーテキストを日本語化
-        inputPlaceholder: 'メッセージを入力',
-      ),
+    // --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
+    return Stack(
+      children: [
+        Chat(
+          messages: _messages,
+          onSendPressed: _handleSendPressed,
+          user: _user,
+          theme: DefaultChatTheme(
+            primaryColor: Colors.deepPurple,
+            secondaryColor: Colors.grey.shade200,
+            inputBackgroundColor: Colors.white,
+            inputTextColor: Colors.black87,
+            receivedMessageBodyTextStyle: const TextStyle(color: Colors.black87),
+          ),
+          typingIndicatorOptions: TypingIndicatorOptions(
+            typingUsers: _isAiTyping ? [_ai] : [],
+          ),
+          l10n: const ChatL10nEn(
+            inputPlaceholder: 'メッセージを入力',
+          ),
+        ),
+        // RAGを呼び出すための「改善案」ボタン
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.lightbulb_outline),
+            label: const Text('改善案を教えて'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+              shape: const StadiumBorder(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            onPressed: () {
+              // ボタンが押されたら、特定のメッセージを送信する
+              _handleSendPressed(
+                types.PartialText(text: 'RAGを使って具体的な改善案を教えてください。')
+              );
+            },
+          ),
+        )
+      ],
     );
+    // --- ↑↑↑ 追加はここまでです ↑↑↑ ---
   }
 }

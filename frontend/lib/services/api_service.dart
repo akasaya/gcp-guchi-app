@@ -54,18 +54,11 @@ class ApiService {
 
   /// 【新規追加】統合分析グラフのデータを取得する
   Future<GraphData> getAnalysisGraph() async {
-    // 現在のタイムアウト設定を一時的に保存します
-    final originalConnectTimeout = _dio.options.connectTimeout;
     final originalReceiveTimeout = _dio.options.receiveTimeout;
-
     try {
-      // このリクエストのために、タイムアウトを2分に延長します
-      _dio.options.connectTimeout = const Duration(minutes: 2);
+      // グラフ生成は時間がかかるため、このリクエストのタイムアウトを2分に延長
       _dio.options.receiveTimeout = const Duration(minutes: 2);
-
-      // 安定している .get() メソッドでリクエストを実行します
       final response = await _dio.get('/analysis/graph');
-      
       return GraphData.fromJson(response.data);
     } on DioException catch (e) {
       final errorMessage = e.response?.data?['error'] ?? '分析データの取得に失敗しました。';
@@ -73,19 +66,21 @@ class ApiService {
     } catch (e) {
       throw Exception('予期せぬエラーが発生しました。');
     } finally {
-      // 通信が成功しても失敗しても、必ず元の設定に戻します
-      _dio.options.connectTimeout = originalConnectTimeout;
+      // タイムアウト設定を元に戻す
       _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
 
 
     /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
-  Future<String> postChatMessage({
+ Future<String> postChatMessage({
     required List<Map<String, String>> chatHistory,
     required String message,
   }) async {
+    final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
+      // AIの応答は時間がかかるため、このリクエストのタイムアウトを2分に延長
+      _dio.options.receiveTimeout = const Duration(minutes: 2);
       final response = await _dio.post(
         '/analysis/chat',
         data: {
@@ -99,9 +94,11 @@ class ApiService {
       throw Exception(errorMessage);
     } catch (e) {
       throw Exception('予期せぬエラーが発生しました。');
+    } finally {
+      // タイムアウト設定を元に戻す
+      _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
-
 
 
   /// セッションを開始する
@@ -149,25 +146,31 @@ class ApiService {
     required String sessionId,
     required List<Map<String, dynamic>> swipes,
   }) async {
+    final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
-      // ★★★ フロントエンド側でデータを整形してから送信する ★★★
       final formattedSwipes = swipes.map((swipe) {
         return {
           'question_text': swipe['question_text'],
-          'answer': swipe['answer'], // bool値
+          'answer': swipe['answer'],
           'hesitation_time': swipe['hesitation_time'],
         };
       }).toList();
 
+      // AIの分析は時間がかかるため、このリクエストのタイムアウトを2分に延長
+      _dio.options.receiveTimeout = const Duration(minutes: 2);
       final response = await _dio.post(
         '/session/$sessionId/summary',
-        data: {'swipes': formattedSwipes}, // ★★★ 整形後のデータを送信 ★★★
+        data: {'swipes': formattedSwipes},
       );
       return response.data;
     } on DioException catch (_) {
       throw Exception('分析結果の取得に失敗しました。');
+    } finally {
+      // タイムアウト設定を元に戻す
+      _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
+
 
   /// 次のターンに進む
   Future<Map<String, dynamic>> continueSession({
