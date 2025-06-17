@@ -138,6 +138,16 @@ INTERNAL_CONTEXT_PROMPT_TEMPLATE = """
 # 要約:
 """
 
+# ★★★ 新規追加 ★★★
+# AIが能動的に提案を行うためのキーワードリスト
+PROACTIVE_KEYWORDS = [
+    "燃え尽き", "バーンアウト", "無気力", "疲弊",
+    "キャリア", "転職", "仕事の悩み", "将来設計",
+    "対人関係", "孤独", "人間関係", "コミュニケーション",
+    "自己肯定感", "自信がない", "自分を責める",
+    "ストレス", "プレッシャー", "不安"
+]
+
 
 # ===== Gemini ヘルパー関数群 =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
@@ -734,6 +744,58 @@ def _get_graph_from_cache_or_generate(user_id: str):
     cache_doc_ref.set({'data': final_graph_data, 'updated_at': firestore.SERVER_TIMESTAMP})
     print(f"✅ Successfully generated and cached graph for user: {user_id}")
     return final_graph_data
+
+@app.route('/analysis/proactive_suggestion', methods=['GET'])
+def get_proactive_suggestion():
+    try:
+        decoded_token = _verify_token(request)
+        user_id = decoded_token['uid']
+
+        print(f"--- Checking for proactive suggestion for user {user_id} ---")
+        
+        session_summary = _get_all_insights_as_text(user_id)
+        if not session_summary:
+            return jsonify(None) # 履歴がなければ何も返さない
+
+        found_keyword = None
+        for keyword in PROACTIVE_KEYWORDS:
+            if keyword in session_summary:
+                found_keyword = keyword
+                print(f"✅ Found proactive keyword: '{found_keyword}'")
+                break
+        
+        if not found_keyword:
+            print("--- No proactive keyword found. ---")
+            return jsonify(None) # キーワードが見つからなければ何も返さない
+
+        # キーワードが見つかった場合、それに関する過去の文脈を要約
+        context_summary = _summarize_internal_context(session_summary, found_keyword)
+
+        suggestion_text = (
+            f"これまでのセッションで、特に「{found_keyword}」について触れられていることが多いようです。\n"
+            f"{context_summary}\n"
+            "よろしければ、このテーマについてもう少し深く掘り下げてみませんか？"
+        )
+
+        response_data = {
+            "initial_summary": suggestion_text,
+            "node_label": found_keyword,
+            "actions": [
+                {"id": "talk_freely", "label": "このテーマについて話す"},
+                {"id": "get_similar_cases", "label": "似た悩みの話を聞く"},
+                {"id": "get_suggestions", "label": "具体的な対策を見る"}
+            ]
+        }
+        return jsonify(response_data)
+
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        print(f"Auth Error in get_proactive_suggestion: {e}")
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
+    except Exception as e:
+        print(f"Error in get_proactive_suggestion: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred."}), 500
+
 
 # ★★★ 新規追加 ★★★
 @app.route('/chat/node_tap', methods=['POST'])

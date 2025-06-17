@@ -35,17 +35,45 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     super.initState();
     final apiService = ref.read(apiServiceProvider);
     _graphDataFuture = _fetchAndBuildGraph(apiService);
-    _addInitialChatMessage();
+  _addInitialMessage(apiService); 
   }
 
-  void _addInitialChatMessage() {
-    final initialMessage = types.TextMessage(
-      author: _ai,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      id: const Uuid().v4(),
-      text: 'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？\nグラフのキーワードをタップすると、そのテーマについて深掘りできます。',
-    );
-    setState(() => _messages.insert(0, initialMessage));
+  // ★★★ この関数を全面修正 ★★★
+  Future<void> _addInitialMessage(ApiService apiService) async {
+    // まずAIからの能動的な提案がないか確認する
+    final suggestion = await apiService.getProactiveSuggestion();
+
+    // 提案があった場合
+    if (suggestion != null && mounted) {
+      final actionMessageId = const Uuid().v4();
+      final actionMessage = types.CustomMessage(
+        author: _ai,
+        id: actionMessageId,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        metadata: {
+          'text': suggestion.initialSummary,
+          'actions': suggestion.actions.map((a) => {'id': a.id, 'label': a.label}).toList(),
+          'node_label': suggestion.nodeLabel,
+          'is_active': true,
+        },
+      );
+      setState(() {
+        _messages.insert(0, actionMessage);
+        _lastActionMessageId = actionMessageId;
+      });
+      return; // 提案を表示したので、ここで処理を終了
+    }
+
+    // 提案がなかった場合、通常の初期メッセージを表示
+    if (mounted) {
+      final initialMessage = types.TextMessage(
+        author: _ai,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        id: const Uuid().v4(),
+        text: 'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？\nグラフのキーワードをタップすると、そのテーマについて深掘りできます。',
+      );
+      setState(() => _messages.insert(0, initialMessage));
+    }
   }
 
   Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {

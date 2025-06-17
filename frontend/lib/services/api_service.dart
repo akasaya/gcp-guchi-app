@@ -73,6 +73,32 @@ class ApiService {
     }
   }
 
+  // ★★★ この関数を修正（デバッグ用のログを強化） ★★★
+  Future<NodeTapResponse?> getProactiveSuggestion() async {
+    try {
+      final response = await _dio.get('/analysis/proactive_suggestion');
+      if (response.data == null) {
+        return null; // 提案がない場合はnullを返す
+      }
+      return NodeTapResponse.fromJson(response.data);
+    } on DioException catch (e) {
+      // 提案の取得は失敗しても致命的ではないので、エラーは投げずにコンソールに出力するだけ
+      debugPrint("--- DioException in getProactiveSuggestion ---");
+      debugPrint("Type: ${e.type}");
+      debugPrint("Message: ${e.message}");
+      debugPrint("Response Status: ${e.response?.statusCode}");
+      debugPrint("Response Data: ${e.response?.data}");
+      debugPrint("---------------------------------------------");
+      return null;
+    } catch (e) {
+      debugPrint("--- General Exception in getProactiveSuggestion ---");
+      debugPrint(e.toString());
+      debugPrint("-------------------------------------------------");
+      return null;
+    }
+  }
+
+
 
     /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
     Future<ChatResponse> postChatMessage({
