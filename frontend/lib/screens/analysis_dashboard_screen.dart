@@ -81,6 +81,26 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     }
   }
 
+    void _onNodeTapped(model.NodeData nodeData) {
+    // タップされたノードに関するメッセージをAIが投稿する
+    final tapMessage = types.TextMessage(
+      author: _ai,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      id: const Uuid().v4(),
+      text: '「${nodeData.label}」についてですね。もう少し詳しくお話しいただけますか？',
+    );
+    setState(() {
+      _messages.insert(0, tapMessage);
+    });
+
+    // 画面が狭いレイアウトの場合、チャットタブに自動的に切り替える
+    if (MediaQuery.of(context).size.width <= 800) {
+      // DefaultTabControllerを取得してタブを切り替える
+      final controller = DefaultTabController.of(context);
+      controller.animateTo(1);
+    }
+  }
+
   Future<void> _handleSendPressed(types.PartialText message) async {
     final userMessage = types.TextMessage(
       author: _user,
@@ -291,22 +311,27 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       'keyword': Colors.blueGrey.shade400,
     };
     final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
-    return Tooltip(
-      message: "${nodeData.label}\nタイプ: ${nodeData.type}",
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        constraints: const BoxConstraints(maxWidth: 150),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: nodeColor,
-          boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))],
-        ),
-        child: Text(
-          nodeData.label,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+
+    // タップを検知するためにGestureDetectorでラップする
+    return GestureDetector(
+      onTap: () => _onNodeTapped(nodeData),
+      child: Tooltip(
+        message: "${nodeData.label}\nタイプ: ${nodeData.type}",
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          constraints: const BoxConstraints(maxWidth: 150),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: nodeColor,
+            boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))],
+          ),
+          child: Text(
+            nodeData.label,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
