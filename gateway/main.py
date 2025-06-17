@@ -125,6 +125,19 @@ CHAT_PROMPT_TEMPLATE = """
 {user_message}
 あなたの応答:
 """
+# ★★★ 新規追加 ★★★
+INTERNAL_CONTEXT_PROMPT_TEMPLATE = """
+あなたは、ユーザーの過去のカウンセリング記録を要約するアシスタントです。
+以下のセッション記録全体から、特定のキーワード「{keyword}」に関連する記述や、そこから推測されるユーザーの感情や葛藤を抜き出し、1〜2文の非常に簡潔な要約を作成してください。
+要約は、ユーザーに「以前、この件についてこのようにお話しされていましたね」と自然に語りかける形式で記述してください。
+キーワードに直接関連する記述が見つからない場合は、「このテーマについて、これまで具体的なお話はなかったようです。」と出力してください。
+
+# セッション記録
+{context}
+
+# 要約:
+"""
+
 
 # ===== Gemini ヘルパー関数群 =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
@@ -134,7 +147,6 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
     print(f"--- Calling Gemini ({model_name}) with schema (Attempt: {attempt_num}) ---")
     try:
         response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=schema))
-        # Handle potential markdown code block delimiters
         response_text = response.text.strip()
         if response_text.startswith("```json"):
             response_text = response_text[7:-3].strip()
@@ -175,7 +187,6 @@ def generate_chat_response(session_summary, chat_history, user_message):
 
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
 def _extract_keywords_for_search(analysis_text: str) -> str:
-    """長い分析テキストから検索クエリ用のキーワードを抽出する"""
     prompt = f"""
 以下のユーザー心理分析レポート全体から、最も重要と思われる概念や課題を示すキーワードを5つ以内で抽出してください。
 キーワードはVertex AI Searchの検索クエリとして使用します。他の文は含めず、キーワードをカンマ区切りの文字列のみで出力してください。
@@ -200,13 +211,29 @@ def _extract_keywords_for_search(analysis_text: str) -> str:
         print(f"❌ Failed to extract keywords: {e}")
         return ""
 
+# ★★★ 新規追加 ★★★
+def _summarize_internal_context(context: str, keyword: str) -> str:
+    """Summarizes past session records related to a specific keyword."""
+    if not context or not keyword:
+        return "このテーマについて、これまで具体的なお話はなかったようです。"
+    try:
+        prompt = INTERNAL_CONTEXT_PROMPT_TEMPLATE.format(context=context, keyword=keyword)
+        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+        model = GenerativeModel(flash_model)
+        print(f"--- Calling Gemini to summarize internal context for '{keyword}' ---")
+        response = model.generate_content(prompt)
+        summary = response.text.strip()
+        print(f"✅ Internal context summary: {summary}")
+        return summary
+    except Exception as e:
+        print(f"❌ Failed to summarize internal context: {e}")
+        return "過去の記録を要約中にエラーが発生しました。"
+
 # ===== RAG (Retrieval-Augmented Generation) Helper Functions =====
 
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
 def _get_embeddings(texts: list[str]) -> list[list[float]]:
-    """Generates embeddings for a list of texts, handling batching."""
-    if not texts:
-        return []
+    if not texts: return []
     model = TextEmbeddingModel.from_pretrained("text-multilingual-embedding-002")
     BATCH_SIZE = 15 
     all_embeddings = []
@@ -225,12 +252,10 @@ def _get_embeddings(texts: list[str]) -> list[list[float]]:
         return []
 
 def _get_url_cache_doc_ref(url: str):
-    """Generates a Firestore document reference for a given URL."""
     url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
     return db_firestore.collection(RAG_CACHE_COLLECTION).document(url_hash)
 
 def _get_cached_chunks_and_embeddings(url: str):
-    """Retrieves chunks and embeddings from Firestore cache if valid."""
     try:
         doc_ref = _get_url_cache_doc_ref(url)
         doc = doc_ref.get()
@@ -248,11 +273,9 @@ def _get_cached_chunks_and_embeddings(url: str):
              return None, None
         
         chunks = cache_data.get('chunks')
-        # Firestoreからオブジェクトのリストとして取得
         embeddings_from_db = cache_data.get('embeddings')
         
         if chunks and embeddings_from_db:
-            # ★★★ リストのリスト形式に復元 ★★★
             embeddings = [item['vector'] for item in embeddings_from_db if 'vector' in item]
             if len(chunks) == len(embeddings):
                 print(f"✅ CACHE HIT: Found {len(chunks)} chunks for URL: {url}")
@@ -265,11 +288,9 @@ def _get_cached_chunks_and_embeddings(url: str):
         return None, None
 
 def _set_cached_chunks_and_embeddings(url: str, chunks: list, embeddings: list):
-    """Saves chunks and their embeddings to the Firestore cache."""
     if not chunks or not embeddings: return
     try:
         doc_ref = _get_url_cache_doc_ref(url)
-        # ★★★ Firestoreが受け入れ可能な「オブジェクトのリスト」形式に変換 ★★★
         transformed_embeddings = [{'vector': emb} for emb in embeddings]
         cache_data = {
             'url': url,
@@ -283,7 +304,8 @@ def _set_cached_chunks_and_embeddings(url: str, chunks: list, embeddings: list):
         print(f"❌ Error setting cache for {url}: {e}")
         traceback.print_exc()
 
-def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine_id: str, suggestions_engine_id: str):
+# ★★★ この関数を修正 ★★★
+def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine_id: str, suggestions_engine_id: str, rag_type: str = None):
     """
     RAG based on user analysis to generate advice, using a Firestore cache for embeddings.
     Returns a tuple of (advice_text, list_of_source_urls).
@@ -294,10 +316,20 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
         search_query = query[:512]
     
     all_found_urls = set()
-    if similar_cases_engine_id:
-        all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", similar_cases_engine_id, search_query))
-    if suggestions_engine_id:
-        all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", suggestions_engine_id, search_query))
+    if rag_type == 'similar_cases':
+        print("--- RAG: Searching for SIMILAR CASES ONLY ---")
+        if similar_cases_engine_id:
+            all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", similar_cases_engine_id, search_query))
+    elif rag_type == 'suggestions':
+        print("--- RAG: Searching for SUGGESTIONS ONLY ---")
+        if suggestions_engine_id:
+            all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", suggestions_engine_id, search_query))
+    else: # Default behavior: search both
+        print("--- RAG: Searching both similar cases and suggestions ---")
+        if similar_cases_engine_id:
+            all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", similar_cases_engine_id, search_query))
+        if suggestions_engine_id:
+            all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", suggestions_engine_id, search_query))
 
     if not all_found_urls:
         return "関連する外部情報を見つけることができませんでした。", []
@@ -316,7 +348,13 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
             page_content = _scrape_text_from_url(url)
             if page_content:
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
-                new_chunks = text_splitter.split_text(page_content)
+                new_chunks_full = text_splitter.split_text(page_content)
+                
+                MAX_CHUNKS_PER_URL = 50  # 1つのURLから取得するチャンクの上限
+                new_chunks = new_chunks_full[:MAX_CHUNKS_PER_URL]
+
+                if len(new_chunks_full) > MAX_CHUNKS_PER_URL:
+                    print(f"⚠️ RAG: Content too long. Truncated chunks for {url} from {len(new_chunks_full)} to {len(new_chunks)}.")
                 if new_chunks:
                     new_embeddings = _get_embeddings(new_chunks)
                     if new_embeddings and len(new_chunks) == len(new_embeddings):
@@ -353,19 +391,51 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
 
     print("--- RAG: Generating final advice with Gemini... ---")
     context_text = "\n---\n".join(relevant_chunks)
-    prompt = f"""
-あなたは、ユーザーの心の状態を分析し、科学的根拠に基づいた客観的なアドバイスを提供するAIカウンセラーです。
-以下のユーザー分析結果と、関連する参考情報（類似ケースや具体的な改善案など）を読んで、ユーザーへの具体的で実践的なアドバイスを生成してください。
-アドバイスは、ユーザーが次の一歩を踏み出せるように、優しく、共感的で、肯定的なトーンで記述してください。Markdown形式で出力してください。
-**注意：ユーザーの名前（「〇〇さん」など）は絶対に使用しないでください。**
+
+    # ★★★ ここからプロンプトを全面的に書き換えます ★★★
+    if rag_type == 'similar_cases':
+        prompt = f"""
+あなたは、ユーザーの悩みに共感し、他の人のケースを紹介する聞き上手な友人です。
+以下の「ユーザー分析結果」と「参考情報（他の人の悩みや体験談）」を元に、ユーザーを励ますような形で、参考情報を要約してください。
+
+# 指示
+- 全体で200文字程度の、非常にコンパクトな文章で要約してください。
+- ユーザーを安心させ、一人ではないと感じさせるような、温かく共感的なトーンで記述してください。
+- 「似たようなことで悩んでいる方もいるようです。」といった前置きから始めてください。
+- 最後に、参考にした情報源のURLを `[参考情報]` として箇条書きで必ず含めてください。
+
 # ユーザー分析結果
 {query}
-# 参考情報 (類似ケースや改善案のヒント)
+
+# 参考情報 (他の人の悩みや体験談)
 ---
 {context_text}
 ---
-# アドバイス
+
+# あなたの応答:
 """
+    else: # 'suggestions' or default
+        prompt = f"""
+あなたは、客観的で信頼できるアドバイスを提供するプロのカウンセラーです。
+以下の「ユーザー分析結果」と「参考情報（専門機関による具体的な対策）」を元に、ユーザーが次の一歩を踏み出すための、具体的で実践的なアドバイスを生成してください。
+
+# 指示
+- 全体で300文字程度の、簡潔かつ分かりやすい文章で記述してください。
+- ユーザーの状況を整理し、具体的なアクションを箇条書きで2〜3点提案する構成にしてください。
+- 「あなたの状況を客観的に見ると、次のステップとして、このようなことが考えられます。」といった、専門家としての冷静なトーンで始めてください。
+- 最後に、参考にした情報源のURLを `[参考情報]` として箇条書きで必ず含めてください。
+
+# ユーザー分析結果
+{query}
+
+# 参考情報 (専門機関による具体的な対策)
+---
+{context_text}
+---
+
+# あなたの応答:
+"""
+
     pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
     model = GenerativeModel(pro_model_name)
     advice = model.generate_content(prompt, generation_config=GenerationConfig(temperature=0.7)).text
@@ -406,8 +476,9 @@ def _scrape_text_from_url(url: str) -> str:
         print(f"❌ RAG: Error fetching URL {url}: {e}")
         return ""
 
-# --- バックグラウンド処理 ---
+# --- バックグラウンド処理 (変更なし) ---
 def _prefetch_questions_and_save(session_id: str, user_id: str, insights_md: str, current_turn: int, max_turns: int):
+    # ... (この関数の中身は変更ありません)
     print(f"--- Triggered question prefetch for user: {user_id}, session: {session_id}, next_turn: {current_turn + 1} ---")
     if current_turn >= max_turns:
         print("Max turns reached. Skipping question prefetch.")
@@ -435,6 +506,7 @@ def _prefetch_questions_and_save(session_id: str, user_id: str, insights_md: str
         traceback.print_exc()
 
 def _update_graph_cache(user_id: str):
+    # ... (この関数の中身は変更ありません)
     print(f"--- Triggered graph cache update for user: {user_id} ---")
     try:
         all_insights_text = _get_all_insights_as_text(user_id)
@@ -453,17 +525,19 @@ def _update_graph_cache(user_id: str):
         print(f"❌ Failed to update graph cache for user {user_id}: {e}")
         traceback.print_exc()
 
-# ===== 認証ヘルパー =====
+# ===== 認証ヘルパー (変更なし) =====
 def _verify_token(request):
+    # ... (この関数の中身は変更ありません)
     auth_header = request.headers.get('Authorization', '')
     if not auth_header.startswith('Bearer '):
         raise auth.InvalidIdTokenError("Authorization token is missing or invalid")
     id_token = auth_header.split('Bearer ')[1]
     return auth.verify_id_token(id_token, clock_skew_seconds=15)
 
-# ===== API Routes =====
+# ===== API Routes (変更・追加あり) =====
 @app.route('/session/start', methods=['POST'])
 def start_session():
+    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -493,6 +567,7 @@ def start_session():
 
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
+    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -517,6 +592,7 @@ def record_swipe(session_id):
 
 @app.route('/session/<string:session_id>/summary', methods=['POST'])
 def post_summary(session_id):
+    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -549,6 +625,7 @@ def post_summary(session_id):
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
+    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -593,6 +670,7 @@ def continue_session(session_id):
 
 # --- 分析系API ---
 def _get_all_insights_as_text(user_id: str) -> str:
+    # ... (この関数の中身は変更ありません)
     if not db_firestore: return ""
     sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').order_by('created_at').limit_to_last(20)
     sessions = sessions_ref.get() 
@@ -616,6 +694,7 @@ def _get_all_insights_as_text(user_id: str) -> str:
 
 @app.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():
+    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -630,6 +709,7 @@ def get_analysis_graph():
         return jsonify({'error': 'Failed to get analysis graph', 'details': str(e)}), 500
 
 def _get_graph_from_cache_or_generate(user_id: str):
+    # ... (この関数の中身は変更ありません)
     cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
     cache_doc = cache_doc_ref.get()
     if cache_doc.exists:
@@ -655,6 +735,41 @@ def _get_graph_from_cache_or_generate(user_id: str):
     print(f"✅ Successfully generated and cached graph for user: {user_id}")
     return final_graph_data
 
+# ★★★ 新規追加 ★★★
+@app.route('/chat/node_tap', methods=['POST'])
+def handle_node_tap():
+    try:
+        decoded_token = _verify_token(request)
+        user_id = decoded_token['uid']
+        data = request.get_json()
+        if not data or not (node_label := data.get('node_label')):
+            return jsonify({'error': 'node_label is required'}), 400
+
+        print(f"--- Node tap received for user {user_id}, node: '{node_label}' ---")
+
+        session_summary = _get_all_insights_as_text(user_id)
+        initial_summary = _summarize_internal_context(session_summary, node_label)
+        
+        response_data = {
+            "initial_summary": f"「{node_label}」についてですね。\n{initial_summary}",
+            "node_label": node_label, # フロントが後で使うためにラベルを返す
+            "actions": [
+                {"id": "talk_freely", "label": "自分の考えを話す"},
+                {"id": "get_similar_cases", "label": "似たような悩みの人の話を聞く"},
+                {"id": "get_suggestions", "label": "具体的な対策やヒントを見る"}
+            ]
+        }
+        return jsonify(response_data)
+
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        print(f"Auth Error in handle_node_tap: {e}")
+        return jsonify({'error': 'Invalid or expired token', 'details': str(e)}), 403
+    except Exception as e:
+        print(f"Error in handle_node_tap: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred."}), 500
+
+# ★★★ この関数を修正 ★★★
 @app.route('/analysis/chat', methods=['POST'])
 def post_chat_message():
     try:
@@ -666,6 +781,7 @@ def post_chat_message():
 
         user_message = data.get('message')
         use_rag = data.get('use_rag', False)
+        rag_type = data.get('rag_type', None) # RAGの種別を取得
 
         if not user_message and not use_rag:
             return jsonify({'error': 'message or use_rag flag is required'}), 400
@@ -678,12 +794,14 @@ def post_chat_message():
             ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
 
         elif use_rag:
-            print("--- RAG advice triggered via chat API flag ---")
+            print(f"--- RAG advice triggered via chat API flag (type: {rag_type}) ---")
+            # RAGの呼び出しに `rag_type` を渡す
             ai_response, sources = _generate_rag_based_advice(
                 session_summary,
                 project_id,
                 SIMILAR_CASES_ENGINE_ID,
-                SUGGESTIONS_ENGINE_ID
+                SUGGESTIONS_ENGINE_ID,
+                rag_type=rag_type
             )
         else:
             ai_response = generate_chat_response(session_summary, data.get('chat_history', []), user_message)

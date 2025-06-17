@@ -25,6 +25,47 @@ class ChatResponse {
   }
 }
 
+// ★★★ 新規追加: ノードタップ時の応答を格納するクラス ★★★
+class NodeTapResponse {
+  final String initialSummary;
+  final String nodeLabel;
+  final List<ChatAction> actions;
+
+  NodeTapResponse({
+    required this.initialSummary,
+    required this.nodeLabel,
+    required this.actions,
+  });
+
+  factory NodeTapResponse.fromJson(Map<String, dynamic> json) {
+    var actionsFromJson = json['actions'] as List<dynamic>?;
+    List<ChatAction> actionsList = actionsFromJson != null
+        ? actionsFromJson.map((i) => ChatAction.fromJson(i)).toList()
+        : [];
+
+    return NodeTapResponse(
+      initialSummary: json['initial_summary'] as String,
+      nodeLabel: json['node_label'] as String,
+      actions: actionsList,
+    );
+  }
+}
+
+// ★★★ 新規追加: チャット内のアクションボタンを表現するクラス ★★★
+class ChatAction {
+  final String id;
+  final String label;
+
+  ChatAction({required this.id, required this.label});
+
+  factory ChatAction.fromJson(Map<String, dynamic> json) {
+    return ChatAction(
+      id: json['id'] as String,
+      label: json['label'] as String,
+    );
+  }
+}
+
 class ApiService {
   final Dio _dio = Dio();
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -93,10 +134,10 @@ class ApiService {
       required List<Map<String, String>> chatHistory,
       required String message,
       bool useRag = false,
+      String? ragType, // ★★★ RAGの種別を指定するパラメータを追加 ★★★
     }) async {
       final originalReceiveTimeout = _dio.options.receiveTimeout;
       try {
-        // RAG処理は非常に時間がかかる可能性があるため、タイムアウトを5分に延長します
         _dio.options.receiveTimeout = const Duration(minutes: 5);
         final response = await _dio.post(
           '/analysis/chat',
@@ -104,6 +145,7 @@ class ApiService {
             'chat_history': chatHistory,
             'message': message,
             'use_rag': useRag,
+            'rag_type': ragType, // ★★★ APIに送信 ★★★
           },
         );
         return ChatResponse.fromJson(response.data);
@@ -131,6 +173,22 @@ class ApiService {
         _dio.options.receiveTimeout = originalReceiveTimeout;
       }
     }
+
+      // ★★★ 新規追加: ノードタップ時の処理を呼び出すメソッド ★★★
+  Future<NodeTapResponse> handleNodeTap(String nodeLabel) async {
+    try {
+      final response = await _dio.post(
+        '/chat/node_tap',
+        data: {'node_label': nodeLabel},
+      );
+      return NodeTapResponse.fromJson(response.data);
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? 'ノード情報の取得に失敗しました。';
+      throw Exception(errorMessage);
+    } catch (e) {
+      throw Exception('予期せぬエラーが発生しました: $e');
+    }
+  }
 
   /// セッションを開始する
   Future<Map<String, dynamic>> startSession(String topic) async {

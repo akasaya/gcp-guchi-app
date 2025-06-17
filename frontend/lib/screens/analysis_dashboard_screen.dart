@@ -25,7 +25,9 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   final _user = const types.User(id: 'user');
   final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
   bool _isAiTyping = false;
-  bool _isRagLoading = false;
+  bool _isActionLoading = false;
+
+  String? _lastActionMessageId;
 
   @override
   void initState() {
@@ -40,11 +42,9 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       author: _ai,
       createdAt: DateTime.now().millisecondsSinceEpoch,
       id: const Uuid().v4(),
-      text: 'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？',
+      text: 'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？\nグラフのキーワードをタップすると、そのテーマについて深掘りできます。',
     );
-    setState(() {
-      _messages.insert(0, initialMessage);
-    });
+    setState(() => _messages.insert(0, initialMessage));
   }
 
   Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
@@ -66,13 +66,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         final fromNode = nodesForGraphView[edgeData.source];
         final toNode = nodesForGraphView[edgeData.target];
         if (fromNode != null && toNode != null) {
-          _graph.addEdge(
-            fromNode,
-            toNode,
-            paint: Paint()
-              ..color = Colors.grey.withAlpha(150)
-              ..strokeWidth = edgeData.weight.clamp(0.5, 4.0),
-          );
+          _graph.addEdge(fromNode, toNode, paint: Paint()..color = Colors.grey.withAlpha(150)..strokeWidth = edgeData.weight.clamp(0.5, 4.0));
         }
       }
       return graphData;
@@ -81,145 +75,139 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     }
   }
 
-    void _onNodeTapped(model.NodeData nodeData) {
-    // タップされたノードに関するメッセージをAIが投稿する
-    final tapMessage = types.TextMessage(
-      author: _ai,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      id: const Uuid().v4(),
-      text: '「${nodeData.label}」についてですね。もう少し詳しくお話しいただけますか？',
-    );
-    setState(() {
-      _messages.insert(0, tapMessage);
-    });
+  Future<void> _onNodeTapped(model.NodeData nodeData) async {
+    if (_isActionLoading) return;
+    setState(() => _isActionLoading = true);
+    
+    _disablePreviousActions();
 
-    // 画面が狭いレイアウトの場合、チャットタブに自動的に切り替える
     if (MediaQuery.of(context).size.width <= 800) {
-      // DefaultTabControllerを取得してタブを切り替える
-      final controller = DefaultTabController.of(context);
-      controller.animateTo(1);
+      DefaultTabController.of(context)?.animateTo(1);
+    }
+    
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final response = await apiService.handleNodeTap(nodeData.label);
+
+      final actionMessageId = const Uuid().v4();
+      final actionMessage = types.CustomMessage(
+        author: _ai,
+        id: actionMessageId,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        metadata: {
+          'text': response.initialSummary,
+          'actions': response.actions.map((a) => {'id': a.id, 'label': a.label}).toList(),
+          'node_label': response.nodeLabel,
+          'is_active': true,
+        },
+      );
+      setState(() {
+        _messages.insert(0, actionMessage);
+        _lastActionMessageId = actionMessageId;
+      });
+    } catch (e) {
+      _addErrorMessage('ノード情報の取得中にエラーが発生しました: $e');
+    } finally {
+      setState(() => _isActionLoading = false);
+    }
+  }
+  
+  Future<void> _onActionTapped(String actionId, String nodeLabel) async {
+    if (_isActionLoading) return;
+    _disablePreviousActions();
+
+    if (actionId == 'talk_freely') {
+        return;
+    }
+
+    setState(() => _isActionLoading = true);
+
+    try {
+        final apiService = ref.read(apiServiceProvider);
+        final ragType = actionId == 'get_similar_cases' ? 'similar_cases' : 'suggestions';
+        
+        final historyForApi = _messages
+          .whereType<types.TextMessage>()
+          .map((m) => {'author': m.author.id, 'text': m.text})
+          .toList().reversed.toList();
+
+        final response = await apiService.postChatMessage(
+          chatHistory: historyForApi,
+          message: "$nodeLabel に関する${ragType == 'similar_cases' ? '類似ケース' : '改善案'}を教えてください。",
+          useRag: true,
+          ragType: ragType,
+        );
+        _addAiTextMessage(response.answer, sources: response.sources);
+    } catch(e) {
+        _addErrorMessage('情報の取得中にエラーが発生しました: $e');
+    } finally {
+        setState(() => _isActionLoading = false);
     }
   }
 
   Future<void> _handleSendPressed(types.PartialText message) async {
-    final userMessage = types.TextMessage(
-      author: _user,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      id: const Uuid().v4(),
-      text: message.text,
-    );
-
-    setState(() {
-      _messages.insert(0, userMessage);
-      _isAiTyping = true;
-    });
+    if (_isActionLoading) return;
+    _disablePreviousActions();
+    _addHumanMessage(message.text);
+    setState(() => _isAiTyping = true);
 
     try {
       final apiService = ref.read(apiServiceProvider);
       final historyForApi = _messages
           .whereType<types.TextMessage>()
           .map((m) => {'author': m.author.id, 'text': m.text})
-          .toList()
-          .reversed
-          .toList();
+          .toList().reversed.toList();
 
-      // ★★★ ステップ1の修正箇所 ★★★
-      final response = await apiService.postChatMessage(
-        chatHistory: historyForApi,
-        message: message.text,
-      );
-
-      final aiMessage = types.TextMessage(
-        author: _ai,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        id: const Uuid().v4(),
-        text: response.answer,
-        metadata: response.sources.isNotEmpty ? {'sources': response.sources} : null,
-      );
-
-      setState(() {
-        _messages.insert(0, aiMessage);
-      });
+      final response = await apiService.postChatMessage(chatHistory: historyForApi, message: message.text);
+      _addAiTextMessage(response.answer, sources: response.sources);
     } catch (e) {
-      final errorMessage = types.TextMessage(
-        author: _ai,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        id: const Uuid().v4(),
-        text: '申し訳ありません、エラーが発生しました。$e',
-      );
-      setState(() {
-        _messages.insert(0, errorMessage);
-      });
+      _addErrorMessage('エラーが発生しました: $e');
     } finally {
-      setState(() {
-        _isAiTyping = false;
-      });
+      setState(() => _isAiTyping = false);
     }
   }
 
-  Future<void> _handleRagRequest() async {
-    setState(() => _isRagLoading = true);
+  void _addHumanMessage(String text) {
+    final userMessage = types.TextMessage(author: _user, createdAt: DateTime.now().millisecondsSinceEpoch, id: const Uuid().v4(), text: text);
+    setState(() => _messages.insert(0, userMessage));
+  }
 
-    final thinkingMessage = types.TextMessage(
+  void _addAiTextMessage(String text, {List<String>? sources}) {
+    final aiMessage = types.TextMessage(
       author: _ai,
       createdAt: DateTime.now().millisecondsSinceEpoch,
       id: const Uuid().v4(),
-      text: 'あなたに合った具体的な改善案を探しています... 少々お待ちください。',
+      text: text,
+      metadata: (sources != null && sources.isNotEmpty) ? {'sources': sources} : null,
     );
-    setState(() => _messages.insert(0, thinkingMessage));
+    setState(() => _messages.insert(0, aiMessage));
+  }
+  
+  void _addErrorMessage(String text) {
+      final errorMessage = types.TextMessage(author: _ai, createdAt: DateTime.now().millisecondsSinceEpoch, id: const Uuid().v4(), text: text);
+      setState(() => _messages.insert(0, errorMessage));
+  }
 
-    try {
-      final apiService = ref.read(apiServiceProvider);
-      final historyForApi = _messages
-          .where((m) => m is types.TextMessage && m.id != thinkingMessage.id)
-          .map((m) {
-            final textMessage = m as types.TextMessage;
-            return {'author': m.author.id, 'text': textMessage.text};
-          })
-          .toList()
-          .reversed
-          .toList();
-
-      final response = await apiService.postChatMessage(
-        chatHistory: historyForApi,
-        message: "RAGを使って具体的な改善案を教えてください。",
-        useRag: true,
-      );
-
-      final aiMessage = types.TextMessage(
-        author: _ai,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        id: const Uuid().v4(),
-        text: response.answer,
-        metadata: response.sources.isNotEmpty ? {'sources': response.sources} : null,
-      );
-
-      setState(() {
-        _messages.removeAt(0);
-        _messages.insert(0, aiMessage);
-      });
-    } catch (e) {
-      setState(() {
-        _messages.removeAt(0);
-        final errorMessage = types.TextMessage(
-          author: _ai,
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-          id: const Uuid().v4(),
-          text: '申し訳ありません、改善案の取得中にエラーが発生しました。$e',
-        );
-        _messages.insert(0, errorMessage);
-      });
-    } finally {
-      setState(() => _isRagLoading = false);
+  void _disablePreviousActions() {
+    if (_lastActionMessageId != null) {
+      final lastIndex = _messages.indexWhere((m) => m.id == _lastActionMessageId);
+      if (lastIndex != -1 && _messages[lastIndex] is types.CustomMessage) {
+        final oldMessage = _messages[lastIndex] as types.CustomMessage;
+        if (oldMessage.metadata?['is_active'] == true) {
+            final newMetadata = Map<String, dynamic>.from(oldMessage.metadata ?? {});
+            newMetadata['is_active'] = false;
+            final updatedMessage = oldMessage.copyWith(metadata: newMetadata);
+            setState(() => _messages[lastIndex] = updatedMessage);
+        }
+      }
+      _lastActionMessageId = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('統合分析ダッシュボード'),
-      ),
+      appBar: AppBar(title: const Text('統合分析ダッシュボード')),
       body: LayoutBuilder(
         builder: (context, constraints) {
           if (constraints.maxWidth > 800) {
@@ -236,15 +224,10 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     return FutureBuilder<model.GraphData>(
       future: _graphDataFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}', textAlign: TextAlign.center)));
-        } else if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
-          return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey))));
-        } else {
-          return _buildGraphView();
-        }
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}', textAlign: TextAlign.center)));
+        if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey))));
+        return _buildGraphView();
       },
     );
   }
@@ -264,17 +247,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       length: 2,
       child: Column(
         children: [
-          const TabBar(
-            tabs: [
-              Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
-              Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline)),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [_buildGraphViewFuture(), _buildChatView()],
-            ),
-          ),
+          const TabBar(tabs: [Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)), Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline))]),
+          Expanded(child: TabBarView(children: [_buildGraphViewFuture(), _buildChatView()])),
         ],
       ),
     );
@@ -289,10 +263,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       child: GraphView(
         graph: _graph,
         algorithm: _algorithm,
-        paint: Paint()
-          ..color = Colors.transparent
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke,
+        paint: Paint()..color = Colors.transparent..strokeWidth = 1..style = PaintingStyle.stroke,
         builder: (Node node) {
           String nodeId = node.key!.value as String;
           final nodeData = _nodeDataMap[nodeId];
@@ -304,15 +275,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
 
   Widget _buildNodeWidget(model.NodeData? nodeData) {
     if (nodeData == null) return const SizedBox.shrink();
-    final Map<String, Color> colorMap = {
-      'topic': Colors.purple.shade400,
-      'issue': Colors.red.shade400,
-      'emotion': Colors.orange.shade300,
-      'keyword': Colors.blueGrey.shade400,
-    };
+    final Map<String, Color> colorMap = {'topic': Colors.purple.shade400, 'issue': Colors.red.shade400, 'emotion': Colors.orange.shade300, 'keyword': Colors.blueGrey.shade400};
     final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
-
-    // タップを検知するためにGestureDetectorでラップする
     return GestureDetector(
       onTap: () => _onNodeTapped(nodeData),
       child: Tooltip(
@@ -320,18 +284,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           constraints: const BoxConstraints(maxWidth: 150),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: nodeColor,
-            boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))],
-          ),
-          child: Text(
-            nodeData.label,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: nodeColor, boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))]),
+          child: Text(nodeData.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ),
     );
@@ -344,27 +298,21 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       onSendPressed: _handleSendPressed,
       user: _user,
       theme: DefaultChatTheme(
-        primaryColor: theme.colorScheme.primary,
-        // ★★★ 修正点1: 非推奨の `surfaceVariant` を `surfaceContainerHighest` に変更
-        secondaryColor: theme.colorScheme.surfaceContainerHighest,
-        inputBackgroundColor: theme.colorScheme.surface,
-        inputTextColor: theme.colorScheme.onSurface,
-        // ★★★ 修正点1: 上記の変更に合わせて文字色も `onSurface` に変更
-        receivedMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onSurface),
-        sentMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
-      ),
-      typingIndicatorOptions: TypingIndicatorOptions(
-        typingUsers: _isAiTyping ? [_ai] : [],
-      ),
-      l10n: const ChatL10nEn(
-        inputPlaceholder: 'メッセージを入力',
-      ),
+          primaryColor: theme.colorScheme.primary,
+          secondaryColor: theme.colorScheme.surfaceContainerHighest,
+          inputBackgroundColor: theme.colorScheme.surface,
+          inputTextColor: theme.colorScheme.onSurface,
+          receivedMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onSurface),
+          sentMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onPrimary)),
+      typingIndicatorOptions: TypingIndicatorOptions(typingUsers: _isAiTyping ? [_ai] : []),
+      l10n: const ChatL10nEn(inputPlaceholder: 'メッセージを入力'),
       customBottomWidget: _buildChatInputArea(),
+      customMessageBuilder: _customMessageBuilder,
       textMessageBuilder: _textMessageBuilder,
     );
   }
 
-  Widget _textMessageBuilder(
+    Widget _textMessageBuilder(
     types.TextMessage message, {
     required int messageWidth,
     required bool showName,
@@ -379,22 +327,19 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     
     final linkColor = isMe ? Colors.white70 : Colors.blue.shade800;
 
-    // メッセージの「吹き出し」を表現するContainer
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        // 自分と相手で色分け
         color: isMe
             ? materialTheme.colorScheme.primary
             : materialTheme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(20),
       ),
-      // 吹き出しの幅を適切に制限する
       constraints: BoxConstraints(
         maxWidth: messageWidth * 0.75,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, // 吹き出しの中身は常に左揃え
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           SelectableText(
@@ -431,6 +376,46 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
+  Widget _customMessageBuilder(types.CustomMessage message, {required int messageWidth}) {
+    final metadata = message.metadata ?? {};
+    final text = metadata['text'] as String?;
+    final actionsData = metadata['actions'] as List<dynamic>?;
+    final nodeLabel = metadata['node_label'] as String?;
+    final isActive = metadata['is_active'] as bool? ?? false;
+
+    if (text == null || actionsData == null || nodeLabel == null) {
+      return const SizedBox.shrink();
+    }
+    
+    final actions = actionsData.map((a) => ChatAction.fromJson(a as Map<String, dynamic>)).toList();
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      constraints: BoxConstraints(maxWidth: messageWidth * 0.85),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectableText(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+          if (isActive) ...[
+            const Divider(height: 20),
+            ...actions.map((action) => Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => _onActionTapped(action.id, nodeLabel),
+                    child: Text(action.label),
+                  ),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildChatInputArea() {
     return Container(
       padding: const EdgeInsets.all(8.0),
@@ -438,26 +423,11 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-           ElevatedButton.icon(
-              icon: _isRagLoading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.lightbulb_outline),
-              label: const Text('具体的な改善案を聞く'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                minimumSize: const Size(double.infinity, 48)
-              ),
-              onPressed: _isRagLoading ? null : _handleRagRequest,
-            ),
-          const SizedBox(height: 8),
+          if (_isActionLoading) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: CircularProgressIndicator()),
           Input(
+            isAttachmentUploading: _isActionLoading,
             onSendPressed: _handleSendPressed,
-            options: const InputOptions(
-              sendButtonVisibilityMode: SendButtonVisibilityMode.always,
-            ),
+            options: const InputOptions(sendButtonVisibilityMode: SendButtonVisibilityMode.always),
           ),
         ],
       ),
