@@ -11,12 +11,15 @@ import threading
 import requests
 from bs4 import BeautifulSoup
 import numpy as np
+import hashlib
+from datetime import datetime, timedelta, timezone
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 from vertexai.language_models import TextEmbeddingModel
 from google.cloud import discoveryengine_v1 as discoveryengine
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 
 # --- GCP & Firebase 初期化 ---
@@ -58,6 +61,12 @@ else:
         re.compile(r"http://127.0.0.1:.*"),
     ]
 CORS(app, resources={r"/*": {"origins": origins}})
+
+
+# ===== RAG Cache Settings =====
+RAG_CACHE_COLLECTION = 'rag_cache'
+RAG_CACHE_TTL_DAYS = 7 # Cache expires after 7 days
+
 
 # ===== JSONスキーマ定義 =====
 QUESTIONS_SCHEMA = {"type": "object","properties": {"questions": {"type": "array","items": {"type": "object","properties": {"question_text": {"type": "string"}},"required": ["question_text"]}}},"required": ["questions"]}
@@ -192,57 +201,155 @@ def _extract_keywords_for_search(analysis_text: str) -> str:
         return ""
 
 # ===== RAG (Retrieval-Augmented Generation) Helper Functions =====
+
+@retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+def _get_embeddings(texts: list[str]) -> list[list[float]]:
+    """Generates embeddings for a list of texts, handling batching."""
+    if not texts:
+        return []
+    model = TextEmbeddingModel.from_pretrained("text-multilingual-embedding-002")
+    BATCH_SIZE = 15 
+    all_embeddings = []
+    print(f"--- RAG: Generating embeddings for {len(texts)} texts in batches of {BATCH_SIZE} ---")
+    try:
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i:i + BATCH_SIZE]
+            responses = model.get_embeddings(batch)
+            for response in responses:
+                all_embeddings.append(response.values)
+            print(f"--- RAG: Processed embedding batch {i//BATCH_SIZE + 1}/{-(-len(texts) // BATCH_SIZE)} ---")
+        return all_embeddings
+    except Exception as e:
+        print(f"❌ RAG: An error occurred during embedding generation: {e}")
+        traceback.print_exc()
+        return []
+
+def _get_url_cache_doc_ref(url: str):
+    """Generates a Firestore document reference for a given URL."""
+    url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+    return db_firestore.collection(RAG_CACHE_COLLECTION).document(url_hash)
+
+def _get_cached_chunks_and_embeddings(url: str):
+    """Retrieves chunks and embeddings from Firestore cache if valid."""
+    try:
+        doc_ref = _get_url_cache_doc_ref(url)
+        doc = doc_ref.get()
+        if not doc.exists:
+            print(f"CACHE MISS: No cache found for URL: {url}")
+            return None, None
+        cache_data = doc.to_dict()
+        cached_at = cache_data.get('cached_at')
+        if isinstance(cached_at, datetime):
+            if datetime.now(timezone.utc) - cached_at > timedelta(days=RAG_CACHE_TTL_DAYS):
+                print(f"CACHE STALE: Cache for {url} is older than {RAG_CACHE_TTL_DAYS} days.")
+                return None, None
+        else:
+             print(f"CACHE INVALID: Invalid 'cached_at' field for {url}.")
+             return None, None
+        
+        chunks = cache_data.get('chunks')
+        # Firestoreからオブジェクトのリストとして取得
+        embeddings_from_db = cache_data.get('embeddings')
+        
+        if chunks and embeddings_from_db:
+            # ★★★ リストのリスト形式に復元 ★★★
+            embeddings = [item['vector'] for item in embeddings_from_db if 'vector' in item]
+            if len(chunks) == len(embeddings):
+                print(f"✅ CACHE HIT: Found {len(chunks)} chunks for URL: {url}")
+                return chunks, embeddings
+
+        print(f"CACHE INVALID: Data mismatch for {url}. Re-fetching.")
+        return None, None
+    except Exception as e:
+        print(f"❌ Error getting cache for {url}: {e}")
+        return None, None
+
+def _set_cached_chunks_and_embeddings(url: str, chunks: list, embeddings: list):
+    """Saves chunks and their embeddings to the Firestore cache."""
+    if not chunks or not embeddings: return
+    try:
+        doc_ref = _get_url_cache_doc_ref(url)
+        # ★★★ Firestoreが受け入れ可能な「オブジェクトのリスト」形式に変換 ★★★
+        transformed_embeddings = [{'vector': emb} for emb in embeddings]
+        cache_data = {
+            'url': url,
+            'chunks': chunks,
+            'embeddings': transformed_embeddings,
+            'cached_at': firestore.SERVER_TIMESTAMP
+        }
+        doc_ref.set(cache_data)
+        print(f"✅ CACHE SET: Saved {len(chunks)} chunks for URL: {url}")
+    except Exception as e:
+        print(f"❌ Error setting cache for {url}: {e}")
+        traceback.print_exc()
+
 def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine_id: str, suggestions_engine_id: str):
-    # 1. 長い分析レポート(query)から検索用のキーワードを抽出
+    """
+    RAG based on user analysis to generate advice, using a Firestore cache for embeddings.
+    Returns a tuple of (advice_text, list_of_source_urls).
+    """
     search_query = _extract_keywords_for_search(query)
     if not search_query:
-        print("⚠️ RAG: Could not extract keywords. Using a slice of the original query for search as a fallback.")
-        # クエリが長すぎるとAPIエラーになるため、フォールバックとして先頭512文字を使う
+        print("⚠️ RAG: Could not extract keywords. Using original query for search.")
         search_query = query[:512]
-
-    all_urls = set()
-
-    # 2a. 抽出したキーワードで類似ケースを検索
+    
+    all_found_urls = set()
     if similar_cases_engine_id:
-        print(f"--- RAG: Searching for similar cases in engine '{similar_cases_engine_id}' with query: '{search_query}' ---")
-        case_urls = _search_with_vertex_ai_search(project_id, "global", similar_cases_engine_id, search_query)
-        all_urls.update(case_urls)
-
-    # 2b. 抽出したキーワードで改善案を検索
+        all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", similar_cases_engine_id, search_query))
     if suggestions_engine_id:
-        print(f"--- RAG: Searching for suggestions in engine '{suggestions_engine_id}' with query: '{search_query}' ---")
-        suggestion_urls = _search_with_vertex_ai_search(project_id, "global", suggestions_engine_id, search_query)
-        all_urls.update(suggestion_urls)
-    
-    if not all_urls:
-        print("⚠️ RAG: No relevant URLs found from any search engine.")
-        return "関連する外部情報を見つけることができませんでした。あなたの分析結果に基づくと、まずはご自身の感情を認識し、受け入れることから始めるのが良いかもしれません。"
-    
-    urls_to_process = list(all_urls)
+        all_found_urls.update(_search_with_vertex_ai_search(project_id, "global", suggestions_engine_id, search_query))
 
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
-    
-    all_chunks = []
-    print(f"--- RAG: Scraping up to 5 unique URLs: {urls_to_process[:5]} ---")
-    for url in urls_to_process[:5]:
-        try:
+    if not all_found_urls:
+        return "関連する外部情報を見つけることができませんでした。", []
+
+    all_chunks, all_embeddings, urls_with_content = [], [], []
+    urls_to_process = list(all_found_urls)[:5]
+
+    for url in urls_to_process:
+        cached_chunks, cached_embeddings = _get_cached_chunks_and_embeddings(url)
+        if cached_chunks and cached_embeddings:
+            all_chunks.extend(cached_chunks)
+            all_embeddings.extend(cached_embeddings)
+            urls_with_content.append(url)
+        else:
+            print(f"SCRAPING: No valid cache for {url}. Fetching content.")
             page_content = _scrape_text_from_url(url)
             if page_content:
-                all_chunks.extend(text_splitter.split_text(page_content))
-        except Exception as e:
-            print(f"❌ RAG: Failed to scrape or chunk {url}: {e}")
-
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+                new_chunks = text_splitter.split_text(page_content)
+                if new_chunks:
+                    new_embeddings = _get_embeddings(new_chunks)
+                    if new_embeddings and len(new_chunks) == len(new_embeddings):
+                        all_chunks.extend(new_chunks)
+                        all_embeddings.extend(new_embeddings)
+                        urls_with_content.append(url)
+                        threading.Thread(target=_set_cached_chunks_and_embeddings, args=(url, new_chunks, new_embeddings)).start()
+                    else:
+                        print(f"⚠️ RAG: Failed to generate embeddings for {url}. Skipping.")
+    
     if not all_chunks:
-        print("⚠️ RAG: Could not extract any text chunks from URLs.")
-        return "関連する外部情報を見つけましたが、内容を読み取ることができませんでした。ウェブサイトの構造が原因かもしれません。"
+        return "関連する外部情報を見つけましたが、内容を読み取ることができませんでした。", urls_to_process
 
     print(f"--- RAG: Finding relevant chunks from {len(all_chunks)} total chunks... ---")
-    # チャンクの関連性検索には、元の詳細なレポート全文(query)を使った方が精度が高いため、ここでは 'query' を使用する
-    relevant_chunks = _find_relevant_chunks(query, all_chunks)
+    query_embedding_list = _get_embeddings([query])
+    if not query_embedding_list:
+        return "あなたの状況を分析できませんでした。もう一度お試しください。", urls_with_content
+    
+    query_embedding = np.array(query_embedding_list[0])
+    
+    similarities = []
+    for i, emb in enumerate(all_embeddings):
+        chunk_embedding = np.array(emb)
+        dot_product = np.dot(chunk_embedding, query_embedding)
+        norm_product = np.linalg.norm(chunk_embedding) * np.linalg.norm(query_embedding)
+        similarity = dot_product / norm_product if norm_product != 0 else 0.0
+        similarities.append((similarity, all_chunks[i]))
+    
+    similarities.sort(key=lambda x: x[0], reverse=True)
+    relevant_chunks = [chunk for sim, chunk in similarities[:3]]
+
     if not relevant_chunks:
-        print("⚠️ RAG: No relevant chunks found after vector search.")
-        return "関連情報の中から、あなたの状況に特に合致する部分を見つけ出すことができませんでした。"
+        return "関連情報の中から、あなたの状況に特に合致する部分を見つけ出すことができませんでした。", urls_with_content
 
     print("--- RAG: Generating final advice with Gemini... ---")
     context_text = "\n---\n".join(relevant_chunks)
@@ -262,23 +369,18 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
     pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
     model = GenerativeModel(pro_model_name)
     advice = model.generate_content(prompt, generation_config=GenerationConfig(temperature=0.7)).text
-    return advice, urls_to_process
+    
+    return advice, list(dict.fromkeys(urls_with_content))
 
 def _search_with_vertex_ai_search(project_id: str, location: str, engine_id: str, query: str) -> list[str]:
     if not engine_id:
         print(f"❌ RAG: Engine ID '{engine_id}' is not configured.")
         return []
     client = discoveryengine.SearchServiceClient()
-
-    # --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
-    # TypeErrorを回避するため、serving_configのパスを手動で組み立てる
-    # このパス形式は、Enterprise Editionのエンジンを利用する際にAPIが要求するものです。
     serving_config = (
         f"projects/{project_id}/locations/{location}/collections/default_collection/"
         f"engines/{engine_id}/servingConfigs/default_config"
     )
-    # --- ↑↑↑ 修正箇所ここまで ↑↑↑
-
     request = discoveryengine.SearchRequest(serving_config=serving_config, query=query, page_size=5)
     try:
         response = client.search(request)
@@ -303,68 +405,6 @@ def _scrape_text_from_url(url: str) -> str:
     except requests.exceptions.RequestException as e:
         print(f"❌ RAG: Error fetching URL {url}: {e}")
         return ""
-
-def _find_relevant_chunks(query: str, chunks: list[str], top_k=3) -> list[str]:
-    """
-    Finds the most relevant text chunks for a given query using text embeddings.
-    Handles API limits by batching requests.
-    """
-    model = TextEmbeddingModel.from_pretrained("text-multilingual-embedding-002")
-    # APIにはインスタンス数(250)だけでなく、合計トークン数(約20000)の制限もある。
-    # 1チャンクを約1000トークンと見積もり、安全マージンをとってバッチサイズを15に設定する。
-    # (15 chunks * ~1000 tokens/chunk < 20000 tokens)
-    BATCH_SIZE = 15
-
-    try:
-        all_texts = [query] + chunks
-        all_embeddings_responses = []
-
-        print(f"--- RAG: Generating embeddings for {len(all_texts)} texts in batches of {BATCH_SIZE} ---")
-        for i in range(0, len(all_texts), BATCH_SIZE):
-            batch = all_texts[i:i + BATCH_SIZE]
-            all_embeddings_responses.extend(model.get_embeddings(batch))
-            # ceiling division to calculate total batches correctly
-            print(f"--- RAG: Processed embedding batch {i//BATCH_SIZE + 1}/{-(-len(all_texts) // BATCH_SIZE)} ---")
-
-        query_embedding_response = all_embeddings_responses[0]
-        if hasattr(query_embedding_response, 'error'):
-            print(f"❌ RAG: Failed to get embedding for the query: {getattr(query_embedding_response, 'error', 'Unknown error')}")
-            return []
-        query_embedding = np.array(query_embedding_response.values)
-
-        chunk_embeddings_responses = all_embeddings_responses[1:]
-        
-        chunk_similarity_pairs = []
-        for i, resp in enumerate(chunk_embeddings_responses):
-            if not hasattr(resp, 'error'):
-                chunk_embedding = np.array(resp.values)
-                dot_product = np.dot(chunk_embedding, query_embedding)
-                norm_product = np.linalg.norm(chunk_embedding) * np.linalg.norm(query_embedding)
-                
-                # np.divideのout引数にスカラ値(0.0)を渡すとTypeErrorが発生するため、
-                # 通常の除算とゼロ除算のチェックに修正します。
-                if norm_product == 0:
-                    similarity = 0.0
-                else:
-                    similarity = dot_product / norm_product
-                
-                chunk_similarity_pairs.append({
-                    'chunk': chunks[i],
-                    'similarity': similarity
-                })
-
-        if not chunk_similarity_pairs:
-            print("⚠️ RAG: No valid chunk embeddings were generated to calculate similarity.")
-            return []
-
-        # Sort by similarity and return the text of the top_k chunks
-        sorted_pairs = sorted(chunk_similarity_pairs, key=lambda x: x['similarity'], reverse=True)
-        return [pair['chunk'] for pair in sorted_pairs[:top_k]]
-
-    except Exception as e:
-        print(f"❌ RAG: An unexpected error occurred while finding relevant chunks: {e}")
-        traceback.print_exc()
-        return []
 
 # --- バックグラウンド処理 ---
 def _prefetch_questions_and_save(session_id: str, user_id: str, insights_md: str, current_turn: int, max_turns: int):
@@ -555,11 +595,7 @@ def continue_session(session_id):
 def _get_all_insights_as_text(user_id: str) -> str:
     if not db_firestore: return ""
     sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').order_by('created_at').limit_to_last(20)
-    
-    # Firestoreからセッション情報を取得する際に .stream() の代わりに .get() を使用します。
-    # これにより、対象の全ドキュメントを一度に取得するため、後続の処理が安定します。
     sessions = sessions_ref.get() 
-
     all_insights = []
     for session in sessions:
         try:
@@ -636,7 +672,7 @@ def post_chat_message():
 
         session_summary = _get_all_insights_as_text(user_id)
         ai_response = ""
-        sources = []  # ★★★ sourcesリストをここで初期化します ★★★
+        sources = []
 
         if not session_summary:
             ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
@@ -650,7 +686,6 @@ def post_chat_message():
                 SUGGESTIONS_ENGINE_ID
             )
         else:
-            # sourcesは上で初期化されているため、ここでは応答を生成するだけでOK
             ai_response = generate_chat_response(session_summary, data.get('chat_history', []), user_message)
 
         return jsonify({'answer': ai_response, 'sources': sources})
@@ -658,7 +693,6 @@ def post_chat_message():
         print(f"Error in post_chat_message: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred."}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
