@@ -274,7 +274,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
           color: nodeColor, // ★★★ 決定した色を使用 ★★★
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withAlpha(51),
               blurRadius: 4,
               offset: const Offset(1, 1),
             )
@@ -340,6 +340,5 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         )
       ],
     );
-    // --- ↑↑↑ 追加はここまでです ↑↑↑ ---
   }
 }
