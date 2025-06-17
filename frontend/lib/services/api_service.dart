@@ -10,6 +10,7 @@ final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });
 
+// APIの新しい応答形式を受け取るためのクラス
 class ChatResponse {
   final String answer;
   final List<String> sources;
@@ -88,34 +89,48 @@ class ApiService {
 
 
     /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
-  Future<ChatResponse> postChatMessage({
-    required List<Map<String, String>> chatHistory,
-    required String message,
-    bool useRag = false, // RAG機能を使うかどうかのフラグを追加
-  }) async {
-    final originalReceiveTimeout = _dio.options.receiveTimeout;
-    try {
-      _dio.options.receiveTimeout = const Duration(minutes: 2);
-      final response = await _dio.post(
-        '/analysis/chat',
-        data: {
-          'chat_history': chatHistory,
-          'message': message,
-          'use_rag': useRag, // フラグをAPIに送信
-        },
-      );
-      // 新しいChatResponseクラスとして結果を返すように変更
-      return ChatResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      final errorMessage = e.response?.data?['error'] ?? 'メッセージの送信に失敗しました。';
-      throw Exception(errorMessage);
-    } catch (e) {
-      throw Exception('予期せぬエラーが発生しました。');
-    } finally {
-      _dio.options.receiveTimeout = originalReceiveTimeout;
-    }
-  }
+    Future<ChatResponse> postChatMessage({
+      required List<Map<String, String>> chatHistory,
+      required String message,
+      bool useRag = false,
+    }) async {
+      final originalReceiveTimeout = _dio.options.receiveTimeout;
+      try {
+        // RAG処理は非常に時間がかかる可能性があるため、タイムアウトを5分に延長します
+        _dio.options.receiveTimeout = const Duration(minutes: 5);
+        final response = await _dio.post(
+          '/analysis/chat',
+          data: {
+            'chat_history': chatHistory,
+            'message': message,
+            'use_rag': useRag,
+          },
+        );
+        return ChatResponse.fromJson(response.data);
+      } on DioException catch (e) {
+        // エラーハンドリングを詳細化し、コンソールで原因を追いやすくします
+        debugPrint("--- DioException in postChatMessage ---");
+        debugPrint("Type: ${e.type}");
+        debugPrint("Message: ${e.message}");
+        debugPrint("Response: ${e.response?.data}");
+        debugPrint("------------------------------------");
 
+        // タイムアウトの場合、より分かりやすいメッセージを出すようにします
+        if (e.type == DioExceptionType.receiveTimeout || e.type == DioExceptionType.connectionTimeout) {
+             throw Exception('AIの応答時間が長すぎたため、タイムアウトしました。しばらくしてからもう一度お試しください。');
+        }
+        final errorMessage = e.response?.data?['error'] ?? 'メッセージの送信に失敗しました。';
+        throw Exception(errorMessage);
+        
+      } catch (e) {
+        debugPrint("--- General Exception in postChatMessage ---");
+        debugPrint(e.toString());
+        debugPrint("------------------------------------------");
+        throw Exception('予期せぬエラーが発生しました: $e');
+      } finally {
+        _dio.options.receiveTimeout = originalReceiveTimeout;
+      }
+    }
 
   /// セッションを開始する
   Future<Map<String, dynamic>> startSession(String topic) async {

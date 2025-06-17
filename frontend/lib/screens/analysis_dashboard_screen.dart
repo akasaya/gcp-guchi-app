@@ -346,48 +346,63 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   }) {
     final materialTheme = Theme.of(context);
     final bool isMe = message.author.id == _user.id;
-    
-    // Flutter標準のテーマからスタイルを直接定義する
+    final sources = (message.metadata?['sources'] as List<dynamic>?)?.cast<String>();
+
     final textStyle = isMe
         ? TextStyle(color: materialTheme.colorScheme.onPrimary)
         : TextStyle(color: materialTheme.colorScheme.onSurface);
     
     final linkColor = isMe ? Colors.white70 : Colors.blue.shade800;
-    final sources = (message.metadata?['sources'] as List<dynamic>?)?.cast<String>();
 
-    return Column(
-      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        SelectableText(
-          message.text,
-          style: textStyle,
-        ),
-        if (sources != null && sources.isNotEmpty) ...[
-          const Divider(height: 16),
-          Text(
-            '参考情報',
-            style: textStyle.copyWith(fontWeight: FontWeight.bold),
+    // メッセージの「吹き出し」を表現するContainer
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        // 自分と相手で色分け
+        color: isMe
+            ? materialTheme.colorScheme.primary
+            : materialTheme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      // 吹き出しの幅を適切に制限する
+      constraints: BoxConstraints(
+        maxWidth: messageWidth * 0.75,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, // 吹き出しの中身は常に左揃え
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SelectableText(
+            message.text,
+            style: textStyle,
           ),
-          const SizedBox(height: 4),
-          ...sources.map((source) {
-            return InkWell(
-              onTap: () async {
-                final uri = Uri.parse(source);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri);
-                }
-              },
-              child: Text(
-                source,
-                style: textStyle.copyWith(
-                  decoration: TextDecoration.underline,
-                  color: linkColor,
+          if (sources != null && sources.isNotEmpty) ...[
+            const Divider(height: 16),
+            Text(
+              '参考情報',
+              style: textStyle.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            ...sources.map((source) {
+              return InkWell(
+                onTap: () async {
+                  final uri = Uri.parse(source);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri);
+                  }
+                },
+                child: Text(
+                  source,
+                  style: textStyle.copyWith(
+                    decoration: TextDecoration.underline,
+                    color: linkColor,
+                  ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ],
         ],
-      ],
+      ),
     );
   }
 

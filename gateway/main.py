@@ -107,6 +107,7 @@ CHAT_PROMPT_TEMPLATE = """
 - ユーザーの発言を深く傾聴し、まずは肯定的に受け止めて共感を示してください。
 - セッションサマリーの内容に基づき、ユーザーが自分でも気づいていない内面を優しく指摘したり、深い問いを投げかけたりして、自己理解を促してください。
 - 毎回の返信を自己紹介から始めるのではなく、会話の流れを自然に引き継いでください。
+- **ユーザーの名前（「〇〇さん」など）は絶対に使用せず、常に対話相手に直接語りかけるようにしてください。**
 # ユーザーのセッションサマリー
 {session_summary}
 # これまでの会話履歴
@@ -249,6 +250,7 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
 あなたは、ユーザーの心の状態を分析し、科学的根拠に基づいた客観的なアドバイスを提供するAIカウンセラーです。
 以下のユーザー分析結果と、関連する参考情報（類似ケースや具体的な改善案など）を読んで、ユーザーへの具体的で実践的なアドバイスを生成してください。
 アドバイスは、ユーザーが次の一歩を踏み出せるように、優しく、共感的で、肯定的なトーンで記述してください。Markdown形式で出力してください。
+**注意：ユーザーの名前（「〇〇さん」など）は絶対に使用しないでください。**
 # ユーザー分析結果
 {query}
 # 参考情報 (類似ケースや改善案のヒント)
@@ -634,7 +636,7 @@ def post_chat_message():
 
         session_summary = _get_all_insights_as_text(user_id)
         ai_response = ""
-        sources = []
+        sources = []  # ★★★ sourcesリストをここで初期化します ★★★
 
         if not session_summary:
             ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
@@ -648,6 +650,7 @@ def post_chat_message():
                 SUGGESTIONS_ENGINE_ID
             )
         else:
+            # sourcesは上で初期化されているため、ここでは応答を生成するだけでOK
             ai_response = generate_chat_response(session_summary, data.get('chat_history', []), user_message)
 
         return jsonify({'answer': ai_response, 'sources': sources})
