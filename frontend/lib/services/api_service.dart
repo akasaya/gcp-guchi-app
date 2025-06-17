@@ -3,68 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/graph_data.dart';
+import '../models/chat_models.dart'; 
 
 
 // ApiServiceをアプリケーション全体で利用可能にするためのProvider
 final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });
-
-// APIの新しい応答形式を受け取るためのクラス
-class ChatResponse {
-  final String answer;
-  final List<String> sources;
-
-  ChatResponse({required this.answer, required this.sources});
-
-  factory ChatResponse.fromJson(Map<String, dynamic> json) {
-    return ChatResponse(
-      answer: json['answer'] as String,
-      sources: (json['sources'] as List<dynamic>?)?.cast<String>() ?? [],
-    );
-  }
-}
-
-// ★★★ 新規追加: ノードタップ時の応答を格納するクラス ★★★
-class NodeTapResponse {
-  final String initialSummary;
-  final String nodeLabel;
-  final List<ChatAction> actions;
-
-  NodeTapResponse({
-    required this.initialSummary,
-    required this.nodeLabel,
-    required this.actions,
-  });
-
-  factory NodeTapResponse.fromJson(Map<String, dynamic> json) {
-    var actionsFromJson = json['actions'] as List<dynamic>?;
-    List<ChatAction> actionsList = actionsFromJson != null
-        ? actionsFromJson.map((i) => ChatAction.fromJson(i)).toList()
-        : [];
-
-    return NodeTapResponse(
-      initialSummary: json['initial_summary'] as String,
-      nodeLabel: json['node_label'] as String,
-      actions: actionsList,
-    );
-  }
-}
-
-// ★★★ 新規追加: チャット内のアクションボタンを表現するクラス ★★★
-class ChatAction {
-  final String id;
-  final String label;
-
-  ChatAction({required this.id, required this.label});
-
-  factory ChatAction.fromJson(Map<String, dynamic> json) {
-    return ChatAction(
-      id: json['id'] as String,
-      label: json['label'] as String,
-    );
-  }
-}
 
 class ApiService {
   final Dio _dio = Dio();

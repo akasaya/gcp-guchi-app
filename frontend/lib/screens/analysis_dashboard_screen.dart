@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:frontend/models/graph_data.dart' as model;
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/models/chat_models.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart'; 
+import 'package:uuid/uuid.dart';            
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
   const AnalysisDashboardScreen({super.key});
@@ -87,7 +88,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     
     try {
       final apiService = ref.read(apiServiceProvider);
-      final response = await apiService.handleNodeTap(nodeData.label);
+      // ★★★ 修正: .label を .id に変更 ★★★
+      final response = await apiService.handleNodeTap(nodeData.id);
 
       final actionMessageId = const Uuid().v4();
       final actionMessage = types.CustomMessage(
@@ -280,12 +282,14 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     return GestureDetector(
       onTap: () => _onNodeTapped(nodeData),
       child: Tooltip(
-        message: "${nodeData.label}\nタイプ: ${nodeData.type}",
+        // ★★★ 修正: .label を .id に変更 ★★★
+        message: "${nodeData.id}\nタイプ: ${nodeData.type}",
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           constraints: const BoxConstraints(maxWidth: 150),
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: nodeColor, boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))]),
-          child: Text(nodeData.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+          // ★★★ 修正: .label を .id に変更 ★★★
+          child: Text(nodeData.id, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ),
     );
