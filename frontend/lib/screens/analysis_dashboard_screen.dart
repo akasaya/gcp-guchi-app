@@ -312,7 +312,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
-  // ★★★ ステップ2の修正箇所 ★★★
   Widget _buildChatView() {
     final theme = Theme.of(context);
     return Chat(
@@ -321,10 +320,12 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       user: _user,
       theme: DefaultChatTheme(
         primaryColor: theme.colorScheme.primary,
-        secondaryColor: theme.colorScheme.surfaceVariant,
+        // ★★★ 修正点1: 非推奨の `surfaceVariant` を `surfaceContainerHighest` に変更
+        secondaryColor: theme.colorScheme.surfaceContainerHighest,
         inputBackgroundColor: theme.colorScheme.surface,
         inputTextColor: theme.colorScheme.onSurface,
-        receivedMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+        // ★★★ 修正点1: 上記の変更に合わせて文字色も `onSurface` に変更
+        receivedMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onSurface),
         sentMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
       ),
       typingIndicatorOptions: TypingIndicatorOptions(
@@ -343,8 +344,15 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     required int messageWidth,
     required bool showName,
   }) {
-    final theme = InheritedChatTheme.of(context).theme;
+    final materialTheme = Theme.of(context);
     final bool isMe = message.author.id == _user.id;
+    
+    // Flutter標準のテーマからスタイルを直接定義する
+    final textStyle = isMe
+        ? TextStyle(color: materialTheme.colorScheme.onPrimary)
+        : TextStyle(color: materialTheme.colorScheme.onSurface);
+    
+    final linkColor = isMe ? Colors.white70 : Colors.blue.shade800;
     final sources = (message.metadata?['sources'] as List<dynamic>?)?.cast<String>();
 
     return Column(
@@ -352,14 +360,13 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       children: [
         SelectableText(
           message.text,
-          style: isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle,
+          style: textStyle,
         ),
         if (sources != null && sources.isNotEmpty) ...[
           const Divider(height: 16),
           Text(
             '参考情報',
-            style: (isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle)
-                ?.copyWith(fontWeight: FontWeight.bold),
+            style: textStyle.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           ...sources.map((source) {
@@ -372,9 +379,9 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
               },
               child: Text(
                 source,
-                style: (isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle)?.copyWith(
+                style: textStyle.copyWith(
                   decoration: TextDecoration.underline,
-                  color: isMe ? Colors.white70 : Colors.blue.shade800,
+                  color: linkColor,
                 ),
               ),
             );
