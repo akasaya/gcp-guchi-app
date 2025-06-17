@@ -5,6 +5,7 @@ import 'package:frontend/services/api_service.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
@@ -24,6 +25,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   final _user = const types.User(id: 'user');
   final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
   bool _isAiTyping = false;
+  bool _isRagLoading = false;
 
   @override
   void initState() {
@@ -31,8 +33,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     final apiService = ref.read(apiServiceProvider);
     _graphDataFuture = _fetchAndBuildGraph(apiService);
     _addInitialChatMessage();
-
-    // SugiyamaConfigurationの関連コードは不要になったため削除
   }
 
   void _addInitialChatMessage() {
@@ -50,7 +50,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
     try {
       final graphData = await apiService.getAnalysisGraph();
-
       if (!mounted) return graphData;
 
       _graph.nodes.clear();
@@ -71,8 +70,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             fromNode,
             toNode,
             paint: Paint()
-              ..color = Colors.grey.withAlpha(150) // 少し薄くして見やすくする
-              ..strokeWidth = edgeData.weight.clamp(0.5, 4.0), // 線を少し細くする
+              ..color = Colors.grey.withAlpha(150)
+              ..strokeWidth = edgeData.weight.clamp(0.5, 4.0),
           );
         }
       }
@@ -99,16 +98,13 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       final apiService = ref.read(apiServiceProvider);
       final historyForApi = _messages
           .whereType<types.TextMessage>()
-          .map((m) => {
-                // バックエンドの仕様に合わせてキーを元に戻します
-                'author': m.author.id,
-                'text': m.text,
-              })
+          .map((m) => {'author': m.author.id, 'text': m.text})
           .toList()
           .reversed
           .toList();
 
-      final aiResponseText = await apiService.postChatMessage(
+      // ★★★ ステップ1の修正箇所 ★★★
+      final response = await apiService.postChatMessage(
         chatHistory: historyForApi,
         message: message.text,
       );
@@ -117,7 +113,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         author: _ai,
         createdAt: DateTime.now().millisecondsSinceEpoch,
         id: const Uuid().v4(),
-        text: aiResponseText,
+        text: response.answer,
+        metadata: response.sources.isNotEmpty ? {'sources': response.sources} : null,
       );
 
       setState(() {
@@ -137,6 +134,63 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       setState(() {
         _isAiTyping = false;
       });
+    }
+  }
+
+  Future<void> _handleRagRequest() async {
+    setState(() => _isRagLoading = true);
+
+    final thinkingMessage = types.TextMessage(
+      author: _ai,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      id: const Uuid().v4(),
+      text: 'あなたに合った具体的な改善案を探しています... 少々お待ちください。',
+    );
+    setState(() => _messages.insert(0, thinkingMessage));
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final historyForApi = _messages
+          .where((m) => m is types.TextMessage && m.id != thinkingMessage.id)
+          .map((m) {
+            final textMessage = m as types.TextMessage;
+            return {'author': m.author.id, 'text': textMessage.text};
+          })
+          .toList()
+          .reversed
+          .toList();
+
+      final response = await apiService.postChatMessage(
+        chatHistory: historyForApi,
+        message: "RAGを使って具体的な改善案を教えてください。",
+        useRag: true,
+      );
+
+      final aiMessage = types.TextMessage(
+        author: _ai,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        id: const Uuid().v4(),
+        text: response.answer,
+        metadata: response.sources.isNotEmpty ? {'sources': response.sources} : null,
+      );
+
+      setState(() {
+        _messages.removeAt(0);
+        _messages.insert(0, aiMessage);
+      });
+    } catch (e) {
+      setState(() {
+        _messages.removeAt(0);
+        final errorMessage = types.TextMessage(
+          author: _ai,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          id: const Uuid().v4(),
+          text: '申し訳ありません、改善案の取得中にエラーが発生しました。$e',
+        );
+        _messages.insert(0, errorMessage);
+      });
+    } finally {
+      setState(() => _isRagLoading = false);
     }
   }
 
@@ -165,26 +219,9 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
+          return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}', textAlign: TextAlign.center)));
         } else if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                '分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-            ),
-          );
+          return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey))));
         } else {
           return _buildGraphView();
         }
@@ -208,9 +245,6 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       child: Column(
         children: [
           const TabBar(
-            labelColor: Colors.black87,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Colors.deepPurple,
             tabs: [
               Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
               Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline)),
@@ -234,7 +268,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       maxScale: 2.5,
       child: GraphView(
         graph: _graph,
-        algorithm: _algorithm, // 新しいアルゴリズムを適用
+        algorithm: _algorithm,
         paint: Paint()
           ..color = Colors.transparent
           ..strokeWidth = 1
@@ -249,21 +283,14 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
   }
 
   Widget _buildNodeWidget(model.NodeData? nodeData) {
-    if (nodeData == null) {
-      return const SizedBox.shrink();
-    }
-
-    // --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
-    // ノードの種類に応じて色を決定するマップ
+    if (nodeData == null) return const SizedBox.shrink();
     final Map<String, Color> colorMap = {
       'topic': Colors.purple.shade400,
       'issue': Colors.red.shade400,
       'emotion': Colors.orange.shade300,
       'keyword': Colors.blueGrey.shade400,
     };
-    // マップから色を取得し、なければデフォルト色（グレー）を使用
     final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
-
     return Tooltip(
       message: "${nodeData.label}\nタイプ: ${nodeData.type}",
       child: Container(
@@ -271,22 +298,12 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         constraints: const BoxConstraints(maxWidth: 150),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          color: nodeColor, // ★★★ 決定した色を使用 ★★★
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(51),
-              blurRadius: 4,
-              offset: const Offset(1, 1),
-            )
-          ],
+          color: nodeColor,
+          boxShadow: [BoxShadow(color: Colors.black.withAlpha(51), blurRadius: 4, offset: const Offset(1, 1))],
         ),
         child: Text(
           nodeData.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -295,50 +312,108 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     );
   }
 
+  // ★★★ ステップ2の修正箇所 ★★★
   Widget _buildChatView() {
-    // --- ↓↓↓ ここからが修正箇所です ↓↓↓ ---
-    return Stack(
+    final theme = Theme.of(context);
+    return Chat(
+      messages: _messages,
+      onSendPressed: _handleSendPressed,
+      user: _user,
+      theme: DefaultChatTheme(
+        primaryColor: theme.colorScheme.primary,
+        secondaryColor: theme.colorScheme.surfaceVariant,
+        inputBackgroundColor: theme.colorScheme.surface,
+        inputTextColor: theme.colorScheme.onSurface,
+        receivedMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+        sentMessageBodyTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
+      ),
+      typingIndicatorOptions: TypingIndicatorOptions(
+        typingUsers: _isAiTyping ? [_ai] : [],
+      ),
+      l10n: const ChatL10nEn(
+        inputPlaceholder: 'メッセージを入力',
+      ),
+      customBottomWidget: _buildChatInputArea(),
+      textMessageBuilder: _textMessageBuilder,
+    );
+  }
+
+  Widget _textMessageBuilder(
+    types.TextMessage message, {
+    required int messageWidth,
+    required bool showName,
+  }) {
+    final theme = InheritedChatTheme.of(context).theme;
+    final bool isMe = message.author.id == _user.id;
+    final sources = (message.metadata?['sources'] as List<dynamic>?)?.cast<String>();
+
+    return Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        Chat(
-          messages: _messages,
-          onSendPressed: _handleSendPressed,
-          user: _user,
-          theme: DefaultChatTheme(
-            primaryColor: Colors.deepPurple,
-            secondaryColor: Colors.grey.shade200,
-            inputBackgroundColor: Colors.white,
-            inputTextColor: Colors.black87,
-            receivedMessageBodyTextStyle: const TextStyle(color: Colors.black87),
-          ),
-          typingIndicatorOptions: TypingIndicatorOptions(
-            typingUsers: _isAiTyping ? [_ai] : [],
-          ),
-          l10n: const ChatL10nEn(
-            inputPlaceholder: 'メッセージを入力',
-          ),
+        SelectableText(
+          message.text,
+          style: isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle,
         ),
-        // RAGを呼び出すための「改善案」ボタン
-        Positioned(
-          bottom: 16,
-          right: 16,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.lightbulb_outline),
-            label: const Text('改善案を教えて'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
-              foregroundColor: Colors.white,
-              shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onPressed: () {
-              // ボタンが押されたら、特定のメッセージを送信する
-              _handleSendPressed(
-                types.PartialText(text: 'RAGを使って具体的な改善案を教えてください。')
-              );
-            },
+        if (sources != null && sources.isNotEmpty) ...[
+          const Divider(height: 16),
+          Text(
+            '参考情報',
+            style: (isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle)
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
-        )
+          const SizedBox(height: 4),
+          ...sources.map((source) {
+            return InkWell(
+              onTap: () async {
+                final uri = Uri.parse(source);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
+              child: Text(
+                source,
+                style: (isMe ? theme.sentMessageBodyTextStyle : theme.receivedMessageBodyTextStyle)?.copyWith(
+                  decoration: TextDecoration.underline,
+                  color: isMe ? Colors.white70 : Colors.blue.shade800,
+                ),
+              ),
+            );
+          }),
+        ],
       ],
+    );
+  }
+
+  Widget _buildChatInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(8.0),
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+           ElevatedButton.icon(
+              icon: _isRagLoading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.lightbulb_outline),
+              label: const Text('具体的な改善案を聞く'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                shape: const StadiumBorder(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                minimumSize: const Size(double.infinity, 48)
+              ),
+              onPressed: _isRagLoading ? null : _handleRagRequest,
+            ),
+          const SizedBox(height: 8),
+          Input(
+            onSendPressed: _handleSendPressed,
+            options: const InputOptions(
+              sendButtonVisibilityMode: SendButtonVisibilityMode.always,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

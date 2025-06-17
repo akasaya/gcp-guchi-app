@@ -4,10 +4,25 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/graph_data.dart';
 
+
 // ApiServiceをアプリケーション全体で利用可能にするためのProvider
 final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });
+
+class ChatResponse {
+  final String answer;
+  final List<String> sources;
+
+  ChatResponse({required this.answer, required this.sources});
+
+  factory ChatResponse.fromJson(Map<String, dynamic> json) {
+    return ChatResponse(
+      answer: json['answer'] as String,
+      sources: (json['sources'] as List<dynamic>?)?.cast<String>() ?? [],
+    );
+  }
+}
 
 class ApiService {
   final Dio _dio = Dio();
@@ -73,29 +88,30 @@ class ApiService {
 
 
     /// 【新規追加】チャットメッセージを送信し、AIの応答を取得する
- Future<String> postChatMessage({
+  Future<ChatResponse> postChatMessage({
     required List<Map<String, String>> chatHistory,
     required String message,
+    bool useRag = false, // RAG機能を使うかどうかのフラグを追加
   }) async {
     final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
-      // AIの応答は時間がかかるため、このリクエストのタイムアウトを2分に延長
       _dio.options.receiveTimeout = const Duration(minutes: 2);
       final response = await _dio.post(
         '/analysis/chat',
         data: {
           'chat_history': chatHistory,
           'message': message,
+          'use_rag': useRag, // フラグをAPIに送信
         },
       );
-      return response.data['response'];
+      // 新しいChatResponseクラスとして結果を返すように変更
+      return ChatResponse.fromJson(response.data);
     } on DioException catch (e) {
       final errorMessage = e.response?.data?['error'] ?? 'メッセージの送信に失敗しました。';
       throw Exception(errorMessage);
     } catch (e) {
       throw Exception('予期せぬエラーが発生しました。');
     } finally {
-      // タイムアウト設定を元に戻す
       _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }

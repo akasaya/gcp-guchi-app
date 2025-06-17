@@ -259,7 +259,8 @@ def _generate_rag_based_advice(query: str, project_id: str, similar_cases_engine
 """
     pro_model_name = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
     model = GenerativeModel(pro_model_name)
-    return model.generate_content(prompt, generation_config=GenerationConfig(temperature=0.7)).text
+    advice = model.generate_content(prompt, generation_config=GenerationConfig(temperature=0.7)).text
+    return advice, urls_to_process
 
 def _search_with_vertex_ai_search(project_id: str, location: str, engine_id: str, query: str) -> list[str]:
     if not engine_id:
@@ -622,15 +623,25 @@ def post_chat_message():
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
         data = request.get_json()
-        if not data or not (user_message := data.get('message')): return jsonify({'error': 'message is required'}), 400
-        
+        if not data:
+            return jsonify({'error': 'Request body is missing'}), 400
+
+        user_message = data.get('message')
+        use_rag = data.get('use_rag', False)
+
+        if not user_message and not use_rag:
+            return jsonify({'error': 'message or use_rag flag is required'}), 400
+
         session_summary = _get_all_insights_as_text(user_id)
+        ai_response = ""
+        sources = []
+
         if not session_summary:
             ai_response = "こんにちは。分析できるセッション履歴がまだないようです。まずはセッションを完了して、ご自身の内面を探る旅を始めてみましょう。"
-        
-        elif 'RAGを使って具体的な改善案を' in user_message:
-            print("--- RAG advice triggered via chat ---")
-            ai_response = _generate_rag_based_advice(
+
+        elif use_rag:
+            print("--- RAG advice triggered via chat API flag ---")
+            ai_response, sources = _generate_rag_based_advice(
                 session_summary,
                 project_id,
                 SIMILAR_CASES_ENGINE_ID,
@@ -638,11 +649,13 @@ def post_chat_message():
             )
         else:
             ai_response = generate_chat_response(session_summary, data.get('chat_history', []), user_message)
-        return jsonify({'response': ai_response})
+
+        return jsonify({'answer': ai_response, 'sources': sources})
     except Exception as e:
         print(f"Error in post_chat_message: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred."}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
