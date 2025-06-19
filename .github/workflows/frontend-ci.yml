@@ -72,10 +72,9 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      # Firebase CLIの公式Actionを使ってデプロイ
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
       - name: Deploy to Firebase Hosting
+        working-directory: ./frontend
         run: firebase deploy --only hosting --project ${{ secrets.GCP_PROJECT_ID }} --non-interactive
-        working_directory: ./frontend
