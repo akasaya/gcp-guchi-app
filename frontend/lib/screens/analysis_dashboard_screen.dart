@@ -70,7 +70,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
 
       // スマホ表示の場合はチャットタブに切り替える
       if (MediaQuery.of(context).size.width <= 800) {
-        DefaultTabController.of(context)?.animateTo(1);
+        DefaultTabController.of(context).animateTo(1);
       }
     }
   }
