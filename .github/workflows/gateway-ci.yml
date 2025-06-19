@@ -81,7 +81,7 @@ jobs:
         docker push ${{ env.IMAGE_NAME }}:${IMAGE_TAG}
         docker push ${{ env.IMAGE_NAME }}:latest
 
-     - name: Deploy to Cloud Run
+    - name: Deploy to Cloud Run
       env:
         IMAGE_TAG: ${{ github.sha }}
       run: |-
