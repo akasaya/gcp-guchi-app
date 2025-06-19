@@ -73,10 +73,9 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       # Firebase CLIの公式Actionを使ってデプロイ
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
       - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          channelId: live
-          projectId: ${{ secrets.GCP_PROJECT_ID }}
-          entryPoint: ./frontend
+        run: firebase deploy --only hosting --project ${{ secrets.GCP_PROJECT_ID }} --non-interactive
+        working_directory: ./frontend
