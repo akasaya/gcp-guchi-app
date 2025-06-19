@@ -704,7 +704,6 @@ def _get_all_insights_as_text(user_id: str) -> str:
 
 @app.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():
-    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
@@ -719,7 +718,6 @@ def get_analysis_graph():
         return jsonify({'error': 'Failed to get analysis graph', 'details': str(e)}), 500
 
 def _get_graph_from_cache_or_generate(user_id: str):
-    # ... (この関数の中身は変更ありません)
     cache_doc_ref = db_firestore.collection('users').document(user_id).collection('analysis').document('graph_cache')
     cache_doc = cache_doc_ref.get()
     if cache_doc.exists:
@@ -744,6 +742,55 @@ def _get_graph_from_cache_or_generate(user_id: str):
     cache_doc_ref.set({'data': final_graph_data, 'updated_at': firestore.SERVER_TIMESTAMP})
     print(f"✅ Successfully generated and cached graph for user: {user_id}")
     return final_graph_data
+
+@app.route('/home/suggestion', methods=['GET'])
+def get_home_suggestion():
+    """
+    ホーム画面に表示するための、パーソナライズされた単一の提案を返す。
+    ユーザーの過去の分析結果全体から、特に注意を引くべきキーワードを探して返す。
+    """
+    try:
+        user = _verify_token(request)
+        user_id = user['uid']
+        print(f"--- Getting home suggestion for user: {user_id} ---")
+
+        # ユーザーの全セッションの要約テキストを取得
+        all_insights_text = _get_all_insights_as_text(user_id)
+
+        if not all_insights_text:
+            print("No insights found, no suggestion will be returned.")
+            return jsonify({}), 204 # ユーザーデータがなければ提案なし
+
+        # 事前に定義したキーワードリストと照合する
+        found_keyword = None
+        for keyword in PROACTIVE_KEYWORDS:
+            # 単語として完全に一致する場合のみヒットさせる (例: "不安" は "不安感" にはヒットしない)
+            if re.search(r'\b' + re.escape(keyword) + r'\b', all_insights_text, re.IGNORECASE):
+                found_keyword = keyword
+                print(f"Found proactive keyword for home suggestion: '{found_keyword}'")
+                break # 最初に見つかったキーワードを提案として採用
+
+        if found_keyword:
+            # フロントエンドの HomeSuggestion モデルに合わせた形式でレスポンスを構築
+            response_data = {
+                "title": "AIからの提案",
+                "subtitle": f"最近「{found_keyword}」について考えているようですね。思考を整理しませんか？",
+                "node_id": found_keyword,
+                "node_label": found_keyword
+            }
+            return jsonify(response_data), 200
+        else:
+            print("No relevant keywords found in insights for home suggestion.")
+            return jsonify({}), 204 # 提案すべきキーワードが見つからなければ「提案なし」で返す
+
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        # 認証エラーはフロント側で再ログインを促せるよう403を返す
+        print(f"Auth Error in get_home_suggestion: {e}")
+        return jsonify({'error': 'Invalid or expired token'}), 403
+    except Exception as e:
+        print(f"❌ Error in get_home_suggestion: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred while generating a suggestion."}), 500
 
 @app.route('/analysis/proactive_suggestion', methods=['GET'])
 def get_proactive_suggestion():

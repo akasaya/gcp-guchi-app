@@ -10,7 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';            
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
-  const AnalysisDashboardScreen({super.key});
+  final NodeTapResponse? proactiveSuggestion;
+  
+  // ★★★ 修正点1: コンストラクタを修正 ★★★
+  const AnalysisDashboardScreen({super.key, this.proactiveSuggestion});
 
   @override
   ConsumerState<AnalysisDashboardScreen> createState() =>
@@ -35,7 +38,41 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     super.initState();
     final apiService = ref.read(apiServiceProvider);
     _graphDataFuture = _fetchAndBuildGraph(apiService);
-  _addInitialMessage(apiService); 
+    if (widget.proactiveSuggestion != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleProactiveSuggestion(widget.proactiveSuggestion!);
+      });
+    } else {
+      // なければ、通常の能動的提案を取得しにいく
+      _addInitialMessage(apiService);
+    }
+  }
+
+    Future<void> _handleProactiveSuggestion(NodeTapResponse suggestion) async {
+    if (mounted) {
+      // ★★★ 修正点2: nodeIdがnullでないことを確認 ★★★
+      final nodeId = suggestion.nodeId;
+      if (nodeId == null) {
+        // もし万が一nodeIdが渡されなかった場合は、通常起動と同じにする
+        _addInitialMessage(ref.read(apiServiceProvider));
+        return;
+      }
+
+      // タップされたノードの情報を元に、深掘り分析を開始する
+      // この時点ではグラフデータはまだないので、仮のNodeDataでOK
+      _onNodeTapped(model.NodeData(
+        id: nodeId,
+        type: 'topic', // typeはグラフ描画時に正しいものに置き換わるので仮でOK
+        size: 1,       // 同上
+        label: suggestion.nodeLabel,
+      ));
+
+
+      // スマホ表示の場合はチャットタブに切り替える
+      if (MediaQuery.of(context).size.width <= 800) {
+        DefaultTabController.of(context)?.animateTo(1);
+      }
+    }
   }
 
   // ★★★ この関数を全面修正 ★★★

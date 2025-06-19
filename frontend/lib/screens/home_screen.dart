@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:frontend/screens/analysis_dashboard_screen.dart'; // <-- ★★★ この行を追加してください ★★★
+import 'package:frontend/screens/analysis_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ApiService _apiService = ApiService();
-  // bool _isLoading = false;
+  HomeSuggestion? _suggestion;
 
   final List<String> _topics = [
     '仕事のこと',
@@ -30,6 +31,22 @@ class _HomeScreenState extends State<HomeScreen> {
   String _finalTopic = ''; // 実際にAPIに送るトピック文字列
 
   User? get currentUser => _auth.currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSuggestion();
+  }
+
+  Future<void> _fetchSuggestion() async {
+    // api_serviceに後で追加するメソッドを呼び出す
+    final suggestion = await _apiService.getHomeSuggestion();
+    if (mounted) {
+      setState(() {
+        _suggestion = suggestion;
+      });
+    }
+  }
 
   // 改善点③: ローディング表示の統一
   void _showLoadingDialog() {
@@ -193,6 +210,13 @@ void _startSession() async {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
+                // ★★★ 変更点: 提案カードを表示するロジック ★★★
+                if (_suggestion != null) ...[
+                  _buildSuggestionCard(_suggestion!),
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  const SizedBox(height: 24),
+                ],
                 const Icon(Icons.psychology_outlined, size: 60, color: Colors.deepPurple),
                 const SizedBox(height: 16),
                 const Text(
@@ -245,6 +269,57 @@ void _startSession() async {
                       ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionCard(HomeSuggestion suggestion) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AnalysisDashboardScreen(
+                proactiveSuggestion: NodeTapResponse(
+                  initialSummary: '「${suggestion.nodeLabel}」について、思考の深掘りを始めましょう。',
+                  actions: [],
+                  nodeLabel: suggestion.nodeLabel,
+                  nodeId: suggestion.nodeId,
+                ),
+              ),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Icon(Icons.lightbulb_outline, color: Colors.amber.shade700, size: 40),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(suggestion.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(
+                      suggestion.subtitle,
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            ],
           ),
         ),
       ),

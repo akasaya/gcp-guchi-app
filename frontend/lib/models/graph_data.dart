@@ -47,29 +47,26 @@ class GraphData {
 @immutable
 class NodeData {
   final String id;
-  final String label;
   final String type;
-  final int turn;
-  final double size;
-  final Color color;
+  final int size;
+  // ★★★ 変更点: 'label' を必須ではなく、オプショナル（任意）にします ★★★
+  final String? label; 
 
+  // ★★★ 変更点: 'turn' を完全に削除します ★★★
   const NodeData({
     required this.id,
-    required this.label,
     required this.type,
-    required this.turn,
     required this.size,
-    required this.color,
+    this.label, // ★★★ 変更点: requiredを外します ★★★
   });
 
   factory NodeData.fromJson(Map<String, dynamic> json) {
     return NodeData(
-      id: json['id'] as String? ?? 'unknown_id',
-      label: json['label'] as String? ?? json['id'] as String? ?? '',
+      id: json['id'] as String,
       type: json['type'] as String? ?? 'keyword',
-      turn: json['turn'] as int? ?? 0,
-      size: _parseDouble(json['size'], 15.0),
-      color: _colorFromHex(json['color'] as String? ?? '#CCCCCC'),
+      size: (json['size'] as num? ?? 1).toInt(),
+      // ★★★ 変更点: labelが無くてもidで代用するようにします ★★★
+      label: json['label'] as String? ?? json['id'] as String,
     );
   }
 }

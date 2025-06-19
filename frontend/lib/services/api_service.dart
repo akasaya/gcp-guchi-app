@@ -52,6 +52,20 @@ class ApiService {
     ));
   }
 
+    Future<HomeSuggestion?> getHomeSuggestion() async {
+    try {
+      final response = await _dio.get('/home/suggestion');
+      if (response.statusCode == 200 && response.data != null) {
+        return HomeSuggestion.fromJson(response.data);
+      }
+      return null;
+    } catch (e) {
+      // ホーム画面の提案は表示されなくてもクリティカルではないため、エラーは握りつぶす
+      debugPrint('ホーム画面の提案取得に失敗: $e');
+      return null;
+    }
+  }
+
   /// ★★★ ここから下が各APIを呼び出すメソッド群です ★★★
 
   /// 【新規追加】統合分析グラフのデータを取得する

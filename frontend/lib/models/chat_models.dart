@@ -17,11 +17,13 @@ class NodeTapResponse {
   final String initialSummary;
   final String nodeLabel;
   final List<ChatAction> actions;
+  final String? nodeId; // ★★★ 変更点: ホーム画面からの遷移で使用するため追加
 
   NodeTapResponse({
     required this.initialSummary,
     required this.nodeLabel,
     required this.actions,
+    this.nodeId, // ★★★ 変更点: コンストラクタに追加
   });
 
   factory NodeTapResponse.fromJson(Map<String, dynamic> json) {
@@ -49,6 +51,29 @@ class ChatAction {
     return ChatAction(
       id: json['id'] as String,
       label: json['label'] as String,
+    );
+  }
+}
+
+class HomeSuggestion {
+  final String title;
+  final String subtitle;
+  final String nodeId;
+  final String nodeLabel;
+
+  HomeSuggestion({
+    required this.title,
+    required this.subtitle,
+    required this.nodeId,
+    required this.nodeLabel,
+  });
+
+  factory HomeSuggestion.fromJson(Map<String, dynamic> json) {
+    return HomeSuggestion(
+      title: json['title'] as String? ?? 'AIからの提案',
+      subtitle: json['subtitle'] as String? ?? '気になることについて思考を整理しませんか？',
+      nodeId: json['node_id'] as String,
+      nodeLabel: json['node_label'] as String,
     );
   }
 }
