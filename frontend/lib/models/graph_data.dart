@@ -8,13 +8,6 @@ double _parseDouble(dynamic source, double defaultValue) {
   return double.tryParse(source.toString()) ?? defaultValue;
 }
 
-Color _colorFromHex(String hexColor) {
-  final hexCode = hexColor.replaceAll('#', '');
-  if (hexCode.length == 6) {
-    return Color(int.parse('FF$hexCode', radix: 16));
-  }
-  return Colors.grey; // デフォルト色
-}
 
 @immutable
 class GraphData {

@@ -148,7 +148,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
     _disablePreviousActions();
 
     if (MediaQuery.of(context).size.width <= 800) {
-      DefaultTabController.of(context)?.animateTo(1);
+      DefaultTabController.of(context).animateTo(1);
     }
     
     try {
