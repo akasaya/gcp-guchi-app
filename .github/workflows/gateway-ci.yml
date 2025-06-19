@@ -81,7 +81,7 @@ jobs:
         docker push ${{ env.IMAGE_NAME }}:${IMAGE_TAG}
         docker push ${{ env.IMAGE_NAME }}:latest
 
-    - name: Deploy to Cloud Run
+     - name: Deploy to Cloud Run
       env:
         IMAGE_TAG: ${{ github.sha }}
       run: |-
@@ -92,4 +92,4 @@ jobs:
           --quiet \
           --allow-unauthenticated \
           --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
-          --update-env-vars='GEMINI_FLASH_NAME=gemini-2.5-flash-preview-05-20,GEMINI_PRO_NAME=gemini-2.5-pro-preview-05-06,GCP_VERTEX_AI_REGION=us-central1,SIMILAR_CASES_DATA_STORE_ID=${{ secrets.SIMILAR_CASES_DATA_STORE_ID }},SUGGESTIONS_DATA_STORE_ID=${{ secrets.SUGGESTIONS_DATA_STORE_ID }}'
+          --update-env-vars='GEMINI_FLASH_NAME=gemini-2.5-flash-preview-05-20,GEMINI_PRO_NAME=gemini-2.5-pro-preview-05-06,GCP_VERTEX_AI_REGION=us-central1,SIMILAR_CASES_ENGINE_ID=${{ secrets.SIMILAR_CASES_ENGINE_ID }},SUGGESTIONS_ENGINE_ID=${{ secrets.SUGGESTIONS_ENGINE_ID }}'
