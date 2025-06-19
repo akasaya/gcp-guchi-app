@@ -5,8 +5,10 @@ import 'firebase_options.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart'; // <-- ★★★ この行を追加 ★★★
+import 'package:google_fonts/google_fonts.dart';
 
+// test/widget_test.dart からも参照されるため、グローバルに定義します
+final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,37 +22,38 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+// ★★★ ここが重要です: StatelessWidget を ConsumerWidget に変更します ★★★
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  // ★★★ buildメソッドに WidgetRef ref を追加します ★★★
+  Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
+    // `ref.watch` を使うことで、Providerからインスタンスを取得できます
+    final auth = ref.watch(firebaseAuthProvider);
 
     return MaterialApp(
       title: 'マインドソート',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
-        // アプリ全体のフォントをNoto Sans JPに設定
         textTheme: GoogleFonts.notoSansJpTextTheme(textTheme).apply(
           bodyColor: Colors.black87,
           displayColor: Colors.black87,
         ),
       ),
-      // 認証状態に応じて表示する最初の画面を決定
       home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(), // 認証状態の変化を監視
+        // Providerから取得したインスタンスを使用
+        stream: auth.authStateChanges(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            // 最初のフレームではまだ認証状態が確定していない場合があるため、ローディング表示
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return const Scaffold(
+                body: Center(child: CircularProgressIndicator()));
           }
           if (snapshot.hasData) {
-            // ユーザーデータがあれば（ログイン済み）、HomeScreenを表示
             return const HomeScreen();
           }
-          // ユーザーデータがなければ（未ログイン）、LoginScreenを表示
           return const LoginScreen();
         },
       ),
