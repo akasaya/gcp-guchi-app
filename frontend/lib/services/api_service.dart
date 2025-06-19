@@ -89,7 +89,13 @@ class ApiService {
 
   // ★★★ この関数を修正（デバッグ用のログを強化） ★★★
   Future<NodeTapResponse?> getProactiveSuggestion() async {
+    // このAPIは複数のAI呼び出しを含むため、特別にタイムアウトを延長します
+    final originalConnectTimeout = _dio.options.connectTimeout;
+    final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
+      _dio.options.connectTimeout = const Duration(minutes: 2);
+      _dio.options.receiveTimeout = const Duration(minutes: 2);
+
       final response = await _dio.get('/analysis/proactive_suggestion');
       if (response.data == null) {
         return null; // 提案がない場合はnullを返す
@@ -109,6 +115,10 @@ class ApiService {
       debugPrint(e.toString());
       debugPrint("-------------------------------------------------");
       return null;
+    } finally {
+      // タイムアウト設定を元に戻します
+      _dio.options.connectTimeout = originalConnectTimeout;
+      _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
 
