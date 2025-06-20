@@ -3,6 +3,7 @@ import uuid
 import subprocess
 from google.cloud import aiplatform, storage
 
+
 def get_gcloud_project():
     """gcloud configからプロジェクトIDを取得するヘルパー関数"""
     try:
