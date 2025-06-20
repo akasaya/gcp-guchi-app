@@ -618,7 +618,7 @@ def post_summary(session_id):
         current_turn = session_data.get('turn', 1)
         max_turns = session_data.get('max_turns', 3)
         swipes_text = "\n".join([f"Q: {s.get('question_text')}\nA: {'はい' if s.get('answer') else 'いいえ'}" for s in data['swipes']])
-        summary_data = generate_summary_only(topic, swipes_text)
+        summary_data = generate_summary_only(topic=topic, swipes_text=swipes_text) # <- この行を修正
         insights_md = summary_data.get('insights')
         title = summary_data.get('title')
         if not insights_md or not title: raise Exception("AI failed to generate summary or title.")
