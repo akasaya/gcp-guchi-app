@@ -44,7 +44,8 @@ def test_start_session_success(client, mocker):
     mocker.patch('gateway.main._verify_token', return_value={'uid': MOCK_USER_ID})
     mocker.patch('gateway.main.generate_initial_questions', return_value=MOCK_QUESTIONS)
 
-    # --- Firestoreの呼び出しチェーン全体をモック (★★★ 全面的に修正 ★★★) ---
+    # --- Firestoreの呼び出しチェーン全体をモック (★★★ 修正: db_firestore自体をモックする ★★★) ---
+    mock_db = mocker.patch('gateway.main.db_firestore')
 
     # 1. 最終的にコード中で使われることになる、末端のドキュメント参照を準備
     # これが /users/{uid}/sessions/{sid} に対応する
@@ -54,9 +55,9 @@ def test_start_session_success(client, mocker):
     # これが /users/{uid}/sessions/{sid}/questions/{qid} に対応する (ループで使われる)
     mock_question_doc_refs = [mocker.Mock(id=f"q_id_{i}") for i in range(len(MOCK_QUESTIONS))]
 
-    # 2. `db_firestore.collection().document().collection().document()` という
-    #    長い呼び出しチェーンの結果として、上で準備した `mock_session_doc_ref` が返るように設定
-    mocker.patch('gateway.main.db_firestore.collection').return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
+    # 2. `db_firestore.collection()...` という呼び出しチェーンの結果として、
+    #    上で準備した `mock_session_doc_ref` が返るように設定
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
 
     # 3. `session_doc_ref` の後に行われる処理をモック
     #    `session_doc_ref.collection('questions')` が呼ばれたら、質問コレクションのモックを返す
@@ -96,11 +97,10 @@ def test_record_swipe_success(client, mocker):
     # 認証をモック
     mocker.patch('gateway.main._verify_token', return_value={'uid': MOCK_USER_ID})
 
-    # Firestoreの .add() メソッドを、呼び出しチェーン全体を模倣してモックする
+    # Firestoreの .add() メソッドを、呼び出しチェーン全体を模倣してモックする (★★★ 修正: db_firestore自体をモックする ★★★)
+    mock_db = mocker.patch('gateway.main.db_firestore')
     mock_add = mocker.Mock()
-    mocker.patch(
-        'gateway.main.db_firestore.collection'
-    ).return_value.document.return_value.collection.return_value.document.return_value.collection.return_value.add = mock_add
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value.collection.return_value.add = mock_add
 
 
     # --- API呼び出し ---
@@ -142,7 +142,9 @@ def test_post_summary_success(client, mocker):
     mocker.patch('gateway.main.generate_summary_only', return_value=MOCK_SUMMARY_DATA)
     mocker.patch('gateway.main.threading.Thread')
 
-    # Firestoreの呼び出しをモック
+    # Firestoreの呼び出しをモック (★★★ 修正: db_firestore自体をモックする ★★★)
+    mock_db = mocker.patch('gateway.main.db_firestore')
+    
     # .get() が返すドキュメントスナップショットのモック
     mock_snapshot = mocker.Mock()
     mock_snapshot.exists = True
@@ -154,9 +156,7 @@ def test_post_summary_success(client, mocker):
     mock_analyses_add = mock_session_doc_ref.collection.return_value.add # .add メソッドを直接モック
 
     # 実際の呼び出しチェーンが、作成したモックを返すようにパッチを適用
-    mocker.patch(
-        'gateway.main.db_firestore.collection'
-    ).return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
 
     # --- API呼び出し ---
     session_id = "test_session_id_123"
@@ -193,10 +193,10 @@ def test_start_session_auth_error(client, mocker):
     - _verify_token が例外を発生させた場合に 403 Forbidden が返ることを確認
     """
     # --- モックの設定 ---
-    # firebase_admin.auth をインポートして、例外クラスにアクセスできるようにする
+    # (★★★ 修正: _verify_token自体ではなく、内部で呼ばれるauth.verify_id_tokenをモックする ★★★)
     from firebase_admin import auth
-    # _verify_token が InvalidIdTokenError を発生するようにモック
-    mocker.patch('gateway.main._verify_token', side_effect=auth.InvalidIdTokenError("Test token is invalid"))
+    # これにより、_verify_token内のtry-exceptブロックが機能し、適切なエラーレスポンスが生成される
+    mocker.patch('firebase_admin.auth.verify_id_token', side_effect=auth.InvalidIdTokenError("Test token is invalid"))
 
     # --- API呼び出し ---
     response = client.post(
@@ -207,7 +207,7 @@ def test_start_session_auth_error(client, mocker):
     )
 
     # --- 検証 ---
-    assert response.status_code == 403
+    assert response.status_code == 403, f"Expected 403, but got {response.status_code}. Response: {response.get_data(as_text=True)}"
     response_data = response.get_json()
     assert 'error' in response_data
     assert response_data['error'] == 'Invalid or expired token'
