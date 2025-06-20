@@ -573,12 +573,10 @@ def start_session():
     user_id = user_record['uid']
     
     try:
-        session_ref = db_firestore.collection('sessions').document()
-        session_id = session_ref.id
+        # セッションドキュメントを作成
+        session_doc_ref = db_firestore.collection('sessions').document()
         
-        initial_questions = generate_initial_questions(topic)
-
-        session_ref.set({
+        session_doc_ref.set({
             'user_id': user_id,
             'topic': topic,
             'start_time': firestore.SERVER_TIMESTAMP,
@@ -587,15 +585,38 @@ def start_session():
             'is_active': True,
         })
 
+        # Geminiで最初の質問を生成
+        questions = generate_initial_questions(topic)
+
+        # バッチ書き込みを使って質問を保存し、同時にフロントエンド用のレスポンスを作成
+        batch = db_firestore.batch()
+        
+        questions_for_response = []
+        for question in questions:
+            # 質問用のドキュメント参照を先に作成してIDを取得
+            question_doc_ref = session_doc_ref.collection('questions').document()
+            
+            # フロントに返すリストには、生成したIDを `question_id` として追加
+            questions_for_response.append({
+                "question_text": question['question_text'],
+                "question_id": question_doc_ref.id
+            })
+            
+            # Firestoreには、質問テキストのみをバッチに追加
+            batch.set(question_doc_ref, { "question_text": question['question_text'] })
+
+        batch.commit()
+
         return jsonify({
-            'session_id': session_id,
-            'questions': initial_questions
+            'session_id': session_doc_ref.id,
+            'questions': questions_for_response
         }), 200
 
     except Exception as e:
         print(f"Error starting session: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to start session"}), 500
+
 
 
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
