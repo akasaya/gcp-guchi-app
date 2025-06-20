@@ -1,0 +1,10 @@
+# Firebase and Google Cloud Libraries
+firebase-admin>=6.0.0
+google-cloud-firestore>=2.11.0
+google-cloud-aiplatform>=1.56.0
+
+# Cloud Functions framework (★これを追加)
+functions-framework>=3.0.0
+
+# Utilities
+tenacity>=8.2.3
