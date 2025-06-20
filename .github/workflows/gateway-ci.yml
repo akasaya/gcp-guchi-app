@@ -41,6 +41,12 @@ jobs:
       # ネットワークの不安定さに備え、タイムアウトを60秒に延長
       run: pip install -r requirements.txt --timeout=60
 
+    - name: Run pytest
+      run: |
+        # プロジェクトルートからテストを実行する必要があるため、一時的に一つ上の階層に移動
+        cd ..
+        python -m pytest gateway/
+
     - name: Run Lint (flake8)
       run: |
         pip install flake8
