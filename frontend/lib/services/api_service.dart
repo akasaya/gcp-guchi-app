@@ -52,6 +52,22 @@ class ApiService {
     ));
   }
 
+    // ★★★ このメソッドを新規追加 ★★★
+  Future<HomeSuggestion?> getHomeSuggestionV2() async {
+    try {
+      final response = await _dio.get('/home/suggestion_v2');
+      // 204 No Content の場合は data が null になる
+      if (response.statusCode == 200 && response.data != null) {
+        return HomeSuggestion.fromJson(response.data);
+      }
+      return null; // 204 やその他のステータスコードの場合は null
+    } catch (e) {
+      // ホーム画面の提案は表示されなくてもクリティカルではないため、エラーは握りつぶす
+      debugPrint('ホーム画面の提案(v2)取得に失敗: $e');
+      return null;
+    }
+  }
+
     Future<HomeSuggestion?> getHomeSuggestion() async {
     try {
       final response = await _dio.get('/home/suggestion');

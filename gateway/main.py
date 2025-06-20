@@ -923,5 +923,80 @@ def post_chat_message():
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred."}), 500
 
+@app.route('/home/suggestion_v2', methods=['GET'])
+def get_home_suggestion_v2():
+    """
+    ユーザーの長期的な記憶（ベクトル化された分析結果）に基づいて、
+    ホーム画面に表示するためのパーソナライズされた提案を返す。
+    """
+    try:
+        decoded_token = _verify_token(request)
+        user_id = decoded_token['uid']
+        print(f"--- Getting personalized home suggestion for user: {user_id} ---")
+
+        vector_cache_ref = db_firestore.collection('vector_cache').document(user_id)
+        cache_doc = vector_cache_ref.get()
+
+        if not cache_doc.exists:
+            print(f"No vector cache found for user {user_id}. No suggestion will be returned.")
+            return jsonify({}), 204
+
+        cache_data = cache_doc.to_dict()
+        source_text = cache_data.get('source_text_digest', '以前の会話')
+
+        # ★★★ ここからプロンプトを修正 ★★★
+        prompt = f"""
+あなたは、ユーザーの思考を分析し、対話のきっかけとなるキーワードを抽出するAIアシスタントです。
+以下の「ユーザーの過去の思考サマリー」を読んで、ユーザーが次に対話すべき最も重要なキーワードやトピックを1つだけ特定し、それを使った自然な問いかけを生成してください。
+出力は必ず指定のJSON形式とすること。
+
+# ユーザーの過去の思考サマリー
+{source_text}
+
+# 出力JSONの仕様
+{{
+  "keyword": "抽出したキーワード（例：キャリアプラン、自己肯定感）",
+  "suggestion_text": "生成した問いかけ（例：キャリアプランについて、少し思考を整理してみませんか？）"
+}}
+"""
+        # ★★★ ここまでプロンプトを修正 ★★★
+
+        # ★★★ Geminiの呼び出し方を修正 ★★★
+        pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+        # JSONモードで呼び出すスキーマを定義
+        suggestion_schema = {
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string"},
+                "suggestion_text": {"type": "string"}
+            },
+            "required": ["keyword", "suggestion_text"]
+        }
+        model = GenerativeModel(pro_model)
+        response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=suggestion_schema))
+        suggestion_data = json.loads(response.text)
+        
+        keyword = suggestion_data.get("keyword")
+        suggestion_text = suggestion_data.get("suggestion_text")
+
+        print(f"Generated suggestion for user {user_id}: {suggestion_text}")
+
+        # ★★★ フロントエンドに返すデータを修正 ★★★
+        response_data = {
+            "title": "AIからの提案",
+            "subtitle": suggestion_text,
+            "nodeLabel": keyword, # フロントエンドの HomeSuggestion モデルに合わせる
+            "nodeId": keyword,    # IDもキーワードで代用
+        }
+        return jsonify(response_data), 200
+
+    except (auth.InvalidIdTokenError, IndexError, ValueError) as e:
+        print(f"Auth Error in get_home_suggestion_v2: {e}")
+        return jsonify({'error': 'Invalid or expired token'}), 403
+    except Exception as e:
+        print(f"❌ Error in get_home_suggestion_v2: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred while generating a suggestion."}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/models/chat_models.dart';
+import 'package:frontend/models/home_suggestion.dart'; 
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
@@ -39,8 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchSuggestion() async {
-    // api_serviceに後で追加するメソッドを呼び出す
-    final suggestion = await _apiService.getHomeSuggestion();
+    // ★★★ 呼び出すメソッドを getHomeSuggestionV2 に変更 ★★★
+    final suggestion = await _apiService.getHomeSuggestionV2();
     if (mounted) {
       setState(() {
         _suggestion = suggestion;
