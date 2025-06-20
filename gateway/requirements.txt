@@ -20,3 +20,7 @@ numpy==1.26.4
 # Utilities
 python-dotenv>=1.0.0
 tenacity>=8.2.3
+
+# Testing
+pytest
+pytest-mock

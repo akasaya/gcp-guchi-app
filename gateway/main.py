@@ -62,6 +62,9 @@ else:
     ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
+@app.route('/', methods=['GET'])
+def index():
+    return "GuchiSwipe Gateway is running.", 200
 
 # ===== RAG Cache Settings =====
 RAG_CACHE_COLLECTION = 'rag_cache'
@@ -547,14 +550,13 @@ def _verify_token(request):
 # ===== API Routes (変更・追加あり) =====
 @app.route('/session/start', methods=['POST'])
 def start_session():
-    # ... (この関数の中身は変更ありません)
     try:
         decoded_token = _verify_token(request)
         user_id = decoded_token['uid']
         data = request.get_json()
         if not data or 'topic' not in data: return jsonify({'error': 'Topic is required'}), 400
         topic = data['topic']
-        questions = generate_initial_questions(topic)
+        questions = generate_initial_questions(topic=topic) # <- この行を修正
         if not questions: raise Exception("AI failed to generate questions.")
         session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document()
         session_doc_ref.set({'topic': topic, 'status': 'in_progress', 'created_at': firestore.SERVER_TIMESTAMP, 'turn': 1, 'max_turns': 3})
