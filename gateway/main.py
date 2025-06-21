@@ -1176,7 +1176,7 @@ def get_home_suggestion_v2():
         print(f"Found latest embedding for user {user_id}. Searching for neighbors...")
 
         # 2. Vertex AI Vector Search で近傍探索
-        endpoint_resource_name = f"projects/{project_id}/locations/{vertex_ai_region}/indexEndpoints/{VECTOR_SEARCH_ENDPOINT_ID}"
+        endpoint_resource_name = f"projects/{project_id}/locations/{vector_search_region}/indexEndpoints/{VECTOR_SEARCH_ENDPOINT_ID}"
         my_index_endpoint = aiplatform.MatchingEngineIndexEndpoint(index_endpoint_name=endpoint_resource_name)
 
         response = my_index_endpoint.find_neighbors(
