@@ -191,9 +191,11 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
 
     setState(() => _isActionLoading = true);
 
-    try {
+ try {
         final apiService = ref.read(apiServiceProvider);
-        final ragType = actionId == 'get_similar_cases' ? 'similar_cases' : 'suggestions';
+        // ★★★ 修正: 'get_similar_cases' を 'similar_cases' に修正 ★★★
+        final ragType = actionId == 'similar_cases' ? 'similar_cases' : 'suggestions';
+        
         
         final historyForApi = _messages
           .whereType<types.TextMessage>()
@@ -237,7 +239,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       setState(() => _isAiTyping = false);
     }
   }
-  
+
   void _addHumanMessage(String text) {
     final userMessage = types.TextMessage(author: _user, createdAt: DateTime.now().millisecondsSinceEpoch, id: const Uuid().v4(), text: text);
     setState(() => _messages.insert(0, userMessage));

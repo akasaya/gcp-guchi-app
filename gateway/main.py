@@ -909,6 +909,27 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
         return None
 
     graph_data = generate_graph_data(all_insights_text)
+
+        # ★★★ ここから追加 ★★★
+    # 2. ユーザーの思考全体のベクトルを生成し、保存する
+    try:
+        print(f"--- Generating overall embedding for user: {user_id} ---")
+        embedding_list = _get_embeddings([all_insights_text])
+        if embedding_list and len(embedding_list) > 0:
+            user_embedding = embedding_list[0]
+            embedding_ref = db_firestore.collection('vector_embeddings').document()
+            embedding_ref.set({
+                'user_id': user_id,
+                'embedding': user_embedding,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'source_text_hash': hashlib.sha256(all_insights_text.encode()).hexdigest()
+            })
+            print(f"✅ Saved overall embedding for user: {user_id}")
+        else:
+            print(f"⚠️ Failed to generate overall embedding for user: {user_id}")
+    except Exception as e:
+        print(f"❌ Error during user embedding generation: {e}")
+        traceback.print_exc()
     
     # 新しいグラフデータをキャッシュに保存
     cache_ref.set({
