@@ -121,13 +121,19 @@ Future<void> _continueSession(String insights) async {
               return const Center(child: Text('分析結果がありません。'));
             }
 
+
             final summaryData = snapshot.data!;
-            final insights = summaryData['insights'] as String;
-            final title = summaryData['title'] as String;
-            final currentTurn = summaryData['turn'] as int;
-            final maxTurns = summaryData['max_turns'] as int;
+            // ★★★ 修正: `as String`をやめ、nullの場合は空文字''を使う
+            final insights = summaryData['insights'] as String? ?? '分析結果のテキストがありません。';
+            final title = summaryData['title'] as String? ?? '無題';
+            
+            // ★★★ 修正: `as int`をやめ、nullの場合は0を使う
+            final currentTurn = summaryData['turn'] as int? ?? 0;
+            final maxTurns = summary_data['max_turns'] as int? ?? 0;
+            
             final canContinue = currentTurn < maxTurns;
             final remainingTurns = maxTurns - currentTurn;
+
 
             return Padding(
               padding: const EdgeInsets.all(16.0),
