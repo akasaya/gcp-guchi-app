@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/models/chat_models.dart';
-import 'package:frontend/models/home_suggestion.dart'; 
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';

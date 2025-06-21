@@ -127,9 +127,9 @@ Future<void> _continueSession(String insights) async {
             final insights = summaryData['insights'] as String? ?? '分析結果のテキストがありません。';
             final title = summaryData['title'] as String? ?? '無題';
             
-            // ★★★ 修正: `as int`をやめ、nullの場合は0を使う
             final currentTurn = summaryData['turn'] as int? ?? 0;
-            final maxTurns = summary_data['max_turns'] as int? ?? 0;
+            // ★★★ 修正: summary_data -> summaryData
+            final maxTurns = summaryData['max_turns'] as int? ?? 0;
             
             final canContinue = currentTurn < maxTurns;
             final remainingTurns = maxTurns - currentTurn;
