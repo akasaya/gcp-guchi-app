@@ -51,8 +51,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ★★★ 修正: ローディングアニメーションを他の画面と統一 ★★★
-                const SpinKitFadingCircle(color: Colors.white, size: 50.0),
+                // ★★★ 修正: ローディングアニメーションを四角形に統一 ★★★
+                const SpinKitFadingCube(color: Colors.white, size: 50.0),
                 const SizedBox(height: 20),
                 Text(message, style: const TextStyle(color: Colors.white, fontSize: 16)),
               ],
@@ -65,6 +65,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
 // ★★★ 修正: 不要になった `String insights` パラメータをメソッド定義から完全に削除 ★★★
 Future<void> _continueSession() async {
+    // ★★★ 追加: 処理開始時にフラグを立ててUIを更新 ★★★
+    setState(() {
+      _isContinuing = true;
+    });
     _showLoadingDialog('次の質問を考えています...');
 
     // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
@@ -135,7 +139,7 @@ Future<void> _continueSession() async {
             final status = sessionData['status'] as String?;
 
             // バックエンドが処理中の場合 (statusがまだcompletedでない)
-            if (status != 'completed' && status != 'error') {
+            if (status != 'completed' && status != 'error' && !_isContinuing) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
