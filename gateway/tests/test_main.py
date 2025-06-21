@@ -115,17 +115,16 @@ def test_post_summary_success(client, mocker):
     mock_session_snapshot = mocker.Mock()
     mock_session_snapshot.exists = True
     mock_session_snapshot.to_dict.return_value = {'topic': '仕事の悩み', 'turn': 1}
-    
+
     mock_session_doc_ref = mocker.Mock()
     mock_session_doc_ref.get.return_value = mock_session_snapshot
-    
-    # ★★★ 修正: データベースの呼び出しチェーンを正しくモックする
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
+
+    # ★★★ 修正: 正しいデータベースのパスをモックする ★★★
+    mock_db.collection.return_value.document.return_value = mock_session_doc_ref
 
     mock_swipe_doc = mocker.Mock()
     mock_swipe_doc.to_dict.return_value = {"question_id": "q_id_0", "answer": True, "hesitation_time": 1.0}
 
-    # ★★★ 修正: stream()の呼び出しがリストを返すように、モックをより明確に設定する
     mock_query = mocker.Mock()
     mock_query.stream.return_value = [mock_swipe_doc]
     mock_session_doc_ref.collection.return_value.order_by.return_value = mock_query
@@ -133,7 +132,7 @@ def test_post_summary_success(client, mocker):
     response = client.post(
         f'/session/{MOCK_SESSION_ID}/summary',
         headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
-        data=json.dumps({}), 
+        data=json.dumps({}),
         content_type='application/json'
     )
 
