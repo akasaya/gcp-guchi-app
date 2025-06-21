@@ -809,7 +809,7 @@ def get_analysis_graph():
     if isinstance(user_record, tuple):
         return user_record
     
-    user_id = user_record.uid
+    user_id = user_record['uid']
     try:
         graph_data = _get_graph_from_cache_or_generate(user_id)
         if graph_data:
