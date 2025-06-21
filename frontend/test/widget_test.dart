@@ -99,21 +99,22 @@ class FakeApiService implements ApiService {
   }
 
   @override
+  // ★★★ 修正: 本物のApiServiceに合わせて、不要な `swipes` パラメータを削除 ★★★
   Future<Map<String, dynamic>> postSummary({
     required String sessionId,
-    required List<Map<String, dynamic>> swipes,
   }) {
     throw UnimplementedError();
   }
 
   @override
+  // ★★★ 修正: 本物のApiServiceに合わせて、不要な `insights` パラメータを削除 ★★★
   Future<Map<String, dynamic>> continueSession({
     required String sessionId,
-    required String insights, // ★★★ 型を `String` に修正 ★★★
   }) {
     throw UnimplementedError();
   }
 }
+
 
 void main() {
   // すべてのテストが実行される前に、一度だけFirebaseのテスト環境をセットアップします。

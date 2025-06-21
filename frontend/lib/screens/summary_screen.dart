@@ -26,11 +26,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
   @override
   void initState() {
     super.initState();
+    // ★★★ 修正: 不要になった `swipes` パラメータを削除 ★★★
     _summaryFuture = _apiService.postSummary(
       sessionId: widget.sessionId,
-      swipes: widget.swipes,
     );
   }
+
 
   void _showLoadingDialog(String message) {
     showDialog(
@@ -65,7 +66,7 @@ Future<void> _continueSession(String insights) async {
     try {
       final result = await _apiService.continueSession(
         sessionId: widget.sessionId,
-        insights: insights,
+        // ★★★ 修正: 不要になった `insights` パラメータの受け渡しを削除 ★★★
       );
       final newQuestions = List<Map<String, dynamic>>.from(result['questions']);
       final newTurn = result['turn'] as int;
@@ -166,8 +167,9 @@ Future<void> _continueSession(String insights) async {
                           backgroundColor: Colors.deepPurple,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16)),
-                      onPressed: () => _continueSession(insights),
-                      child: Text('さらに深掘りする (残り$remainingTurns回)'), // ${} を $ に変更
+                      // ★★★ 修正: `insights` を渡さないように呼び出し方を変更 ★★★
+                      onPressed: _continueSession,
+                      child: Text('さらに深掘りする (残り$remainingTurns回)'),
                     ),
                   const SizedBox(height: 12),
                   OutlinedButton(
