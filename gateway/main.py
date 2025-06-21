@@ -258,6 +258,24 @@ def generate_chat_response(session_summary, chat_history, user_message, rag_cont
     model = GenerativeModel(pro_model)
     return model.generate_content(prompt).text.strip()
 
+def generate_topic_suggestions(insights_text: str):
+    """ユーザーの過去の対話履歴のサマリーに基づき、新しい対話トピックを3つ提案する"""
+    prompt = f"""
+あなたは、ユーザーの思考の整理を手伝う、優れたカウンセラーです。
+以下の「ユーザーの過去の対話のサマリー」を読み、ユーザーが次に関心を持ちそうな新しい対話のテーマを3つ提案してください。
+
+# ユーザーの過去の対話のサマリー
+{insights_text}
+
+# 指示
+- 提案は、ユーザーが内省を深められるような、具体的で示唆に富んだ問いかけにしてください。
+- ユーザーがまだ直接的には話していないものの、サマリーから推測される関連テーマを提案すると、より良い提案になります。
+- 必ず、指定されたJSON形式（TOPIC_SUGGESTION_SCHEMA）で出力してください。
+"""
+    pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    result = _call_gemini_with_schema(prompt, TOPIC_SUGGESTION_SCHEMA, model_name=pro_model)
+    return result.get("suggestions", [])
+
 
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
 def _extract_keywords_for_search(analysis_text: str) -> str:

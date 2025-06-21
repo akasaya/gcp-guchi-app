@@ -10,6 +10,7 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
+import 'package:frontend/models/analysis_models.dart';
 
 /// Firebaseのネイティブ通信を偽装するクラス
 class MockFirebasePlatform extends FirebasePlatform {
@@ -54,6 +55,11 @@ class FakeApiService implements ApiService {
   @override
   Future<HomeSuggestion?> getHomeSuggestionV2() async {
     return Future.value(null);
+  }
+
+  @override
+  Future<AnalysisSummary> getAnalysisSummary() {
+    throw UnimplementedError();
   }
 
   @override

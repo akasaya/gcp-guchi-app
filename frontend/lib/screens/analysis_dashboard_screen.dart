@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:frontend/models/analysis_models.dart';
 import 'package:frontend/models/graph_data.dart' as model;
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
