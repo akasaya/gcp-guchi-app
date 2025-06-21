@@ -206,7 +206,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
           useRag: true,
           ragType: ragType,
         );
-        // ★★★ 修正: .answer を .response に変更 ★★★
+        // ★★★ 修正 (1/2): .answer を .response に変更 ★★★
         _addAiTextMessage(response.response, sources: response.sources);
     } catch(e) {
         _addErrorMessage('情報の取得中にエラーが発生しました: $e');
@@ -229,14 +229,15 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
           .toList().reversed.toList();
 
       final response = await apiService.postChatMessage(chatHistory: historyForApi, message: message.text);
-      _addAiTextMessage(response.answer, sources: response.sources);
+      // ★★★ 修正 (2/2): .answer を .response に変更 ★★★
+      _addAiTextMessage(response.response, sources: response.sources);
     } catch (e) {
       _addErrorMessage('エラーが発生しました: $e');
     } finally {
       setState(() => _isAiTyping = false);
     }
   }
-
+  
   void _addHumanMessage(String text) {
     final userMessage = types.TextMessage(author: _user, createdAt: DateTime.now().millisecondsSinceEpoch, id: const Uuid().v4(), text: text);
     setState(() => _messages.insert(0, userMessage));
