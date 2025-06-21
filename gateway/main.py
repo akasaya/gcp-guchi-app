@@ -863,7 +863,7 @@ def get_home_suggestion():
     if isinstance(user_record, tuple):
         return user_record
 
-    user_id = user_record.uid
+    user_id = user_record['uid'] 
     print(f"--- Received home suggestion request for user: {user_id} ---")
 
     try:
@@ -918,7 +918,7 @@ def get_proactive_suggestion():
     if isinstance(user_record, tuple):
         return user_record
 
-    user_id = user_record.uid
+    user_id = user_record['uid']
     print(f"--- Received proactive suggestion request for user: {user_id} ---")
 
     try:
@@ -1020,7 +1020,7 @@ def handle_node_tap():
         return jsonify({"error": "node_label is required"}), 400
 
     node_label = data['node_label']
-    user_id = user_record.uid
+    user_id = user_record['uid']
 
     try:
         # 1. 内部コンテキスト（過去の対話）を要約
@@ -1099,7 +1099,7 @@ def post_chat_message():
         return jsonify({"error": "Invalid request: 'message' is required"}), 400
 
     try:
-        user_id = user_record.uid
+        user_id = user_record['uid']
         print(f"--- Received chat message from user: {user_id} ---")
         
         # 1. ユーザーの全セッションサマリーを取得
@@ -1144,7 +1144,7 @@ def get_home_suggestion_v2():
     if isinstance(user_record, tuple):
         return user_record
 
-    user_id = user_record.uid
+    user_id = user_record['uid']
     print(f"--- Received home suggestion v2 request for user: {user_id} ---")
 
     # (★修正) Vector Search用のリージョン変数を明示的に取得
