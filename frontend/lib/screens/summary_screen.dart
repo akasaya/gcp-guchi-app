@@ -7,12 +7,10 @@ import 'package:frontend/screens/home_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String sessionId;
-  final List<Map<String, dynamic>> swipes;
 
   const SummaryScreen({
     super.key,
     required this.sessionId,
-    required this.swipes,
   });
 
   @override
@@ -26,12 +24,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
   @override
   void initState() {
     super.initState();
-    // ★★★ 修正: 不要になった `swipes` パラメータを削除 ★★★
+    // APIの仕様変更に伴い、swipesは不要になりました
     _summaryFuture = _apiService.postSummary(
       sessionId: widget.sessionId,
     );
   }
-
 
   void _showLoadingDialog(String message) {
     showDialog(
@@ -56,7 +53,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-Future<void> _continueSession(String insights) async {
+// ★★★ 修正: 不要になった `String insights` パラメータをメソッド定義から完全に削除 ★★★
+Future<void> _continueSession() async {
     _showLoadingDialog('次の質問を考えています...');
 
     // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
@@ -64,9 +62,9 @@ Future<void> _continueSession(String insights) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
+      // APIの仕様変更に伴い、insightsは不要になりました
       final result = await _apiService.continueSession(
         sessionId: widget.sessionId,
-        // ★★★ 修正: 不要になった `insights` パラメータの受け渡しを削除 ★★★
       );
       final newQuestions = List<Map<String, dynamic>>.from(result['questions']);
       final newTurn = result['turn'] as int;
@@ -122,14 +120,11 @@ Future<void> _continueSession(String insights) async {
               return const Center(child: Text('分析結果がありません。'));
             }
 
-
             final summaryData = snapshot.data!;
-            // ★★★ 修正: `as String`をやめ、nullの場合は空文字''を使う
             final insights = summaryData['insights'] as String? ?? '分析結果のテキストがありません。';
             final title = summaryData['title'] as String? ?? '無題';
             
             final currentTurn = summaryData['turn'] as int? ?? 0;
-            // ★★★ 修正: summary_data -> summaryData
             final maxTurns = summaryData['max_turns'] as int? ?? 0;
             
             final canContinue = currentTurn < maxTurns;
@@ -167,7 +162,7 @@ Future<void> _continueSession(String insights) async {
                           backgroundColor: Colors.deepPurple,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16)),
-                      // ★★★ 修正: `insights` を渡さないように呼び出し方を変更 ★★★
+                      // ★★★ 修正: 引数なしになったメソッドを直接渡すことでエラー解消 ★★★
                       onPressed: _continueSession,
                       child: Text('さらに深掘りする (残り$remainingTurns回)'),
                     ),
