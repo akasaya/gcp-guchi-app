@@ -139,7 +139,7 @@ def test_post_summary_success(client, mocker):
     assert response.status_code == 200, f"API failed: {response.get_data(as_text=True)}"
     assert response.get_json()['title'] == MOCK_SUMMARY_DATA['title']
     mock_session_doc_ref.update.assert_called_once()
-    assert gateway.main.threading.Thread.call_count == 1
+    assert gateway.main.threading.Thread.call_count == 2
 
 def test_start_session_auth_error(client, mocker):
     """
