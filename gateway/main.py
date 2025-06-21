@@ -56,6 +56,17 @@ try:
         if not all([VECTOR_SEARCH_INDEX_ID, VECTOR_SEARCH_ENDPOINT_ID, VECTOR_SEARCH_DEPLOYED_INDEX_ID]):
              print("⚠️ WARNING: Vector Search environment variables are not fully set.")
 
+    GOOGLE_BOOKS_API_KEY = None
+    # Cloud Run v2のSecret Managerマウントパス
+    secret_path = '/secrets/google-books-api-key'
+    if os.path.exists(secret_path):
+        with open(secret_path, 'r') as f:
+            GOOGLE_BOOKS_API_KEY = f.read().strip()
+        print("✅ Loaded Google Books API key from Secret Manager.")
+    else:
+        print("⚠️ Secret file not found. Trying to load Google Books API key from environment variable.")
+        GOOGLE_BOOKS_API_KEY = os.environ.get('GOOGLE_BOOKS_API_KEY')
+
 except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
@@ -108,6 +119,26 @@ TOPIC_SUGGESTION_SCHEMA = {
         }
     },
     "required": ["suggestions"]
+}
+BOOK_RECOMMENDATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "recommendations": {
+            "type": "array",
+            "description": "3冊のおすすめ書籍のリスト",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "書籍の正式なタイトル"},
+                    "author": {"type": "string", "description": "著者名"},
+                    "reason": {"type": "string", "description": "この本がユーザーになぜおすすめなのか、具体的な理由（100文字程度）"},
+                    "search_url": {"type": "string", "description": "書籍名と著者名でGoogle検索するためのURL"}
+                },
+                "required": ["title", "author", "reason", "search_url"]
+            }
+        }
+    },
+    "required": ["recommendations"]
 }
 
 # ===== プロンプトテンプレート =====
@@ -946,7 +977,117 @@ def get_analysis_summary():
         traceback.print_exc()
         return jsonify({"error": "Failed to get analysis summary"}), 500
 
+@app.route('/analysis/book_recommendations', methods=['GET'])
+def get_book_recommendations():
+    """ユーザーの思考の傾向に基づき、おすすめの書籍を返す"""
+    user_record = _verify_token(request)
+    if not isinstance(user_record, dict):
+        return user_record
+    user_id = user_record['uid']
 
+    # ★ 修正点1: APIキーが設定されているかを確認
+    if not GOOGLE_BOOKS_API_KEY:
+        print("❌ Google Books API key is not configured.")
+        return jsonify({"error": "Book recommendation service is not configured."}), 500
+
+    try:
+        all_insights_text = _get_all_insights_as_text(user_id)
+        if not all_insights_text:
+            return jsonify([]), 200 # データがない場合は空のリストを返す
+
+        # ★ 修正点2: ヘルパー関数にAPIキーを渡す
+        recommendations_dict = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
+        
+        # ★ 修正点3: フロントエンドのために本のリストだけを抽出して返す
+        recommendations_list = recommendations_dict.get("recommendations", [])
+        
+        print(f"✅ Generated book recommendations for user {user_id}.")
+        return jsonify(recommendations_list), 200
+
+    except Exception as e:
+        print(f"❌ Error in get_book_recommendations: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to get book recommendations"}), 500
+
+
+def _generate_book_recommendations(insights_text: str, api_key: str):
+    """ユーザーの思考サマリーに基づき、Google Books APIとGeminiを連携させて書籍を推薦する"""
+    
+    # ステップ1: ユーザーの悩みから書籍検索用のキーワードを抽出する
+    keyword_extraction_prompt = f"""
+以下の「ユーザーの思考サマリー」を分析し、このユーザーの悩みを解決するのに役立つ書籍を探すための、最も効果的な検索キーワードを3つ、カンマ区切りで生成してください。
+
+# ユーザーの思考サマリー
+{insights_text}
+
+# 出力例
+仕事術, 人間関係の悩み, マインドフルネス
+
+# 検索キーワード:
+"""
+    try:
+        flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+        model = GenerativeModel(flash_model)
+        print("--- Calling Gemini to extract book search keywords ---")
+        response = model.generate_content(keyword_extraction_prompt)
+        keywords = response.text.strip()
+        print(f"✅ Extracted book search keywords: {keywords}")
+    except Exception as e:
+        print(f"❌ Failed to extract book search keywords: {e}")
+        return {"recommendations": []}
+
+    # ★ 修正点: 引数で渡されたapi_keyを使用
+    if not api_key:
+        print("⚠️ WARNING: GOOGLE_BOOKS_API_KEY is not set. Skipping book recommendations.")
+        return {"recommendations": []}
+
+    books_api_url = f"https://www.googleapis.com/books/v1/volumes?q={keywords}&key={api_key}&langRestrict=ja&maxResults=5&printType=books"
+    
+    try:
+        print(f"--- Calling Google Books API with keywords: {keywords} ---")
+        response = requests.get(books_api_url, timeout=10)
+        response.raise_for_status()
+        search_results = response.json()
+        
+        found_books = []
+        if 'items' in search_results:
+            for item in search_results['items']:
+                volume_info = item.get('volumeInfo', {})
+                title = volume_info.get('title')
+                authors = volume_info.get('authors', ['著者不明'])
+                if title:
+                    found_books.append(f"- 書籍名: {title}, 著者: {', '.join(authors)}")
+        
+        if not found_books:
+            print("No books found from Google Books API.")
+            return {"recommendations": []}
+        
+        found_books_text = "\n".join(found_books)
+        print(f"✅ Found books:\n{found_books_text}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error calling Google Books API: {e}")
+        return {"recommendations": []}
+
+    # ステップ3: 見つかった書籍リストを元に、Geminiに最終的な推薦文を生成させる
+    final_prompt = f"""
+あなたは、利用者の悩みに寄り添い、その解決の助けとなる本を推薦する優秀な司書です。
+以下の「ユーザーの思考サマリー」と「検索で見つかった書籍リスト」を元に、ユーザーに最も役立つと思われる本をリストの中から3冊まで選び、推薦文を作成してください。
+
+# ユーザーの思考サマリー
+{insights_text}
+
+# 検索で見つかった書籍リスト
+{found_books_text}
+
+# 指示
+- 書籍リストの中から、ユーザーの状況に最も合致する本だけを選んでください。
+- `reason`には、なぜその本がユーザーのためになるのか、具体的な理由を100文字程度で記述してください。
+- `search_url`には、書籍タイトルと著者名でGoogle検索するためのURLをURLエンコードして生成してください。
+- 必ず、指定されたJSON形式で出力してください。
+"""
+    pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
+    return _call_gemini_with_schema(final_prompt, BOOK_RECOMMENDATION_SCHEMA, model_name=pro_model)
 
 def _get_all_insights_as_text(user_id: str) -> str:
     """指定されたユーザーの全てのセッションサマリーをテキストとして結合する"""
@@ -976,8 +1117,6 @@ def _get_all_insights_as_text(user_id: str) -> str:
     except Exception as e:
         print(f"❌ Error fetching insights for user {user_id}: {e}")
         return ""
-
-
 
 @app.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():

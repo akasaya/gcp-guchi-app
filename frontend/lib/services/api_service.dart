@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/graph_data.dart';
 import '../models/chat_models.dart'; 
 import '../models/analysis_models.dart';
-
+import '../models/book_recommendation.dart';
 
 // ApiServiceをアプリケーション全体で利用可能にするためのProvider
 final apiServiceProvider = Provider<ApiService>((ref) {
@@ -114,6 +114,29 @@ class ApiService {
       throw Exception(errorMessage);
     } catch (e) {
       throw Exception('予期せぬエラーが発生しました: $e');
+    }
+  }
+
+  /// 【新規追加】おすすめの書籍を取得する
+  Future<List<BookRecommendation>> getBookRecommendations() async {
+    // 書籍推薦は時間がかかる可能性があるため、タイムアウトを延長
+    final originalReceiveTimeout = _dio.options.receiveTimeout;
+    try {
+      _dio.options.receiveTimeout = const Duration(minutes: 2);
+      // ★ 修正点1: エンドポイントを単数形に修正
+      final response = await _dio.get('/analysis/book_recommendation');
+      
+      // ★ 修正点2: List<dynamic>として受け取り、BookRecommendationのリストに変換
+      final List<dynamic> data = response.data;
+      return data.map((item) => BookRecommendation.fromJson(item)).toList();
+
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? '書籍の推薦取得に失敗しました。';
+      throw Exception(errorMessage);
+    } catch (e) {
+      throw Exception('予期せぬエラーが発生しました: $e');
+    } finally {
+      _dio.options.receiveTimeout = originalReceiveTimeout;
     }
   }
 

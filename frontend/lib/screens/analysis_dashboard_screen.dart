@@ -24,6 +24,7 @@ class _AnalysisDashboardScreenState
     extends ConsumerState<AnalysisDashboardScreen> {
   Future<model.GraphData>? _graphDataFuture;
   late Future<AnalysisSummary> _summaryFuture;
+  late Future<BookRecommendationResponse> _bookRecommendationsFuture;
   final Graph _graph = Graph();
   final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
   Map<String, model.NodeData> _nodeDataMap = {};
@@ -41,6 +42,7 @@ class _AnalysisDashboardScreenState
     final apiService = ref.read(apiServiceProvider);
     _graphDataFuture = _fetchAndBuildGraph(apiService);
     _summaryFuture = apiService.getAnalysisSummary();
+    _bookRecommendationsFuture = apiService.getBookRecommendations();
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleProactiveSuggestion(widget.proactiveSuggestion!);
@@ -631,6 +633,7 @@ class _AnalysisDashboardScreenState
           onRefresh: () async {
             setState(() {
               _summaryFuture = ref.read(apiServiceProvider).getAnalysisSummary();
+              _bookRecommendationsFuture = ref.read(apiServiceProvider).getBookRecommendations();
             });
           },
           child: SingleChildScrollView(
@@ -675,6 +678,13 @@ class _AnalysisDashboardScreenState
                         }).toList(),
                       ),
                     ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'AIからのおすすめ書籍',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildBookRecommendations(),
                 ],
               ),
             ),
@@ -683,6 +693,81 @@ class _AnalysisDashboardScreenState
       },
     );
   }
+
+  Widget _buildBookRecommendations() {
+    return FutureBuilder<List<BookRecommendation>>(
+      future: _bookRecommendationsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('書籍の推薦取得に失敗しました: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Card(
+            child: ListTile(
+              leading: Icon(Icons.menu_book_outlined),
+              title: Text('あなたへのおすすめはまだありません'),
+              subtitle: Text('対話を進めると、AIが書籍を推薦します'),
+            ),
+          );
+        }
+
+        final recommendations = snapshot.data!.recommendations;
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: recommendations.length,
+          itemBuilder: (context, index) {
+            final book = recommendations[index];
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      book.title,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      book.author,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const Divider(height: 20),
+                    Text(
+                      book.reason,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.search),
+                        label: const Text('この本を探す'),
+                        onPressed: () async {
+                          final uri = Uri.parse(book.searchUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 
   Widget _buildSummaryCard(
       String title, String value, IconData icon, Color color) {
