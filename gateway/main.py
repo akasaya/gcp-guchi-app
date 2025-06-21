@@ -1001,9 +1001,7 @@ def get_book_recommendations():
         recommendations_list = recommendations_dict.get("recommendations", [])
         
         print(f"✅ Generated book recommendations for user {user_id}.")
-        
-        # ★ 修正点: recommendations辞書から 'recommendations' キーのリストを抽出して返す
-        return jsonify(recommendations.get("recommendations", [])), 200
+        return jsonify(recommendations_list), 200
 
     except Exception as e:
         print(f"❌ Error in get_book_recommendations: {e}")
