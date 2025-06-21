@@ -753,15 +753,12 @@ def post_summary(session_id):
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
     user_record = _verify_token(request)
-    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
     if not isinstance(user_record, dict):
         return user_record
 
     user_id = user_record['uid']
 
-
     try:
-        # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
         session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
 
         @firestore.transactional
@@ -773,52 +770,70 @@ def continue_session(session_id):
             current_turn = snapshot.to_dict().get('turn', 1)
             new_turn = current_turn + 1
             
-            # ★★★ 修正: ハードコードされた値を定数に変更 ★★★
             if new_turn > MAX_TURNS:
-                 return None, None # 最大ターン数に達した
+                 return None, None
 
             transaction.update(ref, {
                 'turn': new_turn,
+                'status': 'processing', # ★ 状態を「進行中」に戻す
                 'last_updated': firestore.SERVER_TIMESTAMP
             })
-            return new_turn, snapshot.to_dict().get('topic', '指定なし')
+            return new_turn
 
-        # ★★★ 修正: トランザクションを生成し、正しく呼び出す ★★★
         transaction = db_firestore.transaction()
-        new_turn, topic = update_turn(transaction, session_ref)
-
+        new_turn = update_turn(transaction, session_ref)
 
         if new_turn is None:
             return jsonify({"error": "Maximum turns reached for this session."}), 400
         
-        # (★修正) prefetched_questionsのパスを修正
         prefetched_ref = session_ref.collection('prefetched_questions').document(str(new_turn))
         prefetched_doc = prefetched_ref.get()
+
+        generated_questions = []
         if prefetched_doc.exists:
             print(f"✅ Using prefetched questions for turn {new_turn}")
-            questions = prefetched_doc.to_dict().get('questions', [])
-            prefetched_ref.delete() # 使用後は削除
+            generated_questions = prefetched_doc.to_dict().get('questions', [])
+            prefetched_ref.delete()
         else:
             print(f"⚠️ No prefetched questions found for turn {new_turn}. Generating now...")
-            # フォールバックとして、最新のサマリーから質問を生成
-            # (★★ 修正 ★★) turn番号で降順にソートし、最新のサマリーを取得する
             latest_summary_query = session_ref.collection('summaries').order_by('turn', direction=firestore.Query.DESCENDING).limit(1)
             latest_summary_docs = list(latest_summary_query.stream())
-
             if not latest_summary_docs:
                  return jsonify({"error": "Summary not found to generate follow-up questions"}), 404
+            
+            insights = latest_summary_docs[0].to_dict().get('insights', '')
+            generated_questions = generate_follow_up_questions(insights)
 
-            latest_summary_doc = latest_summary_docs[0]
-            insights = latest_summary_doc.to_dict().get('insights', '')
-            questions = generate_follow_up_questions(insights)
+        # ★★★ ここからが今回の修正の核心部分です ★★★
+        # 1. バッチ処理を開始
+        batch = db_firestore.batch()
+        # 2. フロントエンドに返すための、ID付き質問リストを初期化
+        questions_with_ids = []
 
-        return jsonify({'questions': questions, 'turn': new_turn}), 200
+        # 3. 生成された質問をループ処理
+        for q in generated_questions:
+            # a. 新しい質問のためのドキュメント参照を作成（ここでIDが自動生成される）
+            q_ref = session_ref.collection('questions').document()
+            # b. バッチに「質問テキストをDBに保存する」処理を追加
+            batch.set(q_ref, {"question_text": q['question_text']})
+            # c. フロントに返すリストに、「ID」と「質問テキスト」を追加
+            questions_with_ids.append({
+                "question_id": q_ref.id,
+                "question_text": q['question_text']
+            })
+        
+        # 4. バッチ処理を実行し、すべての質問をDBに一括保存
+        batch.commit()
+        # ★★★ ここまでが修正の核心部分です ★★★
 
+        # 5. DB保存後のID付き質問リストをフロントエンドに返す
+        return jsonify({'questions': questions_with_ids, 'turn': new_turn}), 200
 
     except Exception as e:
         print(f"Error continuing session: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to continue session"}), 500
+
 
 def _get_all_insights_as_text(user_id: str) -> str:
     """指定されたユーザーの全てのセッションサマリーをテキストとして結合する"""

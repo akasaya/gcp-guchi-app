@@ -42,7 +42,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SpinKitFadingCube(color: Colors.white, size: 50.0),
+                // ★★★ 修正: ローディングアニメーションを他の画面と統一 ★★★
+                const SpinKitFadingCircle(color: Colors.white, size: 50.0),
                 const SizedBox(height: 20),
                 Text(message, style: const TextStyle(color: Colors.white, fontSize: 16)),
               ],
