@@ -13,6 +13,11 @@ MOCK_QUESTIONS = [
     {"question_text": "質問1ですか？", "question_id": "q_id_0"},
     {"question_text": "質問2ですか？", "question_id": "q_id_1"},
 ]
+# ★★★ 修正: MOCK_SUMMARY_DATAを追加 ★★★
+MOCK_SUMMARY_DATA = {
+    "title": "テスト要約タイトル",
+    "insights": "テストインサイトです。"
+}
 
 @pytest.fixture
 def app():
