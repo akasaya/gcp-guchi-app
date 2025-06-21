@@ -582,16 +582,16 @@ def start_session():
     user_id = user_record['uid']
     
     try:
-        # セッションドキュメントを作成
-        session_doc_ref = db_firestore.collection('sessions').document()
+        # (★修正) セッションの保存先をユーザーのサブコレクションに変更
+        session_doc_ref = db_firestore.collection('users').document(user_id).collection('sessions').document()
         
+        # (★修正) status と created_at を追加
         session_doc_ref.set({
             'user_id': user_id,
             'topic': topic,
-            'start_time': firestore.SERVER_TIMESTAMP,
-            'last_updated': firestore.SERVER_TIMESTAMP,
+            'created_at': firestore.SERVER_TIMESTAMP, # 日付順で並び替えるために必要
+            'status': 'processing', # statusを 'processing' で初期化
             'turn': 1,
-            'is_active': True,
         })
 
         # Geminiで最初の質問を生成
@@ -626,13 +626,12 @@ def start_session():
         traceback.print_exc()
         return jsonify({"error": "Failed to start session"}), 500
 
-
-
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
     user_record = _verify_token(request)
     if isinstance(user_record, tuple):
         return user_record
+    user_id = user_record['uid']
 
     data = request.get_json()
     required_fields = ['question_id', 'answer', 'hesitation_time', 'speed', 'turn']
@@ -640,7 +639,8 @@ def record_swipe(session_id):
         return jsonify({"error": "Missing required fields in request"}), 400
     
     try:
-        session_ref = db_firestore.collection('sessions').document(session_id)
+        # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
+        session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
         swipe_ref = session_ref.collection('swipes').document()
         
         swipe_ref.set({
@@ -668,52 +668,78 @@ def post_summary(session_id):
         return user_record
     user_id = user_record['uid']
 
-    session_ref = db_firestore.collection('sessions').document(session_id)
-    session_snapshot = session_ref.get() # ★★★ 修正: tryブロックの外に移動
+    # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
+    session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+    session_snapshot = session_ref.get()
 
     if not session_snapshot.exists:
         return jsonify({"error": "Session not found"}), 404
 
     try:
-        topic = session_snapshot.to_dict().get('topic', '指定なし')
+        session_data = session_snapshot.to_dict()
+        topic = session_data.get('topic', '指定なし')
+        # (★修正) swipesの取得元を修正
         swipes_ref = session_ref.collection('swipes').order_by('timestamp')
-        swipes = list(swipes_ref.stream())
+        swipes_docs = list(swipes_ref.stream())
 
-        if not swipes:
+        if not swipes_docs:
             print(f"No swipes found for session {session_id}, returning empty summary.")
+            # (★修正) statusをcompletedにしておく
+            session_ref.update({'status': 'completed', 'title': '対話の記録がありません'})
             return jsonify({
                 "title": "対話の記録がありません",
                 "insights": "今回は対話の記録がなかったため、要約の作成をスキップしました。",
-                "turn": session_snapshot.to_dict().get('turn', 1), # ★★★ 修正: ここでも参照
+                "turn": session_data.get('turn', 1),
                 "max_turns": MAX_TURNS
             }), 200
 
-        swipes_text = "\n".join([f"- {s.get('question_text')}: {('はい' if s.get('answer') else 'いいえ')} ({s.get('hesitation_time'):.2f}秒)" for s in (d.to_dict() for d in swipes)])
+        # (★修正) 質問テキストを取得するためにquestionsコレクションを引く
+        questions_ref = session_ref.collection('questions')
+        questions_docs = {q.id: q.to_dict() for q in questions_ref.stream()}
+        
+        swipes_text_parts = []
+        for s_doc in swipes_docs:
+            s = s_doc.to_dict()
+            q_id = s.get('question_id')
+            q_text = questions_docs.get(q_id, {}).get('question_text', '不明な質問')
+            answer_text = 'はい' if s.get('answer') else 'いいえ'
+            hesitation_time = s.get('hesitation_time', 0)
+            swipes_text_parts.append(f"- {q_text}: {answer_text} ({hesitation_time:.2f}秒)")
+            
+        swipes_text = "\n".join(swipes_text_parts)
         
         summary_data = generate_summary_only(topic, swipes_text)
 
+        # (★修正) アプリの仕様に合わせてトップレベルにフィールドを更新
+        update_data = {
+            'status': 'completed',
+            'title': summary_data.get('title'),
+            'latest_insights': summary_data.get('insights'),
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }
+        session_ref.update(update_data)
+
+        # (★修正) summariesサブコレクションへの保存は任意だが、一応残しておく
         summary_ref = session_ref.collection('summaries').document('latest')
-        session_ref.update({'summary': summary_data, 'status': 'completed'})
         summary_ref.set(summary_data)
 
         response_data = summary_data.copy()
-        response_data['turn'] = session_snapshot.to_dict().get('turn', 1)
+        response_data['turn'] = session_data.get('turn', 1)
         response_data['max_turns'] = MAX_TURNS
 
-        # ★★★ 修正: 2つのバックグラウンド処理を呼び出す ★★★
-        # 次の質問を先読み
+        # バックグラウンド処理の呼び出し
         insights_text = summary_data.get('insights', '')
         current_turn = response_data['turn']
         threading.Thread(target=_prefetch_questions_and_save, args=(session_id, user_id, insights_text, current_turn, MAX_TURNS)).start()
-        # グラフキャッシュを更新
         threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
         
         return jsonify(response_data), 200
     except Exception as e:
         print(f"❌ Error in post_summary for session {session_id}: {e}")
         traceback.print_exc()
+        # (★修正) エラー時にもstatusを更新
+        session_ref.update({'status': 'error', 'error_message': str(e)})
         return jsonify({"error": "Failed to generate summary"}), 500
-
 
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
@@ -725,7 +751,8 @@ def continue_session(session_id):
     user_id = user_record['uid']
 
     try:
-        session_ref = db_firestore.collection('sessions').document(session_id)
+        # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
+        session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
 
         @firestore.transactional
         def update_turn(transaction, ref):
@@ -754,7 +781,7 @@ def continue_session(session_id):
         if new_turn is None:
             return jsonify({"error": "Maximum turns reached for this session."}), 400
         
-        # プリフェッチされた質問を確認
+        # (★修正) prefetched_questionsのパスを修正
         prefetched_ref = session_ref.collection('prefetched_questions').document(str(new_turn))
         prefetched_doc = prefetched_ref.get()
         if prefetched_doc.exists:
@@ -780,40 +807,35 @@ def continue_session(session_id):
         traceback.print_exc()
         return jsonify({"error": "Failed to continue session"}), 500
 
-
 def _get_all_insights_as_text(user_id: str) -> str:
     """指定されたユーザーの全てのセッションサマリーをテキストとして結合する"""
     print(f"--- Fetching all session insights for user: {user_id} ---")
     all_insights_text = ""
     try:
-        sessions_ref = db_firestore.collection('sessions').where('user_id', '==', user_id).order_by('start_time', direction=firestore.Query.DESCENDING).limit(10)
+        # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
+        sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').where('status', '==', 'completed').order_by('created_at', direction=firestore.Query.DESCENDING).limit(10)
         sessions_docs = sessions_ref.stream()
 
         for session in sessions_docs:
-            summaries_ref = session.reference.collection('summaries')
-            summary_docs = summaries_ref.stream()
             session_dict = session.to_dict()
-            session_date = session_dict.get("start_time").strftime('%Y-%m-%d') if session_dict.get("start_time") else "不明な日付"
+            # (★修正) created_at, topic, title, latest_insights を直接取得
+            session_date = session_dict.get("created_at").strftime('%Y-%m-%d') if session_dict.get("created_at") else "不明な日付"
             session_topic = session_dict.get("topic", "不明なトピック")
+            title = session_dict.get('title', '無題')
+            insights = session_dict.get('latest_insights', '分析結果がありません。')
             
-            summary_text_parts = [f"## セッション記録 ({session_date} - {session_topic})"]
-            
-            has_summary = False
-            for summary in summary_docs:
-                summary_data = summary.to_dict()
-                title = summary_data.get('title', '無題')
-                insights = summary_data.get('insights', '分析結果がありません。')
-                summary_text_parts.append(f"### {title}\n{insights}")
-                has_summary = True
-
-            if has_summary:
-                all_insights_text += "\n\n" + "\n".join(summary_text_parts)
+            summary_text_parts = [
+                f"## セッション記録 ({session_date} - {session_topic})",
+                f"### {title}\n{insights}"
+            ]
+            all_insights_text += "\n\n" + "\n".join(summary_text_parts)
 
         print(f"✅ Found and compiled insights from past sessions.")
         return all_insights_text.strip()
     except Exception as e:
         print(f"❌ Error fetching insights for user {user_id}: {e}")
         return ""
+
 
 
 @app.route('/analysis/graph', methods=['GET'])
