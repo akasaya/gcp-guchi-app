@@ -659,34 +659,33 @@ def record_swipe(session_id):
 
 @app.route('/session/<string:session_id>/summary', methods=['POST'])
 def post_summary(session_id):
+    """セッションの要約を生成・保存し、結果を返す"""
     user_record = _verify_token(request)
     if isinstance(user_record, tuple):
         return user_record
-    
     user_id = user_record['uid']
 
+    session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+    session_snapshot = session_ref.get() # ★★★ 修正: tryブロックの外に移動
+
+    if not session_snapshot.exists:
+        return jsonify({"error": "Session not found"}), 404
+
     try:
-        session_ref = db_firestore.collection('sessions').document(session_id)
-        session_doc = session_ref.get()
-        if not session_doc.exists:
-            return jsonify({"error": "Session not found"}), 404
-        
-        topic = session_doc.to_dict().get('topic', '指定なし')
-        
+        topic = session_snapshot.to_dict().get('topic', '指定なし')
         swipes_ref = session_ref.collection('swipes').order_by('timestamp')
-        swipes = swipes_ref.stream()
-        
-        swipes_text_list = []
-        for swipe in swipes:
-            s = swipe.to_dict()
-            answer_text = "はい" if s.get('answer', False) else "いいえ"
-            hesitation_info = f"（特に迷いが見られました：{s.get('hesitation_time', 0):.2f}秒）" if s.get('hesitation_time', 0) > 3.0 else ""
-            swipes_text_list.append(f"- Q: {s.get('question_id', '不明な質問')} -> A: {answer_text} {hesitation_info}")
+        swipes = list(swipes_ref.stream())
 
-        if not swipes_text_list:
-             return jsonify({"error": "No swipes found for this session"}), 400
+        if not swipes:
+            print(f"No swipes found for session {session_id}, returning empty summary.")
+            return jsonify({
+                "title": "対話の記録がありません",
+                "insights": "今回は対話の記録がなかったため、要約の作成をスキップしました。",
+                "turn": session_snapshot.to_dict().get('turn', 1), # ★★★ 修正: ここでも参照
+                "max_turns": MAX_TURNS
+            }), 200
 
-        swipes_text = "\n".join(swipes_text_list)
+        swipes_text = "\n".join([f"- {s.get('question_text')}: {('はい' if s.get('answer') else 'いいえ')} ({s.get('hesitation_time'):.2f}秒)" for s in (d.to_dict() for d in swipes)])
         
         summary_data = generate_summary_only(topic, swipes_text)
 
@@ -694,20 +693,18 @@ def post_summary(session_id):
         session_ref.update({'summary': summary_data, 'status': 'completed'})
         summary_ref.set(summary_data)
 
-        # ★★★ 修正: 正常な応答に turn と max_turns を追加 ★★★
-        response_data = summary_data.copy() # 元の辞書をコピー
+        response_data = summary_data.copy()
         response_data['turn'] = session_snapshot.to_dict().get('turn', 1)
-        response_data['max_turns'] = MAX_TURNS 
+        response_data['max_turns'] = MAX_TURNS
 
-        # バックグラウンドでグラフキャッシュを更新
         threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
         
         return jsonify(response_data), 200
-
     except Exception as e:
-        print(f"Error generating summary: {e}")
+        print(f"❌ Error in post_summary for session {session_id}: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to generate summary"}), 500
+
 
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
