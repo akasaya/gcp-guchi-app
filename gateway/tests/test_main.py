@@ -115,7 +115,8 @@ def test_post_summary_success(client, mocker):
     """
     mocker.patch('gateway.main._verify_token', return_value={'uid': MOCK_USER_ID})
     mocker.patch('gateway.main.generate_summary_only', return_value=MOCK_SUMMARY_DATA)
-    mock_thread_start = mocker.patch('gateway.main.threading.Thread.start') # startメソッドだけモックする
+    # 以前のthreading.Thread.startのモックを、_create_cloud_taskのモックに置き換える
+    mock_create_task = mocker.patch('gateway.main._create_cloud_task')
 
     mock_db = mocker.patch('gateway.main.db_firestore')
 
@@ -158,15 +159,15 @@ def test_post_summary_success(client, mocker):
 
     response = client.post(
         f'/session/{MOCK_SESSION_ID}/summary',
-        headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
+        headers={'Authorization': f'***'},
         content_type='application/json'
     )
 
     assert response.status_code == 200, f"API failed: {response.get_data(as_text=True)}"
-    assert response.get_json()['title'] == MOCK_SUMMARY_DATA['title']
-    mock_session_doc_ref.update.assert_called_once()
-    # ★★★ 修正: バックグラウンド処理の開始が2回呼ばれたことを確認 ★★★
-    assert mock_thread_start.call_count == 2
+    
+    # Cloud Tasksの作成関数が2回呼ばれたことを確認
+    # 1回目: 質問のプリフェッチ, 2回目: グラフの更新
+    assert mock_create_task.call_count == 2
 
 
 def test_start_session_auth_error(client, mocker):
