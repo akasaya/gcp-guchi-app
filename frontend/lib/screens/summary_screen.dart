@@ -23,6 +23,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
   final ApiService _apiService = ApiService();
   // ★★★ 修正: _summaryFutureを削除し、_sessionStreamを定義 ★★★
   Stream<DocumentSnapshot>? _sessionStream;
+  bool _isContinuing = false;
 
   @override
   void initState() {
@@ -138,7 +139,8 @@ Future<void> _continueSession() async {
             final sessionData = snapshot.data!.data() as Map<String, dynamic>;
             final status = sessionData['status'] as String?;
 
-            // バックエンドが処理中の場合 (statusがまだcompletedでない)
+            // ★★★ 修正: _isContinuingフラグがtrueの間は、本体のローディング表示を抑制 ★★★
+            // バックエンドが処理中の場合
             if (status != 'completed' && status != 'error' && !_isContinuing) {
               return const Center(
                 child: Column(
