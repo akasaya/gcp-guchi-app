@@ -89,8 +89,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': suggestion.initialSummary,
-          // ★★★ 修正: .label を .title に変更 ★★★
-          'actions': suggestion.actions.map((a) => {'id': a.id, 'title': a.title}).toList(),
+          // ★★★ 修正: キーを 'id' から 'type' に変更 ★★★
+          'actions': suggestion.actions.map((a) => {'type': a.id, 'title': a.title}).toList(),
           'node_label': suggestion.nodeLabel,
           'is_active': true,
         },
@@ -164,8 +164,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': response.initialSummary,
-          // ★★★ 修正: .label を .title に変更 ★★★
-          'actions': response.actions.map((a) => {'id': a.id, 'title': a.title}).toList(),
+          // ★★★ 修正: キーを 'id' から 'type' に変更 ★★★
+          'actions': response.actions.map((a) => {'type': a.id, 'title': a.title}).toList(),
           'node_label': response.nodeLabel,
           'is_active': true,
         },

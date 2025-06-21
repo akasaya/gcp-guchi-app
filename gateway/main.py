@@ -910,13 +910,14 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
 
     graph_data = generate_graph_data(all_insights_text)
 
-        # ★★★ ここから追加 ★★★
-    # 2. ユーザーの思考全体のベクトルを生成し、保存する
+   # ★★★ ここからが今回の修正の核心部分です ★★★
     try:
-        print(f"--- Generating overall embedding for user: {user_id} ---")
+        print(f"--- Generating and upserting overall embedding for user: {user_id} ---")
         embedding_list = _get_embeddings([all_insights_text])
-        if embedding_list and len(embedding_list) > 0:
+        if embedding_list:
             user_embedding = embedding_list[0]
+            
+            # a. Firestoreに保存してユニークなIDを取得
             embedding_ref = db_firestore.collection('vector_embeddings').document()
             embedding_ref.set({
                 'user_id': user_id,
@@ -924,12 +925,27 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'source_text_hash': hashlib.sha256(all_insights_text.encode()).hexdigest()
             })
-            print(f"✅ Saved overall embedding for user: {user_id}")
+            
+            # b. Vector Search Index にベクトルを登録(Upsert)
+            vector_search_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1')
+            index_resource_name = f"projects/{project_id}/locations/{vector_search_region}/indexes/{VECTOR_SEARCH_INDEX_ID}"
+            vector_search_index = aiplatform.MatchingEngineIndex(index_name=index_resource_name)
+            
+            vector_search_index.upsert_datapoints(
+                datapoints=[
+                    {
+                        "datapoint_id": embedding_ref.id,
+                        "feature_vector": user_embedding
+                    }
+                ]
+            )
+            print(f"✅ Saved and upserted embedding '{embedding_ref.id}' for user: {user_id}")
         else:
             print(f"⚠️ Failed to generate overall embedding for user: {user_id}")
     except Exception as e:
-        print(f"❌ Error during user embedding generation: {e}")
+        print(f"❌ Error during user embedding generation/upsert: {e}")
         traceback.print_exc()
+    # ★★★ ここまでが修正の核心部分です ★★★
     
     # 新しいグラフデータをキャッシュに保存
     cache_ref.set({
