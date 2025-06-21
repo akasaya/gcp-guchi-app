@@ -1,12 +1,15 @@
 class ChatResponse {
-  final String answer;
+  // ★★★ 修正: バックエンドのキー名 'response' に合わせる ★★★
+  final String response;
   final List<String> sources;
 
-  ChatResponse({required this.answer, required this.sources});
+  // ★★★ 修正: こちらも 'response' に合わせる ★★★
+  ChatResponse({required this.response, required this.sources});
 
   factory ChatResponse.fromJson(Map<String, dynamic> json) {
     return ChatResponse(
-      answer: json['answer'] as String,
+      // ★★★ 修正: キー名を 'response' に変更し、nullの場合のデフォルト値を用意 ★★★
+      response: json['response'] as String? ?? 'AIからの応答がありませんでした。',
       sources: (json['sources'] as List<dynamic>?)?.cast<String>() ?? [],
     );
   }
@@ -17,13 +20,13 @@ class NodeTapResponse {
   final String initialSummary;
   final String nodeLabel;
   final List<ChatAction> actions;
-  final String? nodeId; // ★★★ 変更点: ホーム画面からの遷移で使用するため追加
+  final String? nodeId;
 
   NodeTapResponse({
     required this.initialSummary,
     required this.nodeLabel,
     required this.actions,
-    this.nodeId, // ★★★ 変更点: コンストラクタに追加
+    this.nodeId,
   });
 
   factory NodeTapResponse.fromJson(Map<String, dynamic> json) {
@@ -33,9 +36,13 @@ class NodeTapResponse {
         : [];
 
     return NodeTapResponse(
-      initialSummary: json['initial_summary'] as String,
-      nodeLabel: json['node_label'] as String,
+      // ★★★ 修正: キー名を 'initialSummary' に変更し、nullの場合のデフォルト値を用意 ★★★
+      initialSummary: json['initialSummary'] as String? ?? '',
+      // ★★★ 修正: キー名を 'nodeLabel' に変更し、nullの場合のデフォルト値を用意 ★★★
+      nodeLabel: json['nodeLabel'] as String? ?? '',
       actions: actionsList,
+      // ★★★ 修正: キー名を 'nodeId' に変更 ★★★
+      nodeId: json['nodeId'] as String?,
     );
   }
 }
@@ -43,14 +50,27 @@ class NodeTapResponse {
 // チャット内のアクションボタンを表現するクラス
 class ChatAction {
   final String id;
-  final String label;
+  final String title; // ★★★ 修正: バックエンドのキー名 'title' に合わせる ★★★
+  final String? content;
+  final List<String>? sources;
 
-  ChatAction({required this.id, required this.label});
+
+  ChatAction({
+    required this.id,
+    required this.title, // ★★★ 修正: こちらも 'title' に合わせる ★★★
+    this.content,
+    this.sources,
+  });
 
   factory ChatAction.fromJson(Map<String, dynamic> json) {
     return ChatAction(
-      id: json['id'] as String,
-      label: json['label'] as String,
+      // ★★★ 修正: バックエンドのキー名は 'type' なので、id にはそれを使う。nullにも対応。 ★★★
+      id: json['type'] as String? ?? 'unknown',
+      // ★★★ 修正: バックエンドのキー名 'title' に合わせる。nullにも対応。 ★★★
+      title: json['title'] as String? ?? '無題のアクション',
+      // ★★★ 修正: content と sources を追加し、nullに対応 ★★★
+      content: json['content'] as String?,
+      sources: json['sources'] != null ? List<String>.from(json['sources']) : null,
     );
   }
 }
@@ -72,8 +92,10 @@ class HomeSuggestion {
     return HomeSuggestion(
       title: json['title'] as String? ?? 'AIからの提案',
       subtitle: json['subtitle'] as String? ?? '気になることについて思考を整理しませんか？',
-      nodeId: json['node_id'] as String,
-      nodeLabel: json['node_label'] as String,
+      // ★★★ 修正: キー名を 'nodeId' に変更し、nullの場合のデフォルト値を用意 ★★★
+      nodeId: json['nodeId'] as String? ?? '',
+      // ★★★ 修正: キー名を 'nodeLabel' に変更し、nullの場合のデフォルト値を用意 ★★★
+      nodeLabel: json['nodeLabel'] as String? ?? '',
     );
   }
 }

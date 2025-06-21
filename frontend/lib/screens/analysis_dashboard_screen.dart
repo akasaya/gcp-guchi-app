@@ -89,7 +89,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': suggestion.initialSummary,
-          'actions': suggestion.actions.map((a) => {'id': a.id, 'label': a.label}).toList(),
+          // ★★★ 修正: .label を .title に変更 ★★★
+          'actions': suggestion.actions.map((a) => {'id': a.id, 'title': a.title}).toList(),
           'node_label': suggestion.nodeLabel,
           'is_active': true,
         },
@@ -163,7 +164,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': response.initialSummary,
-          'actions': response.actions.map((a) => {'id': a.id, 'label': a.label}).toList(),
+          // ★★★ 修正: .label を .title に変更 ★★★
+          'actions': response.actions.map((a) => {'id': a.id, 'title': a.title}).toList(),
           'node_label': response.nodeLabel,
           'is_active': true,
         },
@@ -204,7 +206,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
           useRag: true,
           ragType: ragType,
         );
-        _addAiTextMessage(response.answer, sources: response.sources);
+        // ★★★ 修正: .answer を .response に変更 ★★★
+        _addAiTextMessage(response.response, sources: response.sources);
     } catch(e) {
         _addErrorMessage('情報の取得中にエラーが発生しました: $e');
     } finally {
@@ -476,7 +479,8 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () => _onActionTapped(action.id, nodeLabel),
-                    child: Text(action.label),
+                    // ★★★ 修正: .label を .title に変更 ★★★
+                    child: Text(action.title),
                   ),
                 )),
           ],
