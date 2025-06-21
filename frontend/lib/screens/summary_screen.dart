@@ -21,12 +21,13 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   final ApiService _apiService = ApiService();
-  Future<Map<String, dynamic>>? _summaryFuture;
+  // ★★★ 修正: _summaryFutureを削除し、_sessionStreamを定義 ★★★
+  Stream<DocumentSnapshot>? _sessionStream;
 
   @override
   void initState() {
     super.initState();
-    // ★★★ 修正: Firestoreのセッションドキュメントを直接監視するStreamを設定 ★★★
+    // ★★★ 修正: _summaryFutureの初期化を削除し、_sessionStreamを初期化 ★★★
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _sessionStream = FirebaseFirestore.instance
