@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:frontend/models/analysis_models.dart';
+import 'package:frontend/models/book_recommendation.dart';
 import 'package:frontend/models/graph_data.dart' as model;
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
@@ -24,7 +25,7 @@ class _AnalysisDashboardScreenState
     extends ConsumerState<AnalysisDashboardScreen> {
   Future<model.GraphData>? _graphDataFuture;
   late Future<AnalysisSummary> _summaryFuture;
-  late Future<BookRecommendationResponse> _bookRecommendationsFuture;
+  late Future<List<BookRecommendation>> _bookRecommendationsFuture;
   final Graph _graph = Graph();
   final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
   Map<String, model.NodeData> _nodeDataMap = {};
@@ -622,7 +623,7 @@ class _AnalysisDashboardScreenState
         } else if (!snapshot.hasData || snapshot.data!.totalSessions == 0) {
           return const Center(
               child: Padding(
-            padding: EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16.0),
             child: Text('分析できる記録がまだありません。', textAlign: TextAlign.center),
           ));
         }
@@ -714,7 +715,7 @@ class _AnalysisDashboardScreenState
           );
         }
 
-        final recommendations = snapshot.data!.recommendations;
+        final recommendations = snapshot.data!;
         return ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
