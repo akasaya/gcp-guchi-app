@@ -8,6 +8,7 @@ firebase-admin>=6.0.0
 google-cloud-aiplatform>=1.56.0
 google-cloud-discoveryengine==0.13.9 # 安定性のためバージョン固定
 google-cloud-storage
+google-cloud-tasks
 
 # RAG & LLM Libraries
 langchain==0.2.5                 # numpy<2 との互換性のためバージョン固定
