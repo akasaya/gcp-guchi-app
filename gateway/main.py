@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from collections import Counter
 
 from google.cloud import aiplatform
+from google.cloud import tasks_v2
 from tenacity import retry, stop_after_attempt, wait_exponential
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
@@ -44,6 +45,24 @@ try:
     vertexai.init(project=project_id, location=gemini_region)
     print(f"✅ Vertex AI initialized for project: {project_id}. Gemini region: {gemini_region}, Vector Search region: {vector_search_region}")
 
+    # Cloud Tasksクライアントの初期化
+    tasks_client = None
+    GCP_TASK_QUEUE = os.getenv('GCP_TASK_QUEUE')
+    GCP_TASK_QUEUE_LOCATION = os.getenv('GCP_TASK_QUEUE_LOCATION')
+    GCP_TASK_SA_EMAIL = os.getenv('GCP_TASK_SA_EMAIL') # タスクを実行するSA
+    # Cloud Run環境では、K_SERVICE環境変数からサービスURLが取得できる
+    SERVICE_URL = os.getenv('K_SERVICE_URL')
+
+    if 'K_SERVICE' in os.environ and all([GCP_TASK_QUEUE, GCP_TASK_QUEUE_LOCATION, GCP_TASK_SA_EMAIL, SERVICE_URL]):
+        try:
+            tasks_client = tasks_v2.CloudTasksClient()
+            print(f"✅ Cloud Tasks client initialized. Queue: {GCP_TASK_QUEUE} in {GCP_TASK_QUEUE_LOCATION}")
+        except Exception as e:
+            print(f"❌ Failed to initialize Cloud Tasks client: {e}")
+            traceback.print_exc()
+            tasks_client = None # 初期化に失敗したらNoneに戻す
+    else:
+        print("⚠️ Cloud Tasks environment variables not set or not in Cloud Run. Background tasks will not be created.")
 
     # RAG用設定
     SIMILAR_CASES_ENGINE_ID = os.getenv('SIMILAR_CASES_ENGINE_ID')
@@ -639,7 +658,39 @@ def _verify_token(request):
         return jsonify({"error": "Invalid or expired token"}), 401
     except Exception as e:
         print(f"An unexpected error occurred during token verification: {e}")
-        return jsonify({"error": "Could not verify token"}), 500
+        session_ref.update({'status': 'error', 'error_message': str(e)})
+        return jsonify({"error": "Failed to generate summary"}), 500
+
+# --- Cloud Tasks ヘルパー関数 ---
+def _create_cloud_task(payload: dict, target_uri: str):
+    """Cloud TasksにHTTPタスクを作成する。"""
+    # 環境変数が設定されていない、またはクライアントが初期化されていない場合は何もしない
+    if not all([tasks_client, GCP_TASK_QUEUE, GCP_TASK_QUEUE_LOCATION, GCP_TASK_SA_EMAIL, SERVICE_URL]):
+        print("⚠️ Cloud Tasks is not configured. Skipping task creation.")
+        return
+
+    parent = tasks_client.queue_path(project_id, GCP_TASK_QUEUE_LOCATION, GCP_TASK_QUEUE)
+
+    # タスクのペイロードとターゲットURLを設定
+    task = {
+        "http_request": {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": f"{SERVICE_URL.rstrip('/')}{target_uri}",
+            "headers": {"Content-type": "application/json"},
+            "body": json.dumps(payload).encode(),
+            # Cloud RunのIAM認証を通過するためにOIDCトークンを使用する
+            "oidc_token": {
+                 "service_account_email": GCP_TASK_SA_EMAIL,
+            }
+        }
+    }
+
+    try:
+        response = tasks_client.create_task(parent=parent, task=task)
+        print(f"✅ Created Cloud Task for {target_uri}. Task name: {response.name}")
+    except Exception as e:
+        print(f"❌ Failed to create Cloud Task for {target_uri}: {e}")
+        traceback.print_exc()
 
 
 
@@ -807,11 +858,23 @@ def post_summary(session_id):
         response_data['turn'] = session_data.get('turn', 1)
         response_data['max_turns'] = MAX_TURNS
 
-        # バックグラウンド処理の呼び出し
+        # --- Cloud Tasksによる非同期処理の呼び出し ---
         insights_text = summary_data.get('insights', '')
         current_turn = response_data['turn']
-        threading.Thread(target=_prefetch_questions_and_save, args=(session_id, user_id, insights_text, current_turn, MAX_TURNS)).start()
-        threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
+
+        # 質問プリフェッチタスク (最終ターンでなければ作成)
+        if current_turn < MAX_TURNS:
+            prefetch_payload = {
+                'session_id': session_id,
+                'user_id': user_id,
+                'insights_md': insights_text,
+                'current_turn': current_turn
+            }
+            _create_cloud_task(prefetch_payload, '/tasks/prefetch_questions')
+
+        # グラフ更新タスク
+        graph_payload = {'user_id': user_id}
+        _create_cloud_task(graph_payload, '/tasks/update_graph')
         
         return jsonify(response_data), 200
     except Exception as e:
