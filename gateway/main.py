@@ -33,9 +33,15 @@ try:
     project_id = app_instance.project_id
     print(f"✅ Firebase Admin SDK initialized for project: {project_id}")
 
-    vertex_ai_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1') # デフォルトを東京に
-    vertexai.init(project=project_id, location=vertex_ai_region)
-    print(f"✅ Vertex AI initialized for project: {project_id} in {vertex_ai_region}")
+    # (★修正) Vector SearchとGeminiでリージョンを分ける
+    # Vector Searchは東京リージョン (`asia-northeast1`) を使用
+    vector_search_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1')
+    # Geminiモデルは米国中部リージョン (`us-central1`) を使用
+    gemini_region = os.getenv('GCP_GEMINI_REGION', 'us-central1')
+    
+    vertexai.init(project=project_id, location=gemini_region)
+    print(f"✅ Vertex AI initialized for project: {project_id}. Gemini region: {gemini_region}, Vector Search region: {vector_search_region}")
+
 
     # RAG用設定
     SIMILAR_CASES_ENGINE_ID = os.getenv('SIMILAR_CASES_ENGINE_ID')
@@ -1140,6 +1146,10 @@ def get_home_suggestion_v2():
 
     user_id = user_record.uid
     print(f"--- Received home suggestion v2 request for user: {user_id} ---")
+
+    # (★修正) Vector Search用のリージョン変数を明示的に取得
+    vector_search_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1')
+
 
     # 環境変数が設定されているかチェック
     if not all([VECTOR_SEARCH_INDEX_ID, VECTOR_SEARCH_ENDPOINT_ID, VECTOR_SEARCH_DEPLOYED_INDEX_ID]):
