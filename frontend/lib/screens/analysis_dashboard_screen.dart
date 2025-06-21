@@ -623,7 +623,7 @@ class _AnalysisDashboardScreenState
         } else if (!snapshot.hasData || snapshot.data!.totalSessions == 0) {
           return const Center(
               child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: EdgeInsets.all(16.0),
             child: Text('分析できる記録がまだありません。', textAlign: TextAlign.center),
           ));
         }
