@@ -145,7 +145,7 @@ class _AnalysisDashboardScreenState
     _disablePreviousActions();
 
     if (MediaQuery.of(context).size.width <= 900) {
-      DefaultTabController.of(context)?.animateTo(2); // チャットタブへ
+      DefaultTabController.of(context).animateTo(2); // チャットタブへ
     }
 
     try {
