@@ -668,7 +668,7 @@ def post_summary(session_id):
         return user_record
     user_id = user_record['uid']
 
-    session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+    session_ref = db_firestore.collection('sessions').document(session_id)
     session_snapshot = session_ref.get() # ★★★ 修正: tryブロックの外に移動
 
     if not session_snapshot.exists:
