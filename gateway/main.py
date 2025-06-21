@@ -553,25 +553,29 @@ def _update_graph_cache(user_id: str):
 def _verify_token(request):
     auth_header = request.headers.get('Authorization')
     if not auth_header:
+        # 失敗時はResponseオブジェクトが返る
         return jsonify({"error": "Authorization header is missing"}), 401
 
     try:
         id_token = auth_header.split('Bearer ')[1]
+        # 成功時はdictが返る
         decoded_token = auth.verify_id_token(id_token)
         return decoded_token
     except (IndexError, auth.InvalidIdTokenError) as e:
         print(f"Token validation failed: {e}")
+        # 失敗時はResponseオブジェクトが返る
         return jsonify({"error": "Invalid or expired token"}), 401
     except Exception as e:
         print(f"An unexpected error occurred during token verification: {e}")
         return jsonify({"error": "Could not verify token"}), 500
 
 
+
 # ===== APIエンドポイント =====
 @app.route('/session/start', methods=['POST'])
 def start_session():
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    if not isinstance(user_record, dict):
         return user_record
 
     data = request.get_json()
@@ -629,7 +633,7 @@ def start_session():
 @app.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    if not isinstance(user_record, dict):
         return user_record
     user_id = user_record['uid']
 
@@ -664,9 +668,11 @@ def record_swipe(session_id):
 def post_summary(session_id):
     """セッションの要約を生成・保存し、結果を返す"""
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
     user_id = user_record['uid']
+
 
     # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
     session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
@@ -745,10 +751,12 @@ def post_summary(session_id):
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
 
     user_id = user_record['uid']
+
 
     try:
         # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
@@ -842,7 +850,8 @@ def _get_all_insights_as_text(user_id: str) -> str:
 def get_analysis_graph():
     """ユーザーの全セッション履歴から統合分析グラフを生成またはキャッシュから取得"""
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
     
     user_id = user_record['uid']
@@ -896,7 +905,8 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
 def get_home_suggestion():
     """ホーム画面に表示する、過去の対話に基づく提案を返す"""
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
 
     user_id = user_record['uid'] 
@@ -951,7 +961,7 @@ def get_proactive_suggestion():
     3. 結果をGeminiで要約し、ユーザーへの提案を生成
     """
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    if not isinstance(user_record, dict):
         return user_record
 
     user_id = user_record['uid']
@@ -1048,7 +1058,8 @@ def get_proactive_suggestion():
 def handle_node_tap():
     """グラフ上のノードがタップされた時に、関連情報を返す"""
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
 
     data = request.get_json()
@@ -1119,7 +1130,8 @@ def handle_node_tap():
 @app.route('/analysis/chat', methods=['POST'])
 def post_chat_message():
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
 
     data = request.get_json()
@@ -1177,7 +1189,8 @@ def get_home_suggestion_v2():
     ホーム画面で新しい対話のきっかけを提案します。
     """
     user_record = _verify_token(request)
-    if isinstance(user_record, tuple):
+    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
+    if not isinstance(user_record, dict):
         return user_record
 
     user_id = user_record['uid']
