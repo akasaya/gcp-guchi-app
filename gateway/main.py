@@ -700,6 +700,12 @@ def post_summary(session_id):
         response_data['turn'] = session_snapshot.to_dict().get('turn', 1)
         response_data['max_turns'] = MAX_TURNS
 
+        # ★★★ 修正: 2つのバックグラウンド処理を呼び出す ★★★
+        # 次の質問を先読み
+        insights_text = summary_data.get('insights', '')
+        current_turn = response_data['turn']
+        threading.Thread(target=_prefetch_questions_and_save, args=(session_id, user_id, insights_text, current_turn, MAX_TURNS)).start()
+        # グラフキャッシュを更新
         threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
         
         return jsonify(response_data), 200
@@ -717,7 +723,6 @@ def continue_session(session_id):
         return user_record
 
     user_id = user_record['uid']
-    max_turns = 3 # セッションの最大ターン数
 
     try:
         session_ref = db_firestore.collection('sessions').document(session_id)
@@ -731,7 +736,8 @@ def continue_session(session_id):
             current_turn = snapshot.to_dict().get('turn', 1)
             new_turn = current_turn + 1
             
-            if new_turn > max_turns:
+            # ★★★ 修正: ハードコードされた値を定数に変更 ★★★
+            if new_turn > MAX_TURNS:
                  return None, None # 最大ターン数に達した
 
             transaction.update(ref, {
@@ -755,7 +761,8 @@ def continue_session(session_id):
         else:
             print(f"⚠️ No prefetched questions found for turn {new_turn}. Generating now...")
             # フォールバックとして、最新のサマリーから質問を生成
-            summary_ref = session_ref.collection('summaries').document('final_summary') # ここは要調整
+            # ★★★ 修正: 'final_summary' -> 'latest' ★★★
+            summary_ref = session_ref.collection('summaries').document('latest')
             summary_doc = summary_ref.get()
             if not summary_doc.exists:
                  return jsonify({"error": "Summary not found to generate follow-up questions"}), 404
