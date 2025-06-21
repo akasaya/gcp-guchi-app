@@ -995,7 +995,10 @@ def get_book_recommendations():
         if not all_insights_text:
             return jsonify([]), 200 # ここは空のリストを返すのでOK
 
-        recommendations = _generate_book_recommendations(all_insights_text)
+        recommendations_dict = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
+        
+        # フロントエンドが期待する「本のリスト」形式に変換して返します。
+        recommendations_list = recommendations_dict.get("recommendations", [])
         
         print(f"✅ Generated book recommendations for user {user_id}.")
         
