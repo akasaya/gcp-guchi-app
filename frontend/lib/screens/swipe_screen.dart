@@ -23,7 +23,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
   final ApiService _apiService = ApiService();
   late final MatchEngine _matchEngine;
   final List<SwipeItem> _swipeItems = [];
-  final List<Map<String, dynamic>> _swipesDataForSummary = [];
 
   late DateTime _questionStartTime;
   int _currentQuestionIndex = 0; // ★ 状態変数を追加
@@ -50,13 +49,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
   void _onSwipe(bool isYes, Map<String, dynamic> questionData, int index) {
     final hesitationTime =
         DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
-
-    // /summaryエンドポイントに送信するデータにはbool値を入れる
-  _swipesDataForSummary.add({
-    'question_text': questionData['question_text'],
-    'answer': isYes, // isYes (bool値) をそのまま使う
-    'hesitation_time': hesitationTime,
-  });
 
   _apiService.recordSwipe(
     sessionId: widget.sessionId,
@@ -106,11 +98,11 @@ class _SwipeScreenState extends State<SwipeScreen> {
                     );
                   },
                   onStackFinished: () {
+                    // ★★★ 修正: 不要になった `swipes` パラメータを渡さずに画面遷移します ★★★
                     Navigator.of(context).pushReplacement(
                       MaterialPageRoute(
                         builder: (context) => SummaryScreen(
                           sessionId: widget.sessionId,
-                          swipes: _swipesDataForSummary,
                         ),
                       ),
                     );
