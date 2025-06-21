@@ -9,6 +9,7 @@ import re
 import traceback
 import threading
 import requests
+import urllib.parse
 from bs4 import BeautifulSoup
 import numpy as np
 import hashlib
@@ -1010,7 +1011,7 @@ def get_book_recommendations():
 
 
 def _generate_book_recommendations(insights_text: str, api_key: str):
-    """ユーザーの思考サマリーに基づき、Google Books APIとGeminiを連携させて書籍を推薦する"""
+    """ユーザーの思考サマリーに基づき、Google Books APIとGeminiを連携させて書籍を推薦する (堅牢版)"""
     
     # ステップ1: ユーザーの悩みから書籍検索用のキーワードを抽出する
     keyword_extraction_prompt = f"""
@@ -1029,64 +1030,94 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
         model = GenerativeModel(flash_model)
         print("--- Calling Gemini to extract book search keywords ---")
         response = model.generate_content(keyword_extraction_prompt)
-        keywords = response.text.strip()
+        keywords_str = response.text.strip()
+        keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
         print(f"✅ Extracted book search keywords: {keywords}")
     except Exception as e:
         print(f"❌ Failed to extract book search keywords: {e}")
         return {"recommendations": []}
 
-    # ★ 修正点: 引数で渡されたapi_keyを使用
-    if not api_key:
-        print("⚠️ WARNING: GOOGLE_BOOKS_API_KEY is not set. Skipping book recommendations.")
+    if not keywords:
         return {"recommendations": []}
+        
+    # ステップ2: Google Books APIで書籍情報を検索し、重複を除いたリストを作成する
+    all_books_info = []
+    unique_book_ids = set()
 
-    books_api_url = f"https://www.googleapis.com/books/v1/volumes?q={keywords}&key={api_key}&langRestrict=ja&maxResults=5&printType=books"
+    for keyword in keywords:
+        books_api_url = f"https://www.googleapis.com/books/v1/volumes?q={urllib.parse.quote_plus(keyword)}&key={api_key}&langRestrict=ja&maxResults=5&printType=books&orderBy=relevance"
+        try:
+            print(f"--- Calling Google Books API with keyword: {keyword} ---")
+            response = requests.get(books_api_url, timeout=10)
+            response.raise_for_status()
+            search_results = response.json()
+            
+            if 'items' in search_results:
+                for item in search_results['items']:
+                    book_id = item.get('id')
+                    if book_id in unique_book_ids:
+                        continue 
+
+                    volume_info = item.get('volumeInfo', {})
+                    title = volume_info.get('title')
+                    authors = volume_info.get('authors', ['著者不明'])
+                    if title:
+                        all_books_info.append({"title": title, "author": ", ".join(authors)})
+                        unique_book_ids.add(book_id)
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Warning: Google Books API call failed for keyword '{keyword}': {e}")
+            continue
+
+    if not all_books_info:
+        print("No books found from Google Books API across all keywords.")
+        return {"recommendations": []}
     
-    try:
-        print(f"--- Calling Google Books API with keywords: {keywords} ---")
-        response = requests.get(books_api_url, timeout=10)
-        response.raise_for_status()
-        search_results = response.json()
-        
-        found_books = []
-        if 'items' in search_results:
-            for item in search_results['items']:
-                volume_info = item.get('volumeInfo', {})
-                title = volume_info.get('title')
-                authors = volume_info.get('authors', ['著者不明'])
-                if title:
-                    found_books.append(f"- 書籍名: {title}, 著者: {', '.join(authors)}")
-        
-        if not found_books:
-            print("No books found from Google Books API.")
-            return {"recommendations": []}
-        
-        found_books_text = "\n".join(found_books)
-        print(f"✅ Found books:\n{found_books_text}")
+    selected_books = all_books_info[:5]
+    print(f"✅ Found {len(selected_books)} unique books to process.")
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error calling Google Books API: {e}")
-        return {"recommendations": []}
-
-    # ステップ3: 見つかった書籍リストを元に、Geminiに最終的な推薦文を生成させる
-    final_prompt = f"""
-あなたは、利用者の悩みに寄り添い、その解決の助けとなる本を推薦する優秀な司書です。
-以下の「ユーザーの思考サマリー」と「検索で見つかった書籍リスト」を元に、ユーザーに最も役立つと思われる本をリストの中から3冊まで選び、推薦文を作成してください。
+    # ステップ3: 各書籍について、Geminiに推薦理由のみを生成させる
+    final_recommendations = []
+    reason_generation_prompt_template = """
+あなたは、利用者の悩みに寄り添う優秀な司書です。
+以下の「ユーザーの思考サマリー」と「書籍情報」を元に、この本がユーザーになぜおすすめなのか、具体的な推薦理由を100文字程度で記述してください。理由以外の余計な文章は含めないでください。
 
 # ユーザーの思考サマリー
-{insights_text}
+{insights}
 
-# 検索で見つかった書籍リスト
-{found_books_text}
+# 書籍情報
+- 書籍名: {title}
+- 著者: {author}
 
-# 指示
-- 書籍リストの中から、ユーザーの状況に最も合致する本だけを選んでください。
-- `reason`には、なぜその本がユーザーのためになるのか、具体的な理由を100文字程度で記述してください。
-- `search_url`には、書籍タイトルと著者名でGoogle検索するためのURLをURLエンコードして生成してください。
-- 必ず、指定されたJSON形式で出力してください。
+# 推薦理由:
 """
-    pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
-    return _call_gemini_with_schema(final_prompt, BOOK_RECOMMENDATION_SCHEMA, model_name=pro_model)
+    for book in selected_books:
+        try:
+            prompt = reason_generation_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
+            flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+            model = GenerativeModel(flash_model)
+            print(f"--- Calling Gemini to generate reason for book: {book['title']} ---")
+            response = model.generate_content(prompt)
+            reason = response.text.strip()
+            
+            search_query = f"{book['title']} {book['author']}"
+            search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(search_query)}"
+
+            final_recommendations.append({
+                "title": book["title"],
+                "author": book["author"],
+                "reason": reason,
+                "search_url": search_url
+            })
+            
+            if len(final_recommendations) >= 3:
+                break
+        
+        except Exception as e:
+            print(f"⚠️ Failed to generate reason for book '{book['title']}': {e}")
+            continue
+
+    return {"recommendations": final_recommendations}
 
 def _get_all_insights_as_text(user_id: str) -> str:
     """指定されたユーザーの全てのセッションサマリーをテキストとして結合する"""
