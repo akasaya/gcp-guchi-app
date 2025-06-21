@@ -899,7 +899,7 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
         if cache_doc.exists:
             cached_data = cache_doc.to_dict()
             # 24時間以内であればキャッシュを返す
-            if datetime.now(timezone.utc) - cached_data['timestamp'] < timedelta(hours=24):
+            if datetime.now(timezone.utc) - cached_data.get('timestamp', datetime.min.replace(tzinfo=timezone.utc)) < timedelta(hours=24):
                 print(f"✅ Returning cached graph data for user: {user_id}")
                 return cached_data['graph_data']
 
@@ -910,42 +910,74 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
 
     graph_data = generate_graph_data(all_insights_text)
 
-   # ★★★ ここからが今回の修正の核心部分です ★★★
+    # グラフデータがない、またはノードがない場合はここで終了
+    if not graph_data or not graph_data.get('nodes'):
+        print(f"No nodes found in graph data for user: {user_id}. Skipping embedding generation.")
+        # 新しいグラフデータ(空の可能性あり)をキャッシュに保存
+        cache_ref.set({
+            'graph_data': graph_data,
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'user_id': user_id
+        })
+        return graph_data
+
     try:
-        print(f"--- Generating and upserting overall embedding for user: {user_id} ---")
-        embedding_list = _get_embeddings([all_insights_text])
-        if embedding_list:
-            user_embedding = embedding_list[0]
-            
-            # a. Firestoreに保存してユニークなIDを取得
-            embedding_ref = db_firestore.collection('vector_embeddings').document()
-            embedding_ref.set({
-                'user_id': user_id,
-                'embedding': user_embedding,
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'source_text_hash': hashlib.sha256(all_insights_text.encode()).hexdigest()
-            })
-            
-            # b. Vector Search Index にベクトルを登録(Upsert)
-            vector_search_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1')
-            index_resource_name = f"projects/{project_id}/locations/{vector_search_region}/indexes/{VECTOR_SEARCH_INDEX_ID}"
-            vector_search_index = aiplatform.MatchingEngineIndex(index_name=index_resource_name)
-            
-            vector_search_index.upsert_datapoints(
-                datapoints=[
-                    {
-                        "datapoint_id": embedding_ref.id,
-                        "feature_vector": user_embedding
-                    }
-                ]
-            )
-            print(f"✅ Saved and upserted embedding '{embedding_ref.id}' for user: {user_id}")
+        print(f"--- Generating and upserting node embeddings for user: {user_id} ---")
+
+        # 1. グラフからノードのテキスト(ラベル)を抽出
+        nodes = graph_data.get('nodes', [])
+        node_texts = [node.get('id', '') for node in nodes]
+        
+        if not node_texts:
+            print(f"No node texts found to generate embeddings for user: {user_id}")
         else:
-            print(f"⚠️ Failed to generate overall embedding for user: {user_id}")
+            # 2. 全ノードのベクトルを一括生成
+            node_embeddings = _get_embeddings(node_texts)
+
+            if node_embeddings and len(node_embeddings) == len(nodes):
+                datapoints_to_upsert = []
+                batch = db_firestore.batch()
+
+                for i, node in enumerate(nodes):
+                    node_label = node.get('id')
+                    node_id = node.get('id') # ここではラベルをIDとして使う
+                    embedding = node_embeddings[i]
+                    
+                    # a. Firestoreに保存するデータを作成し、バッチに追加
+                    embedding_ref = db_firestore.collection('vector_embeddings').document()
+                    batch.set(embedding_ref, {
+                        'user_id': user_id,
+                        'embedding': embedding,
+                        'created_at': firestore.SERVER_TIMESTAMP,
+                        'nodeId': node_id,
+                        'nodeLabel': node_label,
+                        'source_text': node_label # 元のテキストも保存
+                    })
+                    
+                    # b. Vector SearchにUpsertするデータポイントを追加
+                    datapoints_to_upsert.append({
+                        "datapoint_id": embedding_ref.id,
+                        "feature_vector": embedding
+                    })
+
+                # c. バッチ処理でFirestoreに一括書き込み
+                batch.commit()
+                print(f"✅ Saved {len(nodes)} node embeddings to Firestore for user: {user_id}")
+
+                # d. Vector Search Index にベクトルを一括登録(Upsert)
+                if datapoints_to_upsert:
+                    vector_search_region = os.getenv('GCP_VERTEX_AI_REGION', 'asia-northeast1')
+                    index_resource_name = f"projects/{project_id}/locations/{vector_search_region}/indexes/{VECTOR_SEARCH_INDEX_ID}"
+                    vector_search_index = aiplatform.MatchingEngineIndex(index_name=index_resource_name)
+                    
+                    vector_search_index.upsert_datapoints(datapoints=datapoints_to_upsert)
+                    print(f"✅ Upserted {len(datapoints_to_upsert)} datapoints to Vector Search for user: {user_id}")
+            else:
+                print(f"⚠️ Failed to generate embeddings or count mismatch for user: {user_id}")
+
     except Exception as e:
-        print(f"❌ Error during user embedding generation/upsert: {e}")
+        print(f"❌ Error during node embedding generation/upsert: {e}")
         traceback.print_exc()
-    # ★★★ ここまでが修正の核心部分です ★★★
     
     # 新しいグラフデータをキャッシュに保存
     cache_ref.set({
