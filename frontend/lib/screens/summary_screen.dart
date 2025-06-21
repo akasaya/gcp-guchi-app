@@ -21,14 +21,12 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   final ApiService _apiService = ApiService();
-  // ★★★ 修正: _summaryFutureを削除し、_sessionStreamを定義 ★★★
   Stream<DocumentSnapshot>? _sessionStream;
   bool _isContinuing = false;
 
   @override
   void initState() {
     super.initState();
-    // ★★★ 修正: _summaryFutureの初期化を削除し、_sessionStreamを初期化 ★★★
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _sessionStream = FirebaseFirestore.instance
@@ -52,7 +50,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ★★★ 修正: ローディングアニメーションを四角形に統一 ★★★
                 const SpinKitFadingCube(color: Colors.white, size: 50.0),
                 const SizedBox(height: 20),
                 Text(message, style: const TextStyle(color: Colors.white, fontSize: 16)),
@@ -64,28 +61,25 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-// ★★★ 修正: 不要になった `String insights` パラメータをメソッド定義から完全に削除 ★★★
-Future<void> _continueSession() async {
-    // ★★★ 追加: 処理開始時にフラグを立ててUIを更新 ★★★
+  Future<void> _continueSession() async {
+    // ★★★ 修正: UIをローディング状態に切り替える ★★★
     setState(() {
       _isContinuing = true;
     });
-    _showLoadingDialog('次の質問を考えています...');
+    // ★★★ 修正: ダイアログ表示は不要なため削除 ★★★
+    // _showLoadingDialog('次の質問を考えています...');
 
-    // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
-      // APIの仕様変更に伴い、insightsは不要になりました
       final result = await _apiService.continueSession(
         sessionId: widget.sessionId,
       );
       final newQuestions = List<Map<String, dynamic>>.from(result['questions']);
       final newTurn = result['turn'] as int;
 
-      // キャプチャしたnavigatorを使用
-      navigator.pop(); // ローディングダイアログを閉じる
+      // ★★★ 修正: ダイアログを閉じる処理は不要なため削除 ★★★
       navigator.pushReplacement(
         MaterialPageRoute(
           builder: (context) => SwipeScreen(
@@ -96,11 +90,15 @@ Future<void> _continueSession() async {
         ),
       );
     } catch (e) {
-      // キャプチャしたnavigatorとscaffoldMessengerを使用
-      navigator.pop(); // ローディングダイアログを閉じる
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('エラーが発生しました: $e')),
       );
+      // ★★★ 追加: エラー時にローディング状態を解除 ★★★
+      if (mounted) {
+        setState(() {
+          _isContinuing = false;
+        });
+      }
     }
   }
 
@@ -113,11 +111,9 @@ Future<void> _continueSession() async {
           title: const Text('セッションのまとめ'),
           automaticallyImplyLeading: false,
         ),
-        // ★★★ 修正: FutureBuilderからStreamBuilderに全面的に変更 ★★★
         body: StreamBuilder<DocumentSnapshot>(
           stream: _sessionStream,
           builder: (context, snapshot) {
-            // データがまだ来ていない、または接続中
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
               return const Center(
                 child: Column(
@@ -131,7 +127,6 @@ Future<void> _continueSession() async {
               );
             }
 
-            // エラー発生 or データが存在しない
             if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
               return const Center(child: Text('分析結果の取得に失敗しました。'));
             }
@@ -139,9 +134,23 @@ Future<void> _continueSession() async {
             final sessionData = snapshot.data!.data() as Map<String, dynamic>;
             final status = sessionData['status'] as String?;
 
-            // ★★★ 修正: _isContinuingフラグがtrueの間は、本体のローディング表示を抑制 ★★★
-            // バックエンドが処理中の場合
-            if (status != 'completed' && status != 'error' && !_isContinuing) {
+            // ★★★ 修正: UIロジックを全面的に見直し ★★★
+            // 1.「深掘り」ボタンが押されたら、専用のローディング画面を表示
+            if (_isContinuing) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SpinKitFadingCube(color: Colors.deepPurple, size: 50.0),
+                    SizedBox(height: 20),
+                    Text('次の質問を考えています...'),
+                  ],
+                ),
+              );
+            }
+
+            // 2. バックエンドで最初の要約を処理中のローディング画面を表示
+            if (status != 'completed' && status != 'error') {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -154,13 +163,11 @@ Future<void> _continueSession() async {
               );
             }
             
-            // バックエンドでエラーが発生した場合
             if (status == 'error') {
               final errorMessage = sessionData['error_message'] ?? '不明なエラーが発生しました。';
               return Center(child: Text('分析結果の取得に失敗しました: $errorMessage'));
             }
 
-            // ここまで来れば status == 'completed'
             final insights = sessionData['latest_insights'] as String? ?? '分析結果のテキストがありません。';
             final title = sessionData['title'] as String? ?? '無題';
             final currentTurn = sessionData['turn'] as int? ?? 1;
@@ -201,7 +208,6 @@ Future<void> _continueSession() async {
                           backgroundColor: Colors.deepPurple,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16)),
-                      // ★★★ 修正: 引数なしになったメソッドを直接渡すことでエラー解消 ★★★
                       onPressed: _continueSession,
                       child: Text('さらに深掘りする (残り$remainingTurns回)'),
                     ),
