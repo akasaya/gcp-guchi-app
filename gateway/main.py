@@ -746,7 +746,10 @@ def continue_session(session_id):
             })
             return new_turn, snapshot.to_dict().get('topic', '指定なし')
 
-        new_turn, topic = update_turn(session_ref)
+        # ★★★ 修正: トランザクションを生成し、正しく呼び出す ★★★
+        transaction = db_firestore.transaction()
+        new_turn, topic = update_turn(transaction, session_ref)
+
 
         if new_turn is None:
             return jsonify({"error": "Maximum turns reached for this session."}), 400
