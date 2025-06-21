@@ -45,24 +45,41 @@ try:
     vertexai.init(project=project_id, location=gemini_region)
     print(f"✅ Vertex AI initialized for project: {project_id}. Gemini region: {gemini_region}, Vector Search region: {vector_search_region}")
 
-    # Cloud Tasksクライアントの初期化
+    # Cloud Tasks Client Initialization
     tasks_client = None
-    GCP_TASK_QUEUE = os.getenv('GCP_TASK_QUEUE')
-    GCP_TASK_QUEUE_LOCATION = os.getenv('GCP_TASK_QUEUE_LOCATION')
-    GCP_TASK_SA_EMAIL = os.getenv('GCP_TASK_SA_EMAIL') # タスクを実行するSA
-    # Cloud Run環境では、K_SERVICE環境変数からサービスURLが取得できる
-    SERVICE_URL = os.getenv('K_SERVICE_URL')
+    GCP_TASK_QUEUE = None
+    GCP_TASK_QUEUE_LOCATION = None
+    GCP_TASK_SA_EMAIL = None
+    SERVICE_URL = None
 
-    if 'K_SERVICE' in os.environ and all([GCP_TASK_QUEUE, GCP_TASK_QUEUE_LOCATION, GCP_TASK_SA_EMAIL, SERVICE_URL]):
-        try:
-            tasks_client = tasks_v2.CloudTasksClient()
-            print(f"✅ Cloud Tasks client initialized. Queue: {GCP_TASK_QUEUE} in {GCP_TASK_QUEUE_LOCATION}")
-        except Exception as e:
-            print(f"❌ Failed to initialize Cloud Tasks client: {e}")
-            traceback.print_exc()
-            tasks_client = None # 初期化に失敗したらNoneに戻す
+    # Only attempt to initialize Cloud Tasks in the Cloud Run environment
+    if 'K_SERVICE' in os.environ:
+        GCP_TASK_QUEUE = os.getenv('GCP_TASK_QUEUE')
+        GCP_TASK_QUEUE_LOCATION = os.getenv('GCP_TASK_QUEUE_LOCATION')
+        GCP_TASK_SA_EMAIL = os.getenv('GCP_TASK_SA_EMAIL')
+        SERVICE_URL = os.getenv('K_SERVICE_URL') # Provided by Cloud Run
+
+        # Check which variables are missing for better debugging
+        required_vars = {
+            'GCP_TASK_QUEUE': GCP_TASK_QUEUE,
+            'GCP_TASK_QUEUE_LOCATION': GCP_TASK_QUEUE_LOCATION,
+            'GCP_TASK_SA_EMAIL': GCP_TASK_SA_EMAIL,
+            'K_SERVICE_URL': SERVICE_URL,
+        }
+        missing_vars = [key for key, value in required_vars.items() if not value]
+
+        if not missing_vars:
+            try:
+                tasks_client = tasks_v2.CloudTasksClient()
+                print(f"✅ Cloud Tasks client initialized. Queue: {GCP_TASK_QUEUE} in {GCP_TASK_QUEUE_LOCATION}")
+            except Exception as e:
+                print(f"❌ Failed to initialize Cloud Tasks client, even though variables were set: {e}")
+                traceback.print_exc()
+        else:
+            # This is the key log message for debugging
+            print(f"⚠️ Cloud Tasks is disabled. Missing environment variables: {', '.join(missing_vars)}. Background tasks will not be created.")
     else:
-        print("⚠️ Cloud Tasks environment variables not set or not in Cloud Run. Background tasks will not be created.")
+        print("ℹ️ Not running in Cloud Run ('K_SERVICE' not set). Skipping Cloud Tasks initialization.")
 
     # RAG用設定
     SIMILAR_CASES_ENGINE_ID = os.getenv('SIMILAR_CASES_ENGINE_ID')
@@ -665,7 +682,7 @@ def _verify_token(request):
 def _create_cloud_task(payload: dict, target_uri: str):
     """Cloud TasksにHTTPタスクを作成する。"""
     # 環境変数が設定されていない、またはクライアントが初期化されていない場合は何もしない
-    if not all([tasks_client, GCP_TASK_QUEUE, GCP_TASK_QUEUE_LOCATION, GCP_TASK_SA_EMAIL, SERVICE_URL]):
+    if not tasks_client:
         print("⚠️ Cloud Tasks is not configured. Skipping task creation.")
         return
 
