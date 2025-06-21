@@ -49,9 +49,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           child: Center(
-            child: SpinKitFadingCircle(
-              color: Colors.white,
-              size: 50.0,
+            // ★★★ 修正: ローディング表示を四角形に統一し、テキストも追加 ★★★
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SpinKitFadingCube(
+                  color: Colors.white,
+                  size: 50.0,
+                ),
+                SizedBox(height: 20),
+                Text("次の質問を考えています...", style: TextStyle(color: Colors.white, fontSize: 16)),
+              ],
             ),
           ),
         );

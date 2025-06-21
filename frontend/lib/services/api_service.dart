@@ -242,19 +242,19 @@ class ApiService {
   }
 
   /// ターン終了時に回答をまとめて送信し、分析結果を取得する
-  Future<Map<String, dynamic>> postSummary({
+  Future<void> postSummary({
     required String sessionId,
   }) async {
     final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
       // AIの分析は時間がかかるため、このリクエストのタイムアウトを2分に延長
       _dio.options.receiveTimeout = const Duration(minutes: 2);
-      final response = await _dio.post(
+      await _dio.post(
         '/session/$sessionId/summary',
       );
-      return response.data;
-    } on DioException catch (_) {
-      throw Exception('分析結果の取得に失敗しました。');
+    } catch (e) {
+      // fire-and-forgetなので、アプリをクラッシュさせずにエラーを記録するだけ
+      debugPrint('Failed to post summary request: $e');
     } finally {
       // タイムアウト設定を元に戻す
       _dio.options.receiveTimeout = originalReceiveTimeout;

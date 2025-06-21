@@ -98,7 +98,9 @@ class _SwipeScreenState extends State<SwipeScreen> {
                     );
                   },
                   onStackFinished: () {
-                    // ★★★ 修正: 不要になった `swipes` パラメータを渡さずに画面遷移します ★★★
+                    // ★★★ 修正: 要約APIを呼び出し、結果を待たずにサマリー画面に遷移 ★★★
+                    _apiService.postSummary(sessionId: widget.sessionId);
+                    
                     Navigator.of(context).pushReplacement(
                       MaterialPageRoute(
                         builder: (context) => SummaryScreen(

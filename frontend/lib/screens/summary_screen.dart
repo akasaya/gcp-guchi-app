@@ -4,6 +4,8 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/home_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String sessionId;
@@ -24,10 +26,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
   @override
   void initState() {
     super.initState();
-    // APIの仕様変更に伴い、swipesは不要になりました
-    _summaryFuture = _apiService.postSummary(
-      sessionId: widget.sessionId,
-    );
+    // ★★★ 修正: Firestoreのセッションドキュメントを直接監視するStreamを設定 ★★★
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _sessionStream = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('sessions')
+          .doc(widget.sessionId)
+          .snapshots();
+    }
   }
 
   void _showLoadingDialog(String message) {
@@ -99,10 +107,12 @@ Future<void> _continueSession() async {
           title: const Text('セッションのまとめ'),
           automaticallyImplyLeading: false,
         ),
-        body: FutureBuilder<Map<String, dynamic>>(
-          future: _summaryFuture,
+        // ★★★ 修正: FutureBuilderからStreamBuilderに全面的に変更 ★★★
+        body: StreamBuilder<DocumentSnapshot>(
+          stream: _sessionStream,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+            // データがまだ来ていない、または接続中
+            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -114,19 +124,40 @@ Future<void> _continueSession() async {
                 ),
               );
             }
-            if (snapshot.hasError) {
-              return Center(child: Text('分析結果の取得に失敗しました: ${snapshot.error}'));
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: Text('分析結果がありません。'));
+
+            // エラー発生 or データが存在しない
+            if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+              return const Center(child: Text('分析結果の取得に失敗しました。'));
             }
 
-            final summaryData = snapshot.data!;
-            final insights = summaryData['insights'] as String? ?? '分析結果のテキストがありません。';
-            final title = summaryData['title'] as String? ?? '無題';
+            final sessionData = snapshot.data!.data() as Map<String, dynamic>;
+            final status = sessionData['status'] as String?;
+
+            // バックエンドが処理中の場合 (statusがまだcompletedでない)
+            if (status != 'completed' && status != 'error') {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SpinKitFadingCube(color: Colors.deepPurple, size: 50.0),
+                    SizedBox(height: 20),
+                    Text('AIがあなたの心を分析中...'),
+                  ],
+                ),
+              );
+            }
             
-            final currentTurn = summaryData['turn'] as int? ?? 0;
-            final maxTurns = summaryData['max_turns'] as int? ?? 0;
+            // バックエンドでエラーが発生した場合
+            if (status == 'error') {
+              final errorMessage = sessionData['error_message'] ?? '不明なエラーが発生しました。';
+              return Center(child: Text('分析結果の取得に失敗しました: $errorMessage'));
+            }
+
+            // ここまで来れば status == 'completed'
+            final insights = sessionData['latest_insights'] as String? ?? '分析結果のテキストがありません。';
+            final title = sessionData['title'] as String? ?? '無題';
+            final currentTurn = sessionData['turn'] as int? ?? 1;
+            final maxTurns = sessionData['max_turns'] as int? ?? 3;
             
             final canContinue = currentTurn < maxTurns;
             final remainingTurns = maxTurns - currentTurn;
