@@ -83,6 +83,9 @@ def index():
 RAG_CACHE_COLLECTION = 'rag_cache'
 RAG_CACHE_TTL_DAYS = 7 # Cache expires after 7 days
 
+# ★★★ 修正: セッションの最大ターン数を定義 ★★★
+MAX_TURNS = 3 # セッションの最大ターン数（初期ターンを含む）
+
 
 # ===== JSONスキーマ定義 =====
 QUESTIONS_SCHEMA = {"type": "object","properties": {"questions": {"type": "array","items": {"type": "object","properties": {"question_text": {"type": "string"}},"required": ["question_text"]}}},"required": ["questions"]}
