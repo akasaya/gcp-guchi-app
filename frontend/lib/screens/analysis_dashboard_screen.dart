@@ -191,7 +191,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
 
     setState(() => _isActionLoading = true);
 
- try {
+    try {
         final apiService = ref.read(apiServiceProvider);
         // ★★★ 修正: 'get_similar_cases' を 'similar_cases' に修正 ★★★
         final ragType = actionId == 'similar_cases' ? 'similar_cases' : 'suggestions';
@@ -283,7 +283,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       appBar: AppBar(title: const Text('統合分析ダッシュボード')),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth > 800) {
+          if (constraints.maxWidth > 900) { // 少し広めの閾値に変更
             return _buildWideLayout();
           } else {
             return _buildNarrowLayout();
@@ -299,7 +299,7 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}', textAlign: TextAlign.center)));
-        if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey))));
+        if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) return const Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text('分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey))));
         return _buildGraphView();
       },
     );
@@ -310,18 +310,53 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
       children: [
         Expanded(flex: 3, child: _buildGraphViewFuture()),
         const VerticalDivider(width: 1, thickness: 1),
-        Expanded(flex: 2, child: _buildChatView()),
+        Expanded(
+          flex: 2,
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              children: [
+                const TabBar(tabs: [
+                  Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline)),
+                  Tab(text: '統計サマリー', icon: Icon(Icons.bar_chart_outlined)),
+                ]),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildChatView(),
+                      _buildSummaryView(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildNarrowLayout() {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
-          const TabBar(tabs: [Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)), Tab(text: 'チャットで深掘り', icon: Icon(Icons.chat_bubble_outline))]),
-          Expanded(child: TabBarView(children: [_buildGraphViewFuture(), _buildChatView()])),
+          const TabBar(
+            tabs: [
+              Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
+              Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
+              Tab(text: 'チャット', icon: Icon(Icons.chat_bubble_outline)),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildSummaryView(),
+                _buildGraphViewFuture(),
+                _buildChatView(),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -506,6 +541,117 @@ class _AnalysisDashboardScreenState extends ConsumerState<AnalysisDashboardScree
             options: const InputOptions(sendButtonVisibilityMode: SendButtonVisibilityMode.always),
           ),
         ],
+      ),
+    );
+  }
+
+ Widget _buildSummaryView() {
+    return FutureBuilder<AnalysisSummary>(
+      future: _summaryFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(
+              child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text('エラーが発生しました: ${snapshot.error}', textAlign: TextAlign.center),
+          ));
+        } else if (!snapshot.hasData || snapshot.data!.totalSessions == 0) {
+          return const Center(
+              child: Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text('分析できる記録がまだありません。', textAlign: TextAlign.center),
+          ));
+        }
+
+        final summary = snapshot.data!;
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _summaryFuture = ref.read(apiServiceProvider).getAnalysisSummary();
+            });
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSummaryCard(
+                    '総セッション回数',
+                    '${summary.totalSessions} 回',
+                    Icons.history,
+                    Colors.blue,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'よく考えているテーマ Top 3',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 10),
+                  if (summary.topTopics.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        title: Text('記録がありません'),
+                      ),
+                    )
+                  else
+                    Card(
+                      child: Column(
+                        children: summary.topTopics.asMap().entries.map((entry) {
+                          int idx = entry.key;
+                          TopicCount topic = entry.value;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              child: Text('${idx + 1}'),
+                            ),
+                            title: Text(topic.topic),
+                            trailing: Text('${topic.count} 回'),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSummaryCard(
+      String title, String value, IconData icon, Color color) {
+    return Card(
+      elevation: 2.0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Row(
+          children: [
+            Icon(icon, size: 40, color: color),
+            const SizedBox(width: 20),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  value,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold, color: color),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/graph_data.dart';
 import '../models/chat_models.dart'; 
+import '../models/analysis_models.dart';
 
 
 // ApiServiceをアプリケーション全体で利用可能にするためのProvider
@@ -100,6 +101,19 @@ class ApiService {
     } finally {
       // タイムアウト設定を元に戻す
       _dio.options.receiveTimeout = originalReceiveTimeout;
+    }
+  }
+
+    /// 【新規追加】ユーザーの対話履歴の統計情報を取得する
+  Future<AnalysisSummary> getAnalysisSummary() async {
+    try {
+      final response = await _dio.get('/analysis/summary');
+      return AnalysisSummary.fromJson(response.data);
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? '分析統計の取得に失敗しました。';
+      throw Exception(errorMessage);
+    } catch (e) {
+      throw Exception('予期せぬエラーが発生しました: $e');
     }
   }
 

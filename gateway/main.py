@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 import numpy as np
 import hashlib
 from datetime import datetime, timedelta, timezone
+from collections import Counter
 
 from google.cloud import aiplatform
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -91,29 +92,50 @@ MAX_TURNS = 3 # セッションの最大ターン数（初期ターンを含む�
 QUESTIONS_SCHEMA = {"type": "object","properties": {"questions": {"type": "array","items": {"type": "object","properties": {"question_text": {"type": "string"}},"required": ["question_text"]}}},"required": ["questions"]}
 SUMMARY_SCHEMA = {"type": "object","properties": {"title": {"type": "string", "description": "このセッション全体を要約する15文字程度の短いタイトル"},"insights": {"type": "string", "description": "指定されたMarkdown形式でのユーザーの心理分析レポート"}},"required": ["title", "insights"]}
 GRAPH_SCHEMA = {"type": "object","properties": {"nodes": {"type": "array","items": {"type": "object","properties": {"id": {"type": "string"},"type": {"type": "string", "enum": ["emotion", "topic", "keyword", "issue"]},"size": {"type": "integer"}},"required": ["id", "type", "size"]}},"edges": {"type": "array","items": {"type": "object","properties": {"source": {"type": "string"},"target": {"type": "string"},"weight": {"type": "integer"}},"required": ["source", "target", "weight"]}}},"required": ["nodes", "edges"]}
+TOPIC_SUGGESTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "対話のテーマ（例：新しいプロジェクトの進め方）"},
+                    "proposal_text": {"type": "string", "description": "ユーザーへの問いかけ文"}
+                },
+                "required": ["topic", "proposal_text"]
+            }
+        }
+    },
+    "required": ["suggestions"]
+}
 
 # ===== プロンプトテンプレート =====
 SUMMARY_ONLY_PROMPT_TEMPLATE = """
-あなたは、ユーザーの感情の動きを分析するプロの臨床心理士です。ユーザーは「{topic}」というテーマについて対話しています。
-以下のユーザーとの会話履歴を分析し、必ず指示通りのJSON形式で分析レポートとタイトルを出力してください。
+あなたは、ユーザーの思考を客観的に整理し、言語化するのを手伝うAIアシスタントです。ユーザーは「{topic}」というテーマについて対話しています。
+以下のユーザーとの会話履歴（はい/いいえ の回答）を分析し、ユーザーの思考を構造化してください。
+心理的な分析や断定は避け、あくまでユーザーの回答から読み取れる事実に基づいてレポートを作成してください。
+
 # 分析対象の会話履歴
 {swipes_text}
+
 # 出力形式 (JSON)
 必ず以下のキーを持つJSONオブジェクトを生成してください。
 - `title`: 会話全体を象徴する15文字程度の短いタイトル。
-- `insights`: 以下のMarkdown形式で **厳密に** 記述された分析レポート。
+- `insights`: 以下のMarkdown形式で **厳密に** 記述された思考整理レポート。
 ```markdown
 ### ✨ 全体的な要約
-（ここに、ユーザーの現在の心理状態、主な感情、内面的な葛藤などを2〜3文で簡潔にまとめてください）
-### 📝 詳細な分析
-（ここに、具体的な分析内容を箇条書きで記述してください）
-* **感情の状態**: （ユーザーが感じている主要な感情について、その根拠と共に記述してください）
-* **注目すべき点**: （回答内容と、ためらい時間から推測される感情の矛盾、特に印象的な回答など、分析の鍵となったポイントを具体的に挙げてください。会話履歴に「特に迷いが見られました」と記載のある回答は、ユーザーがためらいや葛藤を抱えている可能性があります）
-* **根本的な課題**: （分析から推測される、ユーザーが直面している根本的な課題や欲求について記述してください）
+（ここに、ユーザーがこのトピックについてどのような考えを持っているか、主な論点やキーワードを2〜3文で簡潔にまとめてください）
+### 📝 思考の整理
+（ここに、ユーザーの回答から見える思考の構造を箇条書きで記述してください）
+* **中心的な考え**: （ユーザーがこのトピックで最も重視していると思われる考えや価値観を記述してください）
+* **思考のパターン**: （ユーザーの回答から見える、思考の繋がりや対立する考え、繰り返し現れるキーワードなどを具体的に挙げてください。例：「Aについては肯定的だが、Bの側面では否定的」といった構造を指摘します）
+* **掘り下げるべき問い**: （この対話全体を踏まえて、ユーザーが次に考えると良さそうな問いを1〜2個提示してください。例：「〇〇を達成するためには、何が最も重要だと考えていますか？」）
 ### 💡 次のステップへの提案
-（今回の分析を踏まえ、ユーザーが次回のセッションで深掘りすると良さそうなテーマや、日常生活で意識してみると良いことなどを、具体的かつポジティブな言葉で提案してください）
+（今回の思考整理を踏まえ、ユーザーが次回の対話で深掘りすると良さそうなテーマや、考えをさらに明確にするためのアクションを具体的に提案してください）
 ```
 """
+
 GRAPH_ANALYSIS_PROMPT_TEMPLATE = """
 あなたはデータサイエンティストであり、臨床心理士でもあります。
 これから渡すテキストは、あるユーザーの複数回のカウンセリングセッションの記録です。
@@ -709,8 +731,8 @@ def post_summary(session_id):
             q_id = s.get('question_id')
             q_text = questions_docs.get(q_id, {}).get('question_text', '不明な質問')
             answer_text = 'はい' if s.get('answer') else 'いいえ'
-            hesitation_time = s.get('hesitation_time', 0)
-            swipes_text_parts.append(f"- {q_text}: {answer_text} ({hesitation_time:.2f}秒)")
+            # (★修正) ためらい時間をAIへの入力から除外
+            swipes_text_parts.append(f"- {q_text}: {answer_text}")
             
         swipes_text = "\n".join(swipes_text_parts)
         
@@ -833,6 +855,79 @@ def continue_session(session_id):
         print(f"Error continuing session: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to continue session"}), 500
+
+@app.route('/session/topic_suggestion', methods=['GET'])
+def get_topic_suggestion():
+    """過去の対話履歴に基づいて、新しいセッションのトピックを提案する"""
+    user_record = _verify_token(request)
+    if not isinstance(user_record, dict):
+        return user_record
+    user_id = user_record['uid']
+
+    try:
+        all_insights_text = _get_all_insights_as_text(user_id)
+
+        if not all_insights_text:
+            print(f"No past insights found for user {user_id}. Returning empty suggestions.")
+            # 過去の対話がない場合は、空のリストを返す
+            return jsonify({"suggestions": []}), 200
+
+        suggestions = generate_topic_suggestions(all_insights_text)
+
+        print(f"✅ Generated {len(suggestions)} topic suggestions for user {user_id}.")
+        return jsonify({"suggestions": suggestions}), 200
+
+    except Exception as e:
+        print(f"❌ Error in get_topic_suggestion: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to get topic suggestions"}), 500
+
+
+@app.route('/analysis/summary', methods=['GET'])
+def get_analysis_summary():
+    """ユーザーの対話履歴の統計情報を返す"""
+    user_record = _verify_token(request)
+    if not isinstance(user_record, dict):
+        return user_record
+    user_id = user_record['uid']
+
+    try:
+        sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').where('status', '==', 'completed').stream()
+        
+        topics = []
+        for session in sessions_ref:
+            session_data = session.to_dict()
+            topic = session_data.get('topic')
+            if topic:
+                topics.append(topic)
+
+        if not topics:
+            return jsonify({
+                "total_sessions": 0,
+                "top_topics": [],
+                "most_frequent_topic": None
+            }), 200
+
+        topic_counts = Counter(topics)
+        total_sessions = len(topics)
+        # most_common() は (要素, カウント) のタプルのリストを返す
+        top_topics = [{"topic": item, "count": count} for item, count in topic_counts.most_common(3)]
+        most_frequent_topic = top_topics[0]['topic'] if top_topics else None
+
+        response_data = {
+            "total_sessions": total_sessions,
+            "top_topics": top_topics,
+            "most_frequent_topic": most_frequent_topic
+        }
+        
+        print(f"✅ Generated analysis summary for user {user_id}.")
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        print(f"❌ Error in get_analysis_summary: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to get analysis summary"}), 500
+
 
 
 def _get_all_insights_as_text(user_id: str) -> str:
