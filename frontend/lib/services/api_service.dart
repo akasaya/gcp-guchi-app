@@ -123,8 +123,8 @@ class ApiService {
     final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
       _dio.options.receiveTimeout = const Duration(minutes: 2);
-      // ★ 修正点1: エンドポイントを単数形に修正
-      final response = await _dio.get('/analysis/book_recommendation');
+      // ★ 修正点: エンドポイントを複数形に修正
+      final response = await _dio.get('/analysis/book_recommendations');
       
       // ★ 修正点2: List<dynamic>として受け取り、BookRecommendationのリストに変換
       final List<dynamic> data = response.data;

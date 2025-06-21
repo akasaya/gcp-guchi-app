@@ -993,16 +993,14 @@ def get_book_recommendations():
     try:
         all_insights_text = _get_all_insights_as_text(user_id)
         if not all_insights_text:
-            return jsonify([]), 200 # データがない場合は空のリストを返す
+            return jsonify([]), 200 # ここは空のリストを返すのでOK
 
-        # ★ 修正点2: ヘルパー関数にAPIキーを渡す
-        recommendations_dict = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
-        
-        # ★ 修正点3: フロントエンドのために本のリストだけを抽出して返す
-        recommendations_list = recommendations_dict.get("recommendations", [])
+        recommendations = _generate_book_recommendations(all_insights_text)
         
         print(f"✅ Generated book recommendations for user {user_id}.")
-        return jsonify(recommendations_list), 200
+        
+        # ★ 修正点: recommendations辞書から 'recommendations' キーのリストを抽出して返す
+        return jsonify(recommendations.get("recommendations", [])), 200
 
     except Exception as e:
         print(f"❌ Error in get_book_recommendations: {e}")
