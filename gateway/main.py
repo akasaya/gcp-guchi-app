@@ -684,7 +684,7 @@ def post_summary(session_id):
     try:
         session_data = session_snapshot.to_dict()
         topic = session_data.get('topic', '指定なし')
-        # (★修正) swipesの取得元を修正
+        current_turn = session_data.get('turn', 1) // ★★★ 追加: 現在のターン数を取得
         swipes_ref = session_ref.collection('swipes').order_by('timestamp')
         swipes_docs = list(swipes_ref.stream())
 
@@ -720,14 +720,16 @@ def post_summary(session_id):
         update_data = {
             'status': 'completed',
             'title': summary_data.get('title'),
-            'latest_insights': summary_data.get('insights'),
+            'latest_insights': summary_data.get('insights'), // 履歴画面のプレビュー用に最新のものは残す
             'updated_at': firestore.SERVER_TIMESTAMP
         }
         session_ref.update(update_data)
 
-        # (★修正) summariesサブコレクションへの保存は任意だが、一応残しておく
-        summary_ref = session_ref.collection('summaries').document('latest')
-        summary_ref.set(summary_data)
+       # ★★★ 修正: summariesサブコレクションに「ターンごと」の分析結果を保存 ★★★
+        summary_with_turn = summary_data.copy()
+        summary_with_turn['turn'] = current_turn # ドキュメント内にターン番号を保存
+        summary_ref = session_ref.collection('summaries').document(f'turn_{current_turn}')
+        summary_ref.set(summary_with_turn)
 
         response_data = summary_data.copy()
         response_data['turn'] = session_data.get('turn', 1)
@@ -799,16 +801,19 @@ def continue_session(session_id):
         else:
             print(f"⚠️ No prefetched questions found for turn {new_turn}. Generating now...")
             # フォールバックとして、最新のサマリーから質問を生成
-            # ★★★ 修正: 'final_summary' -> 'latest' ★★★
-            summary_ref = session_ref.collection('summaries').document('latest')
-            summary_doc = summary_ref.get()
-            if not summary_doc.exists:
+            # (★★ 修正 ★★) turn番号で降順にソートし、最新のサマリーを取得する
+            latest_summary_query = session_ref.collection('summaries').order_by('turn', direction=firestore.Query.DESCENDING).limit(1)
+            latest_summary_docs = list(latest_summary_query.stream())
+
+            if not latest_summary_docs:
                  return jsonify({"error": "Summary not found to generate follow-up questions"}), 404
-            
-            insights = summary_doc.to_dict().get('insights', '')
+
+            latest_summary_doc = latest_summary_docs[0]
+            insights = latest_summary_doc.to_dict().get('insights', '')
             questions = generate_follow_up_questions(insights)
 
         return jsonify({'questions': questions, 'turn': new_turn}), 200
+
 
     except Exception as e:
         print(f"Error continuing session: {e}")

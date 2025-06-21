@@ -6,6 +6,9 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 
+// ★★★ 追加: どこからでも参照できるように定数を定義 ★★★
+const int MAX_TURNS = 3;
+
 class SessionDetailScreen extends StatefulWidget {
   final String sessionId;
 
@@ -18,7 +21,8 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final ApiService _apiService = ApiService();
   late final DocumentReference _sessionRef;
-  Stream<QuerySnapshot>? _analysesStream;
+  // ★★★ 修正: `summaries` を参照するStreamに変更 ★★★
+  Stream<QuerySnapshot>? _summariesStream;
 
   @override
   void initState() {
@@ -30,37 +34,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .collection('sessions')
         .doc(widget.sessionId);
     
-    // ターン毎の分析結果を取得するStream
-    _analysesStream = _sessionRef
-        .collection('analyses')
+    // ★★★ 修正: `summaries` サブコレクションをターン順で取得するStream ★★★
+    _summariesStream = _sessionRef
+        .collection('summaries')
         .orderBy('turn', descending: false)
         .snapshots();
   }
 
-  // 改善点③: ローディング表示の統一
-  void _showLoadingDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [ // <- `const` を `children:` の手前から削除
-                const SpinKitFadingCube(color: Colors.white, size: 50.0),
-                const SizedBox(height: 20),
-                const Text("次の質問を生成中...", style: TextStyle(color: Colors.white, fontSize: 16)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
+  // ... 既存コード ...
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,8 +51,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: _sessionRef.snapshots(),
         builder: (context, sessionSnapshot) {
-          if (!sessionSnapshot.hasData || !sessionSnapshot.data!.exists) {
+          if (sessionSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (!sessionSnapshot.hasData || !sessionSnapshot.data!.exists) {
+            return const Center(child: Text("セッションデータが見つかりません。"));
           }
           final sessionData = sessionSnapshot.data!.data() as Map<String, dynamic>;
           final title = sessionData['title'] ?? sessionData['topic'] ?? '無題のセッション';
@@ -81,7 +65,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 24),
-              // 改善点②: ターン毎の分析結果を表示
+              // ★★★ 修正: ターン毎の分析結果を表示するUIに戻す ★★★
               _buildAnalysesHistory(),
               const SizedBox(height: 24),
               const Divider(),
@@ -97,19 +81,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  // 改善点②: ターン毎の分析結果をExpansionTileで表示するウィジェット
+  // ★★★ 修正: ターン毎の分析結果をExpansionTileで表示するウィジェットに戻す ★★★
   Widget _buildAnalysesHistory() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _analysesStream,
-      builder: (context, analysesSnapshot) {
-        if (analysesSnapshot.connectionState == ConnectionState.waiting) {
+      stream: _summariesStream,
+      builder: (context, summariesSnapshot) {
+        if (summariesSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (!analysesSnapshot.hasData || analysesSnapshot.data!.docs.isEmpty) {
+        if (!summariesSnapshot.hasData || summariesSnapshot.data!.docs.isEmpty) {
           return const Text('分析結果がありません。');
         }
 
-        final analyses = analysesSnapshot.data!.docs;
+        final analyses = summariesSnapshot.data!.docs;
         return ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -129,9 +113,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 children: <Widget>[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
-                    // 改善点①: Markdownで表示
                     child: MarkdownBody(
-                      data: insights,
+                      data: insights ?? '分析内容がありません。',
                       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
                     ),
                   ),
@@ -145,17 +128,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _buildSwipeHistoryList() {
-    // この部分は既存のロジックを流用可能
+    // ★★★ 修正: questionsコレクションのクエリを修正 ★★★
     return FutureBuilder<QuerySnapshot>(
-      future: _sessionRef.collection('questions').orderBy('order').get(),
+      future: _sessionRef.collection('questions').get(), // .orderBy は不要
       builder: (context, questionsSnapshot) {
-        if (!questionsSnapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (questionsSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (questionsSnapshot.hasError || !questionsSnapshot.hasData) {
+          return const Center(child: Text("質問履歴の読み込みに失敗しました。"));
+        }
         
-        final questionsMap = { for (var doc in questionsSnapshot.data!.docs) doc.id: doc.get('text') as String };
+        // ★★★ 修正: 正しいフィールド `question_text` を使用 ★★★
+        final questionsMap = { for (var doc in questionsSnapshot.data!.docs) doc.id: doc.get('question_text') as String };
 
         return StreamBuilder<QuerySnapshot>(
           stream: _sessionRef.collection('swipes').orderBy('timestamp').snapshots(),
           builder: (context, swipesSnapshot) {
+             if (swipesSnapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox.shrink();
+            }
             if (!swipesSnapshot.hasData) return const Center(child: Text("回答を読み込み中..."));
             if (swipesSnapshot.data!.docs.isEmpty) return const Center(child: Text("回答履歴がありません。"));
             
@@ -168,12 +160,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 final questionId = swipeData['question_id'] as String;
                 final questionText = questionsMap[questionId] ?? '質問の読み込みに失敗';
                 
-                // ★★★ ここからが修正箇所です ★★★
-                // 'answer' の値が文字列の 'yes' ではなく、ブール値の true かどうかをチェックします。
                 final bool isYes = swipeData['answer'] == true;
                 final String answer = isYes ? 'はい' : 'いいえ';
                 final Color answerColor = isYes ? Colors.green.shade700 : Colors.red.shade700;
-                // ★★★ ここまでが修正箇所です ★★★
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4.0),
@@ -198,7 +187,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         
         final sessionData = snapshot.data!.data() as Map<String, dynamic>;
         final int currentTurn = sessionData['turn'] ?? 1;
-        final int maxTurns = sessionData['max_turns'] ?? 3;
+        // ★★★ 修正: max_turnsがない場合も考慮し、定数を使用 ★★★
+        final int maxTurns = sessionData['max_turns'] ?? MAX_TURNS;
         final bool canContinue = currentTurn < maxTurns && sessionData['status'] == 'completed';
 
         if (canContinue) {
@@ -215,20 +205,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 onPressed: () async {
                   _showLoadingDialog();
                   
-                  // awaitの前にNavigatorとScaffoldMessengerをキャプチャ
                   final navigator = Navigator.of(context);
                   final scaffoldMessenger = ScaffoldMessenger.of(context);
                   
                    try {
+                        // ★★★ 修正: 不要な`insights`パラメータを削除 ★★★
                         final result = await _apiService.continueSession(
                           sessionId: widget.sessionId,
-                          insights: sessionData['latest_insights'],
                         );
                         final newQuestionsRaw = result['questions'] as List;
                         final newTurn = result['turn'] as int;
                         final newQuestions = List<Map<String, dynamic>>.from(newQuestionsRaw);
                         
-                        // キャプチャしたnavigatorを使用
                         navigator.pop(); // ローディングダイアログを閉じる
                         navigator.push(
                           MaterialPageRoute(
@@ -240,14 +228,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           ),
                         );
                       } catch (e) {
-                        // キャプチャしたnavigatorとscaffoldMessengerを使用
                         navigator.pop(); // ローディングダイアログを閉じる
                         scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text('エラー: $e')),
                         );
                       }
                 },
-                // 改善点④: 残回数を表示
                 child: Text('このセッションを続けて深掘りする (残り$remaining回)'),
               ),
             ),
