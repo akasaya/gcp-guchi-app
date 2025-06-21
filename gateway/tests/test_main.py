@@ -112,28 +112,31 @@ def test_post_summary_success(client, mocker):
     mock_session_snapshot = mocker.Mock()
     mock_session_snapshot.exists = True
     mock_session_snapshot.to_dict.return_value = {'topic': '仕事の悩み', 'turn': 1}
+    
     mock_session_doc_ref = mocker.Mock()
     mock_session_doc_ref.get.return_value = mock_session_snapshot
+    
+    # ★★★ 修正: データベースの呼び出しチェーンを正しくモックする
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_session_doc_ref
 
     mock_swipe_doc = mocker.Mock()
     mock_swipe_doc.to_dict.return_value = {"question_id": "q_id_0", "answer": True, "hesitation_time": 1.0}
-    
-    # db.collection(...).document(...) がセッションドキュメントのモックを返す
-    mock_db.collection.return_value.document.return_value = mock_session_doc_ref
-    # session_ref.collection(...).order_by(...).stream() がスワイプ履歴のモックを返す
-    mock_session_doc_ref.collection.return_value.order_by.return_value.stream.return_value = [mock_swipe_doc]
+
+    # ★★★ 修正: stream()の呼び出しがリストを返すように、モックをより明確に設定する
+    mock_query = mocker.Mock()
+    mock_query.stream.return_value = [mock_swipe_doc]
+    mock_session_doc_ref.collection.return_value.order_by.return_value = mock_query
 
     response = client.post(
-        f'/session/test_session_id_123/summary',
+        f'/session/{MOCK_SESSION_ID}/summary',
         headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
-        data=json.dumps({}), # リクエストボディは実際には使われない
+        data=json.dumps({}), 
         content_type='application/json'
     )
 
     assert response.status_code == 200, f"API failed: {response.get_data(as_text=True)}"
     assert response.get_json()['title'] == MOCK_SUMMARY_DATA['title']
     mock_session_doc_ref.update.assert_called_once()
-    # (★★★ 修正: 呼び出されるスレッドは1つになったので、期待値を1に変更 ★★★)
     assert gateway.main.threading.Thread.call_count == 1
 
 def test_start_session_auth_error(client, mocker):
