@@ -791,20 +791,18 @@ def record_swipe(session_id):
 def post_summary(session_id):
     """セッションの要約を生成・保存し、結果を返す"""
     user_record = _verify_token(request)
-    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
     if not isinstance(user_record, dict):
         return user_record
     user_id = user_record['uid']
 
-
-    # (★修正) セッションの参照パスをユーザーのサブコレクションに変更
-    session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
-    session_snapshot = session_ref.get()
-
-    if not session_snapshot.exists:
-        return jsonify({"error": "Session not found"}), 404
-
+    session_ref = None  # 変数をNoneで初期化
     try:
+        session_ref = db_firestore.collection('users').document(user_id).collection('sessions').document(session_id)
+        session_snapshot = session_ref.get()
+
+        if not session_snapshot.exists:
+            return jsonify({"error": "Session not found"}), 404
+
         session_data = session_snapshot.to_dict()
         topic = session_data.get('topic', '指定なし')
         current_turn = session_data.get('turn', 1) 
@@ -813,7 +811,6 @@ def post_summary(session_id):
 
         if not swipes_docs:
             print(f"No swipes found for session {session_id}, returning empty summary.")
-            # (★修正) statusをcompletedにしておく
             session_ref.update({'status': 'completed', 'title': '対話の記録がありません'})
             return jsonify({
                 "title": "対話の記録がありません",
@@ -822,7 +819,6 @@ def post_summary(session_id):
                 "max_turns": MAX_TURNS
             }), 200
 
-        # (★修正) 質問テキストを取得するためにquestionsコレクションを引く
         questions_ref = session_ref.collection('questions')
         questions_docs = {q.id: q.to_dict() for q in questions_ref.stream()}
         
@@ -832,14 +828,12 @@ def post_summary(session_id):
             q_id = s.get('question_id')
             q_text = questions_docs.get(q_id, {}).get('question_text', '不明な質問')
             answer_text = 'はい' if s.get('answer') else 'いいえ'
-            # (★修正) ためらい時間をAIへの入力から除外
             swipes_text_parts.append(f"- {q_text}: {answer_text}")
             
         swipes_text = "\n".join(swipes_text_parts)
         
         summary_data = generate_summary_only(topic, swipes_text)
 
-        # (★修正) アプリの仕様に合わせてトップレベルにフィールドを更新
         update_data = {
             'status': 'completed',
             'title': summary_data.get('title'),
@@ -848,9 +842,8 @@ def post_summary(session_id):
         }
         session_ref.update(update_data)
 
-       # ★★★ 修正: summariesサブコレクションに「ターンごと」の分析結果を保存 ★★★
         summary_with_turn = summary_data.copy()
-        summary_with_turn['turn'] = current_turn # ドキュメント内にターン番号を保存
+        summary_with_turn['turn'] = current_turn
         summary_ref = session_ref.collection('summaries').document(f'turn_{current_turn}')
         summary_ref.set(summary_with_turn)
 
@@ -858,11 +851,9 @@ def post_summary(session_id):
         response_data['turn'] = session_data.get('turn', 1)
         response_data['max_turns'] = MAX_TURNS
 
-        # --- Cloud Tasksによる非同期処理の呼び出し ---
         insights_text = summary_data.get('insights', '')
         current_turn = response_data['turn']
 
-        # 質問プリフェッチタスク (最終ターンでなければ作成)
         if current_turn < MAX_TURNS:
             prefetch_payload = {
                 'session_id': session_id,
@@ -872,7 +863,6 @@ def post_summary(session_id):
             }
             _create_cloud_task(prefetch_payload, '/tasks/prefetch_questions')
 
-        # グラフ更新タスク
         graph_payload = {'user_id': user_id}
         _create_cloud_task(graph_payload, '/tasks/update_graph')
         
@@ -880,9 +870,10 @@ def post_summary(session_id):
     except Exception as e:
         print(f"❌ Error in post_summary for session {session_id}: {e}")
         traceback.print_exc()
-        # (★修正) エラー時にもstatusを更新
-        session_ref.update({'status': 'error', 'error_message': str(e)})
+        if session_ref:
+            session_ref.update({'status': 'error', 'error_message': str(e)})
         return jsonify({"error": "Failed to generate summary"}), 500
+
 
 
 @app.route('/session/<string:session_id>/continue', methods=['POST'])
