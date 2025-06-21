@@ -684,7 +684,7 @@ def post_summary(session_id):
     try:
         session_data = session_snapshot.to_dict()
         topic = session_data.get('topic', '指定なし')
-        current_turn = session_data.get('turn', 1) // ★★★ 追加: 現在のターン数を取得
+        current_turn = session_data.get('turn', 1) 
         swipes_ref = session_ref.collection('swipes').order_by('timestamp')
         swipes_docs = list(swipes_ref.stream())
 
@@ -720,7 +720,7 @@ def post_summary(session_id):
         update_data = {
             'status': 'completed',
             'title': summary_data.get('title'),
-            'latest_insights': summary_data.get('insights'), // 履歴画面のプレビュー用に最新のものは残す
+            'latest_insights': summary_data.get('insights'),
             'updated_at': firestore.SERVER_TIMESTAMP
         }
         session_ref.update(update_data)

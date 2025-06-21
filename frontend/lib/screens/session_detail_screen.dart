@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart'; // ★★★ 修正: _showLoadingDialogで再び使用するため、このimportは必要です ★★★
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 
-// ★★★ 追加: どこからでも参照できるように定数を定義 ★★★
-const int MAX_TURNS = 3;
+// ★★★ 修正: Dartの命名規則に合わせて `maxTurns` に変更 ★★★
+const int maxTurns = 3;
 
 class SessionDetailScreen extends StatefulWidget {
   final String sessionId;
@@ -21,7 +21,6 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final ApiService _apiService = ApiService();
   late final DocumentReference _sessionRef;
-  // ★★★ 修正: `summaries` を参照するStreamに変更 ★★★
   Stream<QuerySnapshot>? _summariesStream;
 
   @override
@@ -34,14 +33,32 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .collection('sessions')
         .doc(widget.sessionId);
     
-    // ★★★ 修正: `summaries` サブコレクションをターン順で取得するStream ★★★
     _summariesStream = _sessionRef
         .collection('summaries')
         .orderBy('turn', descending: false)
         .snapshots();
   }
 
-  // ... 既存コード ...
+  // ★★★ 追加: 削除されていたローディングダイアログ表示メソッドを復活 ★★★
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Center(
+            child: SpinKitFadingCircle(
+              color: Colors.white,
+              size: 50.0,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,12 +204,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         
         final sessionData = snapshot.data!.data() as Map<String, dynamic>;
         final int currentTurn = sessionData['turn'] ?? 1;
-        // ★★★ 修正: max_turnsがない場合も考慮し、定数を使用 ★★★
-        final int maxTurns = sessionData['max_turns'] ?? MAX_TURNS;
-        final bool canContinue = currentTurn < maxTurns && sessionData['status'] == 'completed';
+        // ★★★ 修正: 定数名を `maxTurns` に変更し、ローカル変数名も重複しないように変更 ★★★
+        final int sessionMaxTurns = sessionData['max_turns'] ?? maxTurns;
+        final bool canContinue = currentTurn < sessionMaxTurns && sessionData['status'] == 'completed';
 
         if (canContinue) {
-          final remaining = maxTurns - currentTurn;
+          final remaining = sessionMaxTurns - currentTurn;
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -203,13 +220,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 onPressed: () async {
-                  _showLoadingDialog();
+                  _showLoadingDialog(); // ★★★ 修正: 復活させたメソッドを呼び出す
                   
                   final navigator = Navigator.of(context);
                   final scaffoldMessenger = ScaffoldMessenger.of(context);
                   
                    try {
-                        // ★★★ 修正: 不要な`insights`パラメータを削除 ★★★
+                        // この呼び出し方は、api_service.dartの修正を前提としており、これで正しい形です
                         final result = await _apiService.continueSession(
                           sessionId: widget.sessionId,
                         );

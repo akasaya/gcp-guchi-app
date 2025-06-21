@@ -244,23 +244,13 @@ class ApiService {
   /// ターン終了時に回答をまとめて送信し、分析結果を取得する
   Future<Map<String, dynamic>> postSummary({
     required String sessionId,
-    required List<Map<String, dynamic>> swipes,
   }) async {
     final originalReceiveTimeout = _dio.options.receiveTimeout;
     try {
-      final formattedSwipes = swipes.map((swipe) {
-        return {
-          'question_text': swipe['question_text'],
-          'answer': swipe['answer'],
-          'hesitation_time': swipe['hesitation_time'],
-        };
-      }).toList();
-
       // AIの分析は時間がかかるため、このリクエストのタイムアウトを2分に延長
       _dio.options.receiveTimeout = const Duration(minutes: 2);
       final response = await _dio.post(
         '/session/$sessionId/summary',
-        data: {'swipes': formattedSwipes},
       );
       return response.data;
     } on DioException catch (_) {
@@ -275,12 +265,10 @@ class ApiService {
   /// 次のターンに進む
   Future<Map<String, dynamic>> continueSession({
     required String sessionId,
-    required String insights,
   }) async {
     try {
       final response = await _dio.post(
         '/session/$sessionId/continue',
-        data: {'insights': insights},
       );
       return response.data;
     } on DioException catch (_) {
