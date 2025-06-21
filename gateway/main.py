@@ -690,15 +690,19 @@ def post_summary(session_id):
         
         summary_data = generate_summary_only(topic, swipes_text)
 
-        summary_ref = session_ref.collection('summaries').document('final_summary')
+        summary_ref = session_ref.collection('summaries').document('latest')
+        session_ref.update({'summary': summary_data, 'status': 'completed'})
         summary_ref.set(summary_data)
-        
-        session_ref.update({'is_active': False, 'last_updated': firestore.SERVER_TIMESTAMP})
 
-        # バックグラウンドでグラフキャッシュの更新をトリガー
+        # ★★★ 修正: 正常な応答に turn と max_turns を追加 ★★★
+        response_data = summary_data.copy() # 元の辞書をコピー
+        response_data['turn'] = session_snapshot.to_dict().get('turn', 1)
+        response_data['max_turns'] = MAX_TURNS 
+
+        # バックグラウンドでグラフキャッシュを更新
         threading.Thread(target=_update_graph_cache, args=(user_id,)).start()
-
-        return jsonify(summary_data), 200
+        
+        return jsonify(response_data), 200
 
     except Exception as e:
         print(f"Error generating summary: {e}")
