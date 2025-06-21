@@ -7,14 +7,12 @@ import copy
 # --- モックデータ ---
 MOCK_USER_ID = "test_user_123"
 MOCK_ID_TOKEN = "mock_firebase_id_token"
+# ★★★ 修正: MOCK_SESSION_IDを追加 ★★★
+MOCK_SESSION_ID = "test_session_id_123" 
 MOCK_QUESTIONS = [
-    {"question_text": "質問1ですか？"},
-    {"question_text": "質問2ですか？"},
+    {"question_text": "質問1ですか？", "question_id": "q_id_0"},
+    {"question_text": "質問2ですか？", "question_id": "q_id_1"},
 ]
-MOCK_SUMMARY_DATA = {
-    "title": "仕事の悩みについての考察",
-    "insights": "### ✨ 全体的な要約\nユーザーは仕事のプレッシャーを感じています..."
-}
 
 @pytest.fixture
 def app():
