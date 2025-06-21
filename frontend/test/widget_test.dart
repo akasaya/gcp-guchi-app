@@ -47,6 +47,11 @@ class MockFirebasePlatform extends FirebasePlatform {
 /// ApiServiceが持つすべてのメソッドを、正しい引数でダミーとして実装します。
 class FakeApiService implements ApiService {
   @override
+  Future<HomeSuggestion?> getHomeSuggestion() async {
+    return Future.value(null);
+  }
+  
+  @override
   Future<HomeSuggestion?> getHomeSuggestionV2() async {
     return Future.value(null);
   }
