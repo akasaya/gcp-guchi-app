@@ -658,8 +658,8 @@ def _verify_token(request):
         return jsonify({"error": "Invalid or expired token"}), 401
     except Exception as e:
         print(f"An unexpected error occurred during token verification: {e}")
-        session_ref.update({'status': 'error', 'error_message': str(e)})
-        return jsonify({"error": "Failed to generate summary"}), 500
+        # session_ref はこのスコープに存在しないため、この行を削除します。
+        return jsonify({"error": "Could not verify token"}), 500
 
 # --- Cloud Tasks ヘルパー関数 ---
 def _create_cloud_task(payload: dict, target_uri: str):
