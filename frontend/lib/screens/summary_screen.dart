@@ -38,29 +38,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
     }
   }
 
-  void _showLoadingDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SpinKitFadingCube(color: Colors.white, size: 50.0),
-                const SizedBox(height: 20),
-                Text(message, style: const TextStyle(color: Colors.white, fontSize: 16)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _continueSession() async {
     // ★★★ 修正: UIをローディング状態に切り替える ★★★
     setState(() {
