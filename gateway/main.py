@@ -899,10 +899,10 @@ def post_summary(session_id):
                 'insights_md': insights_text,
                 'current_turn': current_turn
             }
-            _create_cloud_task(prefetch_payload, '/tasks/prefetch_questions')
+            _create_cloud_task(prefetch_payload, '/api/tasks/prefetch_questions')
 
         graph_payload = {'user_id': user_id}
-        _create_cloud_task(graph_payload, '/tasks/update_graph')
+        _create_cloud_task(graph_payload, '/api/tasks/update_graph')
         
         return jsonify(response_data), 200
     except Exception as e:
