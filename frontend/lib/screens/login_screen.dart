@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart'; 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -29,13 +28,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       // ★ 2. ハードコードされたIDを環境変数から読み込むように変更
-      final webClientId = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
+      const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+
 
       // ★ 3. 環境変数が設定されていない場合のエラー処理を追加
-      if (webClientId == null || webClientId.isEmpty) {
+      if (webClientId.isEmpty) {
         if (mounted) {
           setState(() {
-            _errorMessage = 'クライアントIDが設定されていません。';
+            _errorMessage = 'クライアントIDがビルド時に設定されていません。';
             _isLoading = false;
           });
         }
