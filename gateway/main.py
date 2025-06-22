@@ -157,6 +157,17 @@ TOPIC_SUGGESTION_SCHEMA = {
     },
     "required": ["suggestions"]
 }
+KEYWORDS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "keywords": {
+            "type": "array",
+            "description": "検索に使うキーワードのリスト（3つ）",
+            "items": {"type": "string"}
+        }
+    },
+    "required": ["keywords"]
+}
 BOOK_RECOMMENDATION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -1098,11 +1109,12 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
 """
     try:
         flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-        model = GenerativeModel(flash_model)
         print("--- Calling Gemini to extract book search keywords ---")
-        response = model.generate_content(keyword_extraction_prompt)
-        keywords_str = response.text.strip()
-        keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+        
+        # ★ 修正: _call_gemini_with_schema を使ってJSON出力を強制する
+        keywords_dict = _call_gemini_with_schema(keyword_extraction_prompt, KEYWORDS_SCHEMA, flash_model)
+        keywords = keywords_dict.get("keywords", [])
+        
         print(f"✅ Extracted book search keywords: {keywords}")
     except Exception as e:
         print(f"❌ Failed to extract book search keywords: {e}")
@@ -1723,6 +1735,48 @@ def get_home_suggestion_v2():
         traceback.print_exc()
         return jsonify({"error": "Failed to get home suggestion"}), 500
 
+@app.route('/tasks/prefetch_questions', methods=['POST'])
+def handle_prefetch_questions():
+    """Cloud Tasksから呼び出される、質問を先読みするタスク"""
+    try:
+        data = request.get_json()
+        if not data:
+            print("Task handler received no data.")
+            return "No data received", 400
+
+        session_id = data.get('session_id')
+        user_id = data.get('user_id')
+        insights_md = data.get('insights_md')
+        current_turn = data.get('current_turn')
+        
+        if not all([session_id, user_id, insights_md, isinstance(current_turn, int)]):
+            print(f"Task handler missing required data: {data}")
+            return "Missing data", 400
+
+        _prefetch_questions_and_save(session_id, user_id, insights_md, current_turn, MAX_TURNS)
+        return "Successfully processed prefetch task", 200
+    except Exception as e:
+        print(f"❌ Error in /tasks/prefetch_questions: {e}")
+        traceback.print_exc()
+        # Cloud Tasksがリトライしないように 200 OK を返す
+        return "Error processing task, but acknowledging to prevent retry", 200
+
+@app.route('/tasks/update_graph', methods=['POST'])
+def handle_update_graph():
+    """Cloud Tasksから呼び出される、分析グラフを更新するタスク"""
+    try:
+        data = request.get_json()
+        if not data or 'user_id' not in data:
+            print(f"Task handler missing user_id: {data}")
+            return "user_id is required", 400
+        
+        user_id = data['user_id']
+        _update_graph_cache(user_id)
+        return "Successfully processed graph update task", 200
+    except Exception as e:
+        print(f"❌ Error in /tasks/update_graph: {e}")
+        traceback.print_exc()
+        return "Error processing task, but acknowledging to prevent retry", 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=True)
