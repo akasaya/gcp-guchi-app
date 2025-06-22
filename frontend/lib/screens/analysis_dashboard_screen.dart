@@ -49,9 +49,11 @@ class _AnalysisDashboardScreenState
         _handleProactiveSuggestion(widget.proactiveSuggestion!);
       });
     } else {
-      _addInitialMessage(apiService);
+      // ★ 修正: apiServiceを渡さずに呼び出す
+      _addInitialMessage();
     }
   }
+
 
   Future<void> _handleProactiveSuggestion(NodeTapResponse suggestion) async {
     if (mounted) {
@@ -73,30 +75,24 @@ class _AnalysisDashboardScreenState
     }
   }
 
-  Future<void> _addInitialMessage(ApiService apiService) async {
-    final suggestion = await apiService.getProactiveSuggestion();
-
-    if (suggestion != null && mounted) {
-      final actionMessageId = const Uuid().v4();
-      final actionMessage = types.CustomMessage(
-        author: _ai,
-        id: actionMessageId,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        metadata: {
-          'text': suggestion.initialSummary,
-          'actions': suggestion.actions
-              .map((a) => {'type': a.id, 'title': a.title})
-              .toList(),
-          'node_label': suggestion.nodeLabel,
-          'is_active': true,
-        },
-      );
-      setState(() {
-        _messages.insert(0, actionMessage);
-        _lastActionMessageId = actionMessageId;
-      });
-      return;
-    }
+  void _addInitialMessage() {
+    // build完了後にsetStateを安全に呼び出す
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // メッセージが空の場合のみ追加する
+      if (mounted && _messages.isEmpty) {
+        final initialMessage = types.TextMessage(
+          author: _ai,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          id: const Uuid().v4(),
+          text:
+              'こんにちは。ここでは、あなたの思考を可視化したグラフ全体について、AIと対話しながら更に深く探求できます。\n\nグラフ上のキーワードをタップすると、そのテーマに関する詳しい情報を見たり、関連する対話を始めたりできます。もちろん、このまま自由にメッセージを送っていただくことも可能です。',
+        );
+        setState(() {
+          _messages.insert(0, initialMessage);
+        });
+      }
+    });
+  }
 
     if (mounted) {
       final initialMessage = types.TextMessage(

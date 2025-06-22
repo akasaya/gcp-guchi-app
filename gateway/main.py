@@ -1074,22 +1074,39 @@ def get_book_recommendations():
         return jsonify({"error": "Book recommendation service is not configured."}), 500
 
     try:
+        # ★ 修正: Firestoreのキャッシュから読み込む
+        cache_ref = db_firestore.collection('recommendation_cache').document(user_id)
+        cache_doc = cache_ref.get()
+
+        if cache_doc.exists:
+            cached_data = cache_doc.to_dict()
+            # ここでは有効期限をチェックせず、あれば常に返す
+            print(f"✅ Returning cached book recommendations for user: {user_id}")
+            return jsonify(cached_data.get("recommendations", [])), 200
+        
+        # キャッシュがない場合のみ、フォールバックとしてその場で生成する
+        print(f"⚠️ No cached recommendations found for user {user_id}. Generating now...")
         all_insights_text = _get_all_insights_as_text(user_id)
         if not all_insights_text:
-            return jsonify([]), 200 # ここは空のリストを返すのでOK
+            return jsonify([]), 200
 
         recommendations_dict = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
-        
-        # フロントエンドが期待する「本のリスト」形式に変換して返します。
         recommendations_list = recommendations_dict.get("recommendations", [])
         
-        print(f"✅ Generated book recommendations for user {user_id}.")
+        # 生成した結果をキャッシュに保存
+        cache_ref.set({
+            'recommendations': recommendations_list,
+            'timestamp': firestore.SERVER_TIMESTAMP
+        })
+        
+        print(f"✅ Generated and cached book recommendations for user {user_id}.")
         return jsonify(recommendations_list), 200
 
     except Exception as e:
         print(f"❌ Error in get_book_recommendations: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to get book recommendations"}), 500
+
 
 
 def _generate_book_recommendations(insights_text: str, api_key: str):
@@ -1351,6 +1368,22 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
         'user_id': user_id
     })
     print(f"✅ Generated and cached new graph data for user: {user_id}")
+
+        # ★ 追加: グラフ更新が成功したら、書籍推薦もバックグラウンドで更新する
+    try:
+        if all_insights_text and GOOGLE_BOOKS_API_KEY:
+            print(f"--- Triggering background book recommendation update for user: {user_id} ---")
+            recommendations = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
+            if recommendations and recommendations.get("recommendations"):
+                reco_cache_ref = db_firestore.collection('recommendation_cache').document(user_id)
+                reco_cache_ref.set({
+                    'recommendations': recommendations.get("recommendations", []),
+                    'timestamp': firestore.SERVER_TIMESTAMP
+                })
+                print(f"✅ Background book recommendation update for user {user_id} completed.")
+    except Exception as e:
+        print(f"❌ Error during background book recommendation update: {e}")
+
     
     return graph_data
 
