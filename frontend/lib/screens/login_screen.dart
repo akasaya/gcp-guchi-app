@@ -232,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (_isLoading)
                     const CircularProgressIndicator()
                   else
-                  child: Column(
+                    Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           ElevatedButton(
