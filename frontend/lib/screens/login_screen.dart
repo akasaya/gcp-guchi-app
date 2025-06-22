@@ -26,8 +26,20 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      const webClientId =
-          "877175644081-mhj15gclq2tr1vvinfe79um3rbmnnlfr.apps.googleusercontent.com";
+      // ★ 2. ハードコードされたIDを環境変数から読み込むように変更
+      final webClientId = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
+
+      // ★ 3. 環境変数が設定されていない場合のエラー処理を追加
+      if (webClientId == null || webClientId.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'クライアントIDが設定されていません。';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
       final GoogleSignIn googleSignIn = GoogleSignIn(clientId: webClientId);
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
