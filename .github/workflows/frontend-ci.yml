@@ -19,7 +19,6 @@ jobs:
       run:
         working-directory: frontend
     
-    # ★ 1. ジョブレベルで環境変数を定義
     env:
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
 
@@ -38,11 +37,6 @@ jobs:
       - name: Run analyzer
         run: flutter analyze
 
-      # ★ 2.【診断ステップ】ビルドに使用するクライアントIDをログに出力
-      - name: 'Debug: Display Client ID'
-        run: echo "Client ID for build is => ${{ env.GOOGLE_WEB_CLIENT_ID }}"
-
-      # ★ 3.【堅牢化】ビルドコマンドをより確実な記法に修正
       - name: Build for Web
         run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}"
 
