@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,6 +17,61 @@ class _LoginScreenState extends State<LoginScreen> {
   String _password = '';
   bool _isLoading = false;
   String? _errorMessage;
+
+    // ★ 追加: Googleサインイン処理
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // 1. Googleアカウントの選択ダイアログを表示し、アカウント情報を取得
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
+      if (googleUser == null) {
+        // ユーザーがダイアログをキャンセルした場合
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // 2. 取得したGoogleアカウント情報から、Firebaseが利用する認証情報を生成
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // 3. 生成した認証情報を使ってFirebaseにログイン
+      await _auth.signInWithCredential(credential);
+
+      // ログイン成功後、main.dart の StreamBuilder が検知して HomeScreen に遷移する
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Googleアカウントでログインしました。')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Googleログインに失敗しました: ${e.message}';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = '予期せぬエラーが発生しました: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   // 新規登録処理
   Future<void> _register() async {
@@ -176,18 +232,49 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (_isLoading)
                     const CircularProgressIndicator()
                   else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ElevatedButton(
-                          onPressed: _login,
-                          child: const Text('ログイン'),
-                        ),
-                        const SizedBox(height: 10),
-                        OutlinedButton( // 新規登録はOutlinedButtonにしてみる
-                          onPressed: _register,
-                          child: const Text('新規登録'),
-                        ),
+                  child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ElevatedButton(
+                            onPressed: _login,
+                            child: const Text('ログイン'),
+                          ),
+                          const SizedBox(height: 10),
+                          OutlinedButton(
+                            onPressed: _register,
+                            child: const Text('メールアドレスで新規登録'),
+                          ),
+                          const SizedBox(height: 20),
+                          // ★★★ ここからが追加部分 ★★★
+                          Row(
+                            children: [
+                              const Expanded(child: Divider()),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Text(
+                                  'または',
+                                  style: TextStyle(color: Colors.grey.shade600),
+                                ),
+                              ),
+                              const Expanded(child: Divider()),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          ElevatedButton.icon(
+                            icon: Image.asset(
+                              'assets/google_logo.png', // Googleロゴのアセット
+                              height: 24.0,
+                            ),
+                            label: const Text('Googleでログイン'),
+                            onPressed: _signInWithGoogle,
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              backgroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.grey),
+                              elevation: 1,
+                            ),
+                          ),
                       ],
                     ),
                 ],
