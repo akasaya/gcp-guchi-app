@@ -18,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-    // ★ 追加: Googleサインイン処理
+  // ★ 修正: エラーハンドリングを強化します
   Future<void> _signInWithGoogle() async {
     setState(() {
       _isLoading = true;
@@ -26,8 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // 1. Googleアカウントの選択ダイアログを表示し、アカウント情報を取得
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
         // ユーザーがダイアログをキャンセルした場合
@@ -35,7 +35,6 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 2. 取得したGoogleアカウント情報から、Firebaseが利用する認証情報を生成
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
@@ -43,10 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: googleAuth.idToken,
       );
 
-      // 3. 生成した認証情報を使ってFirebaseにログイン
       await _auth.signInWithCredential(credential);
 
-      // ログイン成功後、main.dart の StreamBuilder が検知して HomeScreen に遷移する
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Googleアカウントでログインしました。')),
@@ -58,11 +55,18 @@ class _LoginScreenState extends State<LoginScreen> {
           _errorMessage = 'Googleログインに失敗しました: ${e.message}';
         });
       }
-    } catch (e) {
+    } catch (e, s) {
+      // ★ スタックトレースもキャッチするように変更
       if (mounted) {
         setState(() {
-          _errorMessage = '予期せぬエラーが発生しました: $e';
+          // ★ ユーザーに見せるエラーメッセージを少し汎用的に
+          _errorMessage = 'ログイン処理中にエラーが発生しました。';
         });
+        // ★ デバッグ用にコンソールに詳細なエラーを出力
+        print('--- Google Sign-In Error ---');
+        print(e);
+        print(s);
+        print('--------------------------');
       }
     } finally {
       if (mounted) {
