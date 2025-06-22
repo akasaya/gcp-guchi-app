@@ -278,8 +278,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 20),
                           GestureDetector(
                             onTap: _signInWithGoogle,
-                            child: Image.asset(
-                              'assets/google_logo.svg', // Googleロゴのアセット
+                            child: SvgPicture.asset(
+                              'assets/google_logo.svg', // SVGファイルへのパス
                               // 高さを調整して、適切なボタンサイズにします
                               height: 48.0,
                             ),
