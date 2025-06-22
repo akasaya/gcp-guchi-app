@@ -631,6 +631,12 @@ def _search_with_vertex_ai_search(project_id: str, location: str, engine_id: str
         return []
 
 def _scrape_text_from_url(url: str) -> str:
+    # ★ 追加: 特定のSNSドメインはスクレイピングをスキップする
+    forbidden_domains = ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'detail.chiebukuro.yahoo.co.jp']
+    # URLに禁止ドメインのいずれかが含まれているかチェック
+    if any(domain in url for domain in forbidden_domains):
+        print(f"⚠️ RAG: Skipping scraping for forbidden domain: {url}")
+        return ""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
         response = requests.get(url, timeout=10, headers=headers)
@@ -1062,52 +1068,32 @@ def get_analysis_summary():
 
 @app.route('/analysis/book_recommendations', methods=['GET'])
 def get_book_recommendations():
-    """ユーザーの思考の傾向に基づき、おすすめの書籍を返す"""
+    """ユーザーの思考の傾向に基づき、おすすめの書籍を返す（キャッシュ優先）"""
     user_record = _verify_token(request)
     if not isinstance(user_record, dict):
         return user_record
     user_id = user_record['uid']
 
-    # ★ 修正点1: APIキーが設定されているかを確認
     if not GOOGLE_BOOKS_API_KEY:
         print("❌ Google Books API key is not configured.")
         return jsonify({"error": "Book recommendation service is not configured."}), 500
 
     try:
-        # ★ 修正: Firestoreのキャッシュから読み込む
         cache_ref = db_firestore.collection('recommendation_cache').document(user_id)
         cache_doc = cache_ref.get()
 
         if cache_doc.exists:
             cached_data = cache_doc.to_dict()
-            # ここでは有効期限をチェックせず、あれば常に返す
             print(f"✅ Returning cached book recommendations for user: {user_id}")
             return jsonify(cached_data.get("recommendations", [])), 200
         
-        # キャッシュがない場合のみ、フォールバックとしてその場で生成する
-        print(f"⚠️ No cached recommendations found for user {user_id}. Generating now...")
-        all_insights_text = _get_all_insights_as_text(user_id)
-        if not all_insights_text:
-            return jsonify([]), 200
-
-        recommendations_dict = _generate_book_recommendations(all_insights_text, GOOGLE_BOOKS_API_KEY)
-        recommendations_list = recommendations_dict.get("recommendations", [])
-        
-        # 生成した結果をキャッシュに保存
-        cache_ref.set({
-            'recommendations': recommendations_list,
-            'timestamp': firestore.SERVER_TIMESTAMP
-        })
-        
-        print(f"✅ Generated and cached book recommendations for user {user_id}.")
-        return jsonify(recommendations_list), 200
+        print(f"⚠️ No cached recommendations found for user {user_id}. Returning empty list for now.")
+        return jsonify([]), 200
 
     except Exception as e:
         print(f"❌ Error in get_book_recommendations: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to get book recommendations"}), 500
-
-
 
 def _generate_book_recommendations(insights_text: str, api_key: str):
     """ユーザーの思考サマリーに基づき、Google Books APIとGeminiを連携させて書籍を推薦する (堅牢版)"""
@@ -1369,7 +1355,7 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
     })
     print(f"✅ Generated and cached new graph data for user: {user_id}")
 
-        # ★ 追加: グラフ更新が成功したら、書籍推薦もバックグラウンドで更新する
+    # ★ 修正: このブロック全体のインデントを修正します
     try:
         if all_insights_text and GOOGLE_BOOKS_API_KEY:
             print(f"--- Triggering background book recommendation update for user: {user_id} ---")
@@ -1384,9 +1370,7 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
     except Exception as e:
         print(f"❌ Error during background book recommendation update: {e}")
 
-    
     return graph_data
-
 
 @app.route('/home/suggestion', methods=['GET'])
 def get_home_suggestion():
