@@ -34,7 +34,7 @@ def client(app):
 
 def test_index_route(client):
     """Test the index route."""
-    response = client.get('/')
+    response = client.get('/api/')
     assert response.status_code == 200
     assert b"GuchiSwipe Gateway is running." in response.data
 
@@ -61,7 +61,7 @@ def test_start_session_success(client, mocker):
     mock_session_doc_ref.collection.return_value.document.side_effect = [mock_q_doc_1, mock_q_doc_2]
 
     response = client.post(
-        '/session/start',
+        '/api/session/start',
         headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
         data=json.dumps({'topic': '仕事の悩み'}),
         content_type='application/json'
@@ -98,7 +98,7 @@ def test_record_swipe_success(client, mocker):
     }
     
     response = client.post(
-        f'/session/{MOCK_SESSION_ID}/swipe',
+        f'/api/session/{MOCK_SESSION_ID}/swipe',
         headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
         data=json.dumps(swipe_data),
         content_type='application/json'
@@ -158,7 +158,7 @@ def test_post_summary_success(client, mocker):
     mock_swipes_query.order_by.return_value = mock_swipes_query # order_by().stream()のチェインを可能にする
 
     response = client.post(
-        f'/session/{MOCK_SESSION_ID}/summary',
+        f'/api/session/{MOCK_SESSION_ID}/summary',
         headers={'Authorization': f'***'},
         content_type='application/json'
     )
@@ -183,7 +183,7 @@ def test_start_session_auth_error(client, mocker):
     mocker.patch('gateway.main._verify_token', return_value=mock_response)
 
     response = client.post(
-        '/session/start',
+        '/api/session/start',
         headers={'Authorization': 'Bearer invalid_token'},
         data=json.dumps({'topic': '仕事の悩み'}),
         content_type='application/json'
@@ -198,7 +198,7 @@ def test_start_session_missing_topic(client, mocker):
     mocker.patch('gateway.main._verify_token', return_value={'uid': MOCK_USER_ID})
 
     response = client.post(
-        '/session/start',
+        '/api/session/start',
         headers={'Authorization': f'Bearer {MOCK_ID_TOKEN}'},
         data=json.dumps({ "not_a_topic": "test" }),
         content_type='application/json'
