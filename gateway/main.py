@@ -112,6 +112,9 @@ except Exception as e:
         raise
 
 app = Flask(__name__)
+
+api_bp = Blueprint('api', __name__, url_prefix='/api')
+
 # --- CORS設定 ---
 prod_origin = "https://guchi-app-flutter.web.app"
 if 'K_SERVICE' in os.environ:
@@ -124,7 +127,9 @@ else:
     ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
-@app.route('/', methods=['GET'])
+app.register_blueprint(api_bp)
+
+@api_bp.route('/', methods=['GET'])
 def index():
     return "GuchiSwipe Gateway is running.", 200
 
@@ -729,7 +734,7 @@ def _create_cloud_task(payload: dict, target_uri: str):
 
 
 # ===== APIエンドポイント =====
-@app.route('/session/start', methods=['POST'])
+@api_bp.route('/session/start', methods=['POST'])
 def start_session():
     user_record = _verify_token(request)
     if not isinstance(user_record, dict):
@@ -787,7 +792,7 @@ def start_session():
         traceback.print_exc()
         return jsonify({"error": "Failed to start session"}), 500
 
-@app.route('/session/<string:session_id>/swipe', methods=['POST'])
+@api_bp.route('/session/<string:session_id>/swipe', methods=['POST'])
 def record_swipe(session_id):
     user_record = _verify_token(request)
     if not isinstance(user_record, dict):
@@ -821,7 +826,7 @@ def record_swipe(session_id):
         return jsonify({"error": "Failed to record swipe"}), 500
 
 
-@app.route('/session/<string:session_id>/summary', methods=['POST'])
+@api_bp.route('/session/<string:session_id>/summary', methods=['POST'])
 def post_summary(session_id):
     """セッションの要約を生成・保存し、結果を返す"""
     user_record = _verify_token(request)
@@ -910,7 +915,7 @@ def post_summary(session_id):
 
 
 
-@app.route('/session/<string:session_id>/continue', methods=['POST'])
+@api_bp.route('/session/<string:session_id>/continue', methods=['POST'])
 def continue_session(session_id):
     user_record = _verify_token(request)
     if not isinstance(user_record, dict):
@@ -994,7 +999,7 @@ def continue_session(session_id):
         traceback.print_exc()
         return jsonify({"error": "Failed to continue session"}), 500
 
-@app.route('/session/topic_suggestion', methods=['GET'])
+@api_bp.route('/session/topic_suggestion', methods=['GET'])
 def get_topic_suggestion():
     """過去の対話履歴に基づいて、新しいセッションのトピックを提案する"""
     user_record = _verify_token(request)
@@ -1021,7 +1026,7 @@ def get_topic_suggestion():
         return jsonify({"error": "Failed to get topic suggestions"}), 500
 
 
-@app.route('/analysis/summary', methods=['GET'])
+@api_bp.route('/analysis/summary', methods=['GET'])
 def get_analysis_summary():
     """ユーザーの対話履歴の統計情報を返す"""
     user_record = _verify_token(request)
@@ -1066,7 +1071,7 @@ def get_analysis_summary():
         traceback.print_exc()
         return jsonify({"error": "Failed to get analysis summary"}), 500
 
-@app.route('/analysis/book_recommendations', methods=['GET'])
+@api_bp.route('/analysis/book_recommendations', methods=['GET'])
 def get_book_recommendations():
     """ユーザーの思考の傾向に基づき、おすすめの書籍を返す（キャッシュ優先）"""
     user_record = _verify_token(request)
@@ -1234,7 +1239,7 @@ def _get_all_insights_as_text(user_id: str) -> str:
         print(f"❌ Error fetching insights for user {user_id}: {e}")
         return ""
 
-@app.route('/analysis/graph', methods=['GET'])
+@api_bp.route('/analysis/graph', methods=['GET'])
 def get_analysis_graph():
     """ユーザーの全セッション履歴から統合分析グラフを生成またはキャッシュから取得"""
     user_record = _verify_token(request)
@@ -1372,7 +1377,7 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
 
     return graph_data
 
-@app.route('/home/suggestion', methods=['GET'])
+@api_bp.route('/home/suggestion', methods=['GET'])
 def get_home_suggestion():
     """ホーム画面に表示する、過去の対話に基づく提案を返す"""
     user_record = _verify_token(request)
@@ -1423,7 +1428,7 @@ def get_home_suggestion():
         return jsonify({"error": "Failed to get home suggestion"}), 500
 
 
-@app.route('/analysis/proactive_suggestion', methods=['GET'])
+@api_bp.route('/analysis/proactive_suggestion', methods=['GET'])
 def get_proactive_suggestion():
     """
     ユーザーの分析グラフ全体から、能動的な気付きを促すための質問やコンテキストを生成する。
@@ -1525,7 +1530,7 @@ def get_proactive_suggestion():
         return jsonify({"error": "Failed to get proactive suggestion"}), 500
 
 
-@app.route('/chat/node_tap', methods=['POST'])
+@api_bp.route('/chat/node_tap', methods=['POST'])
 def handle_node_tap():
     """グラフ上のノードがタップされた時に、関連情報を返す"""
     user_record = _verify_token(request)
@@ -1579,7 +1584,7 @@ def handle_node_tap():
 
 
 
-@app.route('/analysis/chat', methods=['POST'])
+@api_bp.route('/analysis/chat', methods=['POST'])
 def post_chat_message():
     user_record = _verify_token(request)
     # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
@@ -1634,7 +1639,7 @@ def post_chat_message():
         return jsonify({"error": "Failed to process chat message"}), 500
 
 
-@app.route('/home/suggestion_v2', methods=['GET'])
+@api_bp.route('/home/suggestion_v2', methods=['GET'])
 def get_home_suggestion_v2():
     """
     ユーザーの最新のベクトルに基づき、Vertex AI Vector Search を使って類似した過去の対話ノードを検索し、
@@ -1733,7 +1738,7 @@ def get_home_suggestion_v2():
         traceback.print_exc()
         return jsonify({"error": "Failed to get home suggestion"}), 500
 
-@app.route('/tasks/prefetch_questions', methods=['POST'])
+@api_bp.route('/tasks/prefetch_questions', methods=['POST'])
 def handle_prefetch_questions():
     """Cloud Tasksから呼び出される、質問を先読みするタスク"""
     try:
@@ -1759,7 +1764,7 @@ def handle_prefetch_questions():
         # Cloud Tasksがリトライしないように 200 OK を返す
         return "Error processing task, but acknowledging to prevent retry", 200
 
-@app.route('/tasks/update_graph', methods=['POST'])
+@api_bp.route('/tasks/update_graph', methods=['POST'])
 def handle_update_graph():
     """Cloud Tasksから呼び出される、分析グラフを更新するタスク"""
     try:
