@@ -57,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _errorMessage = 'Googleログインに失敗しました: ${e.message}';
         });
       }
-    } catch (e, s) {
+    } catch (e) {
       // ★ スタックトレースもキャッチするように変更
       if (mounted) {
         setState(() {
