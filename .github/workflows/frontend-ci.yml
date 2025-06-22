@@ -12,13 +12,17 @@ on:
       - '.github/workflows/frontend-ci.yml'
 
 jobs:
-  # ------ CI (ビルドとテスト) ジョブ ------
   build_and_test:
     name: Build & Test
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
+    
+    # ★ 1. ジョブレベルで環境変数を定義
+    env:
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,7 +30,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'master' # 'beta' を 'master' に変更
+          channel: 'master'
 
       - name: Install dependencies
         run: flutter pub get
@@ -34,11 +38,13 @@ jobs:
       - name: Run analyzer
         run: flutter analyze
 
-      # - name: Run tests
-      #   run: flutter test
+      # ★ 2.【診断ステップ】ビルドに使用するクライアントIDをログに出力
+      - name: 'Debug: Display Client ID'
+        run: echo "Client ID for build is => ${{ env.GOOGLE_WEB_CLIENT_ID }}"
 
+      # ★ 3.【堅牢化】ビルドコマンドをより確実な記法に修正
       - name: Build for Web
-        run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID
+        run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}"
 
       - name: Archive web build
         uses: actions/upload-artifact@v4
@@ -46,15 +52,14 @@ jobs:
           name: web-build
           path: frontend/build/web
 
-  # ------ CD (デプロイ) ジョブ ------
   deploy_to_hosting:
     name: Deploy to Firebase Hosting
-    needs: build_and_test # build_and_testジョブの成功が必須
+    needs: build_and_test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
-      id-token: 'write' # Workload Identity連携に必要
+      id-token: 'write'
 
     steps:
       - name: Checkout repository
