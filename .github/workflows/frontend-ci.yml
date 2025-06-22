@@ -31,11 +31,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Create .env file for build
-        working-directory: frontend # 'frontend' ディレクトリで実行
-        run: |
-          echo "GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}" > .env
-
       - name: Run analyzer
         run: flutter analyze
 
@@ -43,7 +38,7 @@ jobs:
       #   run: flutter test
 
       - name: Build for Web
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID
 
       - name: Archive web build
         uses: actions/upload-artifact@v4
