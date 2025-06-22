@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart'; 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -278,7 +279,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           GestureDetector(
                             onTap: _signInWithGoogle,
                             child: Image.asset(
-                              'assets/google_logo.png', // Googleロゴのアセット
+                              'assets/google_logo.svg', // Googleロゴのアセット
                               // 高さを調整して、適切なボタンサイズにします
                               height: 48.0,
                             ),
