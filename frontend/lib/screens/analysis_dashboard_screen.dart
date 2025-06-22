@@ -122,6 +122,9 @@ class _AnalysisDashboardScreenState
   }
 
   Future<void> _onNodeTapped(model.NodeData nodeData) async {
+    // ★ 修正: ユーザーがノードをタップしたことをチャットに表示
+    _addHumanMessage(nodeData.id);
+
     if (_isActionLoading) return;
     setState(() => _isActionLoading = true);
 

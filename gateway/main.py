@@ -1529,7 +1529,6 @@ def get_proactive_suggestion():
 def handle_node_tap():
     """グラフ上のノードがタップされた時に、関連情報を返す"""
     user_record = _verify_token(request)
-    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
     if not isinstance(user_record, dict):
         return user_record
 
@@ -1544,51 +1543,31 @@ def handle_node_tap():
         # 1. 内部コンテキスト（過去の対話）を要約
         all_insights_text = _get_all_insights_as_text(user_id)
         internal_summary = _summarize_internal_context(all_insights_text, node_label)
-        
-        # 2. 外部コンテキスト（Web検索）を取得
-        external_summary_cases, sources_cases = _generate_rag_based_advice(
-            query=f"{node_label}に関する悩み",
-            project_id=project_id,
-            similar_cases_engine_id=SIMILAR_CASES_ENGINE_ID,
-            suggestions_engine_id=SUGGESTIONS_ENGINE_ID,
-            rag_type="similar_cases"
-        )
-        external_summary_sugs, sources_sugs = _generate_rag_based_advice(
-            query=f"{node_label} 解決策",
-            project_id=project_id,
-            similar_cases_engine_id=SIMILAR_CASES_ENGINE_ID,
-            suggestions_engine_id=SUGGESTIONS_ENGINE_ID,
-            rag_type="suggestions"
-        )
-        
-        # 3. フロントに返す情報を整形
-        # ここでは簡潔にするため、Geminiの最終整形は省略し、
-        # 構造化されたデータを返す。
+
+        # ★★★ 修正点 ★★★
+        # RAGによる外部情報の検索は、ユーザーがボタンを押した時に実行されるように変更。
+        # ここでは、そのためのボタン定義（アクション）のみを生成する。
+        # これにより、ノードタップ時の応答が大幅に高速化されます。
         initial_summary = f"「{node_label}」についてですね。{internal_summary}"
-        
-        actions = []
-        if external_summary_cases and "見つけることができませんでした" not in external_summary_cases:
-            actions.append({
-                "type": "similar_cases",
-                "title": "似たような悩みを持つ人々の声",
-                "content": external_summary_cases,
-                "sources": sources_cases
-            })
-        if external_summary_sugs and "見つけることができませんでした" not in external_summary_sugs:
-             actions.append({
-                "type": "suggestions",
-                "title": "専門家による具体的なアドバイス",
-                "content": external_summary_sugs,
-                "sources": sources_sugs
-            })
+
+        actions = [
+            {
+                "id": "similar_cases", # フロントエンドのモデルに合わせて "type" から "id" に変更
+                "title": "似たような悩みを持つ他の人の声を聞く"
+            },
+            {
+                "id": "suggestions", # フロントエンドのモデルに合わせて "type" から "id" に変更
+                "title": "具体的な解決策やアドバイスを見る"
+            }
+        ]
 
         response_data = {
             "initialSummary": initial_summary,
             "actions": actions,
-            "nodeId": data.get('nodeId', node_label), # nodeIdがあればそれを使う
+            "nodeId": data.get('nodeId', node_label),
             "nodeLabel": node_label
         }
-        
+
         print(f"✅ Sending node tap response for '{node_label}'")
         return jsonify(response_data), 200
 
@@ -1596,6 +1575,8 @@ def handle_node_tap():
         print(f"❌ Error in handle_node_tap: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to handle node tap"}), 500
+
+
 
 
 @app.route('/analysis/chat', methods=['POST'])
