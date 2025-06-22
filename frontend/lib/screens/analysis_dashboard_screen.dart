@@ -22,7 +22,7 @@ class AnalysisDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalysisDashboardScreenState
-    extends ConsumerState<AnalysisDashboardScreen> {
+    extends ConsumerState<AnalysisDashboardScreen> with TickerProviderStateMixin {
   Future<model.GraphData>? _graphDataFuture;
   late Future<AnalysisSummary> _summaryFuture;
   late Future<List<BookRecommendation>> _bookRecommendationsFuture;
@@ -34,6 +34,7 @@ class _AnalysisDashboardScreenState
   final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
   bool _isAiTyping = false;
   bool _isActionLoading = false;
+  TabController? _tabController;
 
   String? _lastActionMessageId;
 
@@ -44,6 +45,9 @@ class _AnalysisDashboardScreenState
     _graphDataFuture = _fetchAndBuildGraph(apiService);
     _summaryFuture = apiService.getAnalysisSummary();
     _bookRecommendationsFuture = apiService.getBookRecommendations();
+    
+    _tabController = TabController(length: 3, vsync: this);
+
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleProactiveSuggestion(widget.proactiveSuggestion!);
@@ -51,6 +55,12 @@ class _AnalysisDashboardScreenState
     } else {
       _addInitialMessage();
     }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
   }
 
   void _addInitialMessage() {
@@ -85,7 +95,7 @@ class _AnalysisDashboardScreenState
       ));
 
       if (MediaQuery.of(context).size.width <= 900) {
-        DefaultTabController.of(context).animateTo(2); // チャットタブへ
+        _tabController?.animateTo(2);
       }
     }
   }
@@ -124,7 +134,6 @@ class _AnalysisDashboardScreenState
   Future<void> _onNodeTapped(model.NodeData nodeData) async {
     if (_isActionLoading) return;
     
-    // ★ 修正点1: ユーザーがノードをタップしたことを、まずチャットに表示します
     _addHumanMessage(nodeData.id);
     
     setState(() => _isActionLoading = true);
@@ -132,7 +141,7 @@ class _AnalysisDashboardScreenState
     _disablePreviousActions();
 
     if (MediaQuery.of(context).size.width <= 900) {
-      DefaultTabController.of(context).animateTo(2); // チャットタブへ
+      _tabController?.animateTo(2);
     }
 
     try {
@@ -146,7 +155,6 @@ class _AnalysisDashboardScreenState
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': response.initialSummary,
-          // ★ 修正点2: バックエンドの修正に合わせて、'type' ではなく 'id' を使うようにします
           'actions': response.actions
               .map((a) => {'id': a.id, 'title': a.title})
               .toList(),
@@ -299,7 +307,6 @@ class _AnalysisDashboardScreenState
         }
         if (snapshot.hasError) {
           final error = snapshot.error.toString();
-          // データが無い、という特定のメッセージをバックエンドが返す場合を判定
           if (error.contains('No data available to generate graph')) {
             return Center(
               child: Padding(
@@ -308,7 +315,7 @@ class _AnalysisDashboardScreenState
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.insights, // 分析や洞察を表すアイコン
+                      Icons.insights,
                       size: 80,
                       color: Colors.grey.shade400,
                     ),
@@ -329,7 +336,6 @@ class _AnalysisDashboardScreenState
               ),
             );
           }
-          // それ以外の予期せぬエラーの場合
           return Center(
               child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -384,28 +390,27 @@ class _AnalysisDashboardScreenState
   }
 
   Widget _buildNarrowLayout() {
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          const TabBar(
-            tabs: [
-              Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
-              Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
-              Tab(text: 'チャット', icon: Icon(Icons.chat_bubble_outline)),
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
+            Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
+            Tab(text: 'チャット', icon: Icon(Icons.chat_bubble_outline)),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildSummaryView(),
+              _buildGraphViewFuture(),
+              _buildChatView(),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _buildSummaryView(),
-                _buildGraphViewFuture(),
-                _buildChatView(),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
