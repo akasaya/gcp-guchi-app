@@ -43,53 +43,102 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ★ 追加: 画面の幅を取得してPCかどうかを簡易的に判定
+    final isDesktop = MediaQuery.of(context).size.width > 600;
+
     return Scaffold(
       body: SafeArea(
-        child: Column(
+        // ★ 修正: Stackを使ってページとナビゲーションボタンを重ねる
+        child: Stack(
           children: [
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: _onboardingData.length,
-                onPageChanged: (int page) {
-                  setState(() {
-                    _currentPage = page;
-                  });
-                },
-                itemBuilder: (context, index) {
-                  return OnboardingPage(
-                    icon: _onboardingData[index]['icon']!,
-                    title: _onboardingData[index]['title']!,
-                    description: _onboardingData[index]['description']!,
-                  );
-                },
-              ),
+            Column(
+              children: [
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: _onboardingData.length,
+                    onPageChanged: (int page) {
+                      setState(() {
+                        _currentPage = page;
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      return OnboardingPage(
+                        icon: _onboardingData[index]['icon']!,
+                        title: _onboardingData[index]['title']!,
+                        description: _onboardingData[index]['description']!,
+                      );
+                    },
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    _onboardingData.length,
+                    (index) => buildDot(context, index),
+                  ),
+                ),
+                SizedBox(
+                  height: 100,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: _currentPage == _onboardingData.length - 1
+                        ? ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: _completeOnboarding,
+                            child: const Text('はじめる'),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _onboardingData.length,
-                (index) => buildDot(context, index),
+            // ★ 追加: PCの場合のみナビゲーションボタンを表示
+            if (isDesktop)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // 「前へ」ボタン
+                        if (_currentPage > 0)
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios),
+                            onPressed: () {
+                              _pageController.previousPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                          )
+                        else
+                          const SizedBox(width: 48), // ボタンがない場合もスペースを確保
+                        // 「次へ」ボタン
+                        if (_currentPage < _onboardingData.length - 1)
+                          IconButton(
+                            icon: const Icon(Icons.arrow_forward_ios),
+                            onPressed: () {
+                              _pageController.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                          )
+                        else
+                          const SizedBox(width: 48), // ボタンがない場合もスペースを確保
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-            SizedBox(
-              height: 100,
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: _currentPage == _onboardingData.length - 1
-                    ? ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: _completeOnboarding,
-                        child: const Text('はじめる'),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ),
           ],
         ),
       ),
