@@ -50,25 +50,24 @@ class NodeTapResponse {
 // チャット内のアクションボタンを表現するクラス
 class ChatAction {
   final String id;
-  final String title; // ★★★ 修正: バックエンドのキー名 'title' に合わせる ★★★
+  final String title;
   final String? content;
   final List<String>? sources;
 
 
   ChatAction({
     required this.id,
-    required this.title, // ★★★ 修正: こちらも 'title' に合わせる ★★★
+    required this.title,
     this.content,
     this.sources,
   });
 
   factory ChatAction.fromJson(Map<String, dynamic> json) {
     return ChatAction(
-      // ★★★ 修正: バックエンドのキー名は 'type' なので、id にはそれを使う。nullにも対応。 ★★★
-      id: json['type'] as String? ?? 'unknown',
-      // ★★★ 修正: バックエンドのキー名 'title' に合わせる。nullにも対応。 ★★★
+      // ★★★★★ 修正箇所 ★★★★★
+      // 'type' ではなく、バックエンドが返す正しいキー 'id' を読み込む
+      id: json['id'] as String? ?? 'unknown',
       title: json['title'] as String? ?? '無題のアクション',
-      // ★★★ 修正: content と sources を追加し、nullに対応 ★★★
       content: json['content'] as String?,
       sources: json['sources'] != null ? List<String>.from(json['sources']) : null,
     );
