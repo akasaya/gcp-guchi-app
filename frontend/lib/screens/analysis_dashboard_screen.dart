@@ -49,36 +49,12 @@ class _AnalysisDashboardScreenState
         _handleProactiveSuggestion(widget.proactiveSuggestion!);
       });
     } else {
-      // ★ 修正: apiServiceを渡さずに呼び出す
       _addInitialMessage();
     }
   }
 
-
-  Future<void> _handleProactiveSuggestion(NodeTapResponse suggestion) async {
-    if (mounted) {
-      final nodeId = suggestion.nodeId;
-      if (nodeId == null) {
-        _addInitialMessage(ref.read(apiServiceProvider));
-        return;
-      }
-      _onNodeTapped(model.NodeData(
-        id: nodeId,
-        type: 'topic',
-        size: 1,
-        label: suggestion.nodeLabel,
-      ));
-
-      if (MediaQuery.of(context).size.width <= 900) {
-        DefaultTabController.of(context).animateTo(2); // チャットタブへ
-      }
-    }
-  }
-
   void _addInitialMessage() {
-    // build完了後にsetStateを安全に呼び出す
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // メッセージが空の場合のみ追加する
       if (mounted && _messages.isEmpty) {
         final initialMessage = types.TextMessage(
           author: _ai,
@@ -94,15 +70,23 @@ class _AnalysisDashboardScreenState
     });
   }
 
+  Future<void> _handleProactiveSuggestion(NodeTapResponse suggestion) async {
     if (mounted) {
-      final initialMessage = types.TextMessage(
-        author: _ai,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        id: const Uuid().v4(),
-        text:
-            'こんにちは。可視化されたご自身の思考のつながりについて、気になることや話してみたいことはありますか？\nグラフのキーワードをタップすると、そのテーマについて深掘りできます。',
-      );
-      setState(() => _messages.insert(0, initialMessage));
+      final nodeId = suggestion.nodeId;
+      if (nodeId == null) {
+        _addInitialMessage();
+        return;
+      }
+      _onNodeTapped(model.NodeData(
+        id: nodeId,
+        type: 'topic',
+        size: 1,
+        label: suggestion.nodeLabel,
+      ));
+
+      if (MediaQuery.of(context).size.width <= 900) {
+        DefaultTabController.of(context).animateTo(2); // チャットタブへ
+      }
     }
   }
 
