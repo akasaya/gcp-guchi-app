@@ -127,7 +127,6 @@ else:
     ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
-app.register_blueprint(api_bp)
 
 @api_bp.route('/', methods=['GET'])
 def index():
@@ -1780,6 +1779,8 @@ def handle_update_graph():
         print(f"❌ Error in /tasks/update_graph: {e}")
         traceback.print_exc()
         return "Error processing task, but acknowledging to prevent retry", 200
+
+app.register_blueprint(api_bp)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=True)
