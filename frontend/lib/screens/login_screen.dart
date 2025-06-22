@@ -26,7 +26,9 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
+      const webClientId =
+          "877175644081-mhj15gclq2tr1vvinfe79um3rbmnnlfr.apps.googleusercontent.com";
+      final GoogleSignIn googleSignIn = GoogleSignIn(clientId: webClientId);
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -62,11 +64,6 @@ class _LoginScreenState extends State<LoginScreen> {
           // ★ ユーザーに見せるエラーメッセージを少し汎用的に
           _errorMessage = 'ログイン処理中にエラーが発生しました。';
         });
-        // ★ デバッグ用にコンソールに詳細なエラーを出力
-        print('--- Google Sign-In Error ---');
-        print(e);
-        print(s);
-        print('--------------------------');
       }
     } finally {
       if (mounted) {
@@ -265,18 +262,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           const SizedBox(height: 20),
-                          ElevatedButton.icon(
-                            icon: Image.asset(
+                          GestureDetector(
+                            onTap: _signInWithGoogle,
+                            child: Image.asset(
                               'assets/google_logo.png', // Googleロゴのアセット
-                              height: 24.0,
-                            ),
-                            label: const Text('Googleでログイン'),
-                            onPressed: _signInWithGoogle,
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: Colors.black,
-                              backgroundColor: Colors.white,
-                              side: const BorderSide(color: Colors.grey),
-                              elevation: 1,
+                              // 高さを調整して、適切なボタンサイズにします
+                              height: 48.0,
                             ),
                           ),
                       ],
