@@ -122,10 +122,11 @@ class _AnalysisDashboardScreenState
   }
 
   Future<void> _onNodeTapped(model.NodeData nodeData) async {
-    // ★ 修正: ユーザーがノードをタップしたことをチャットに表示
-    _addHumanMessage(nodeData.id);
-
     if (_isActionLoading) return;
+    
+    // ★ 修正点1: ユーザーがノードをタップしたことを、まずチャットに表示します
+    _addHumanMessage(nodeData.id);
+    
     setState(() => _isActionLoading = true);
 
     _disablePreviousActions();
@@ -145,8 +146,9 @@ class _AnalysisDashboardScreenState
         createdAt: DateTime.now().millisecondsSinceEpoch,
         metadata: {
           'text': response.initialSummary,
+          // ★ 修正点2: バックエンドの修正に合わせて、'type' ではなく 'id' を使うようにします
           'actions': response.actions
-              .map((a) => {'type': a.id, 'title': a.title})
+              .map((a) => {'id': a.id, 'title': a.title})
               .toList(),
           'node_label': response.nodeLabel,
           'is_active': true,
