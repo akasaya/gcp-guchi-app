@@ -54,10 +54,10 @@ try:
 
     # Only attempt to initialize Cloud Tasks in the Cloud Run environment
     if 'K_SERVICE' in os.environ:
-        GCP_TASK_QUEUE = os.getenv('GCP_TASK_QUEUE')
-        GCP_TASK_QUEUE_LOCATION = os.getenv('GCP_TASK_QUEUE_LOCATION')
-        GCP_TASK_SA_EMAIL = os.getenv('GCP_TASK_SA_EMAIL')
-        SERVICE_URL = os.getenv('K_SERVICE_URL') # Provided by Cloud Run
+        GCP_TASK_QUEUE = os.getenv('GCP_TASK_QUEUE', '').strip()
+        GCP_TASK_QUEUE_LOCATION = os.getenv('GCP_TASK_QUEUE_LOCATION', '').strip()
+        GCP_TASK_SA_EMAIL = os.getenv('GCP_TASK_SA_EMAIL', '').strip()
+        SERVICE_URL = os.getenv('K_SERVICE_URL', '').strip()
 
         # Check which variables are missing for better debugging
         required_vars = {
