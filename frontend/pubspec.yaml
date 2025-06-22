@@ -51,6 +51,7 @@ dependencies:
   flutter_chat_types: ^3.6.2
   uuid: ^4.4.0
   url_launcher: ^6.2.5 # この行を追加
+  shared_preferences: ^2.2.3 
 
 dev_dependencies:
   flutter_test:
