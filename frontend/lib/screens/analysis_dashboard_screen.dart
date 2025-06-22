@@ -298,10 +298,42 @@ class _AnalysisDashboardScreenState
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
+          final error = snapshot.error.toString();
+          // データが無い、という特定のメッセージをバックエンドが返す場合を判定
+          if (error.contains('No data available to generate graph')) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.insights, // 分析や洞察を表すアイコン
+                      size: 80,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      '分析できる記録がまだありません。',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '対話セッションを完了すると、ここにあなたの思考のつながりが表示されます。',
+                      style: TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          // それ以外の予期せぬエラーの場合
           return Center(
               child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n${snapshot.error}',
+                  child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n$error',
                       textAlign: TextAlign.center)));
         }
         if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
