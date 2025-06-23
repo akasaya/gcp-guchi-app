@@ -1195,63 +1195,18 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
 """
     for book in selected_books:
         try:
-            reason = ""
-            # ★★★ ここからが今回の修正の核心部分です ★★★
-            # OLLAMA_ENDPOINTが設定されていれば、Gemmaを呼び出す
-            if OLLAMA_ENDPOINT:
-                print(f"--- Calling Ollama(Gemma) for book: {book['title']} ---")
-                
-                # Gemma向けのプロンプトを定義
-                gemma_prompt = f"""あなたは、ユーザーの悩みに寄り添う優秀な書店員です。
-ユーザーは今、以下のテーマについて深く考えています。
----
-{insights_text}
----
-このユーザーに向けて、書籍「{book['title']}」（著者: {book['author']}）を推薦します。
-この本がユーザーの今の状況にとって、なぜ読む価値があるのか、その理由を100文字程度の推薦文として生成してください。
-ユーザーの思考テーマと関連付けながら、心に響く文章を作成してください。
-**重要: 生成する文章に「推薦文」などの見出しやタイトルは絶対に含めないでください。本文のみを出力してください。**"""
-
-
-                try:
-                    # requestsライブラリを使ってOllamaサービスにHTTP POSTリクエストを送信
-                    response = requests.post(
-                        f"{OLLAMA_ENDPOINT}/api/chat",  # OllamaのチャットAPIエンドポイント
-                        json={
-                            "model": OLLAMA_MODEL_NAME,  # 使用するモデルを指定
-                            "messages": [{"role": "user", "content": gemma_prompt}],
-                            "stream": False,
-                        },
-                        timeout=180,  # 応答が遅い可能性を考慮し、タイムアウトを3分に設定
-                        headers={'Content-Type': 'application/json'}
-                    )
-                    response.raise_for_status()  # エラーがあれば例外を発生させる
-                    # 応答(JSON)から、AIが生成したメッセージ部分を抽出
-                    reason = response.json().get('message', {}).get('content', '')
-                    if reason:
-                        print(f"✅ Generated reason from Ollama: {reason[:50]}...")
-                    else:
-                        print(f"⚠️ Ollama returned an empty reason for {book['title']}.")
-                
-                except requests.exceptions.RequestException as e:
-                    print(f"❌ Error calling Ollama service: {e}. Will fallback to Gemini.")
-                    reason = "" # エラーが起きたらreasonを空にして、後のGemini処理に進ませる
-
-            # Ollamaの処理が失敗した、またはOllamaが設定されていない場合は、Geminiを呼び出す
-            if not reason:
-                print(f"--- Calling Vertex AI(Gemini) for book: {book['title']} ---")
-                prompt = reason_generation_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
-                flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-                model = GenerativeModel(flash_model)
-                response = model.generate_content(prompt)
-                reason = response.text.strip()
-                print(f"✅ Generated reason from Gemini: {reason[:50]}...")
+            # ★★★ 修正: Ollama/Gemmaの処理を完全に削除し、Geminiの処理に一本化 ★★★
+            print(f"--- Calling Vertex AI(Gemini) for book: {book['title']} ---")
+            prompt = reason_generation_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
+            flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-2.5-flash-preview-05-20')
+            model = GenerativeModel(flash_model)
+            response = model.generate_content(prompt)
+            reason = response.text.strip()
+            print(f"✅ Generated reason from Gemini: {reason[:50]}...")
 
             if not reason:
                 print(f"⚠️ Could not generate reason for book '{book['title']}'. Skipping.")
                 continue
-
-            # ★★★ ここまでが修正の核心部分です ★★★
 
             search_query = f"{book['title']} {book['author']}"
             search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(search_query)}"
