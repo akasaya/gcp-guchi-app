@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:frontend/models/analysis_models.dart';
@@ -36,6 +37,7 @@ class _AnalysisDashboardScreenState
   bool _isAiTyping = false;
   bool _isActionLoading = false;
   TabController? _tabController;
+  StreamSubscription<DocumentSnapshot>? _ragSubscription; 
 
   String? _lastActionMessageId;
 
@@ -61,6 +63,7 @@ class _AnalysisDashboardScreenState
   @override
   void dispose() {
     _tabController?.dispose();
+    _ragSubscription?.cancel(); 
     super.dispose();
   }
 
@@ -182,6 +185,9 @@ class _AnalysisDashboardScreenState
       return;
     }
 
+    await _ragSubscription?.cancel();
+    _ragSubscription = null;
+
     setState(() => _isActionLoading = true);
 
     try {
@@ -214,24 +220,29 @@ class _AnalysisDashboardScreenState
             .collection('rag_responses')
             .doc(initialResponse.requestId);
         
-        // 4. ドキュメントの変更をリッスンする
-        final subscription = docRef.snapshots().listen((snapshot) {
-          if (snapshot.exists && snapshot.data()?['status'] == 'completed') {
-            final data = snapshot.data()!;
-            final finalResponse = ChatResponse.fromJson(data);
-            
-            // 5. 最終的な結果をチャットに追加
-            _addAiTextMessage(finalResponse.response, sources: finalResponse.sources);
-            
-            // 監視を終了
-            // subscription.cancel(); // ここでキャンセルすると2回目以降の更新を検知できないのでコメントアウト
-          } else if (snapshot.exists && snapshot.data()?['status'] == 'error') {
-            _addErrorMessage('情報の取得中にバックエンドでエラーが発生しました。');
-            // subscription.cancel();
+        // ★★★ 修正2: listenの中を修正 ★★★
+        _ragSubscription = docRef.snapshots().listen((snapshot) async {
+          if (snapshot.exists) {
+            final status = snapshot.data()?['status'];
+            if (status == 'completed') {
+              final data = snapshot.data()!;
+              final finalResponse = ChatResponse.fromJson(data);
+              
+              _addAiTextMessage(finalResponse.response, sources: finalResponse.sources);
+              
+              // 監視を終了
+              await _ragSubscription?.cancel();
+              _ragSubscription = null;
+
+            } else if (status == 'error') {
+              _addErrorMessage('情報の取得中にバックエンドでエラーが発生しました。');
+
+              // 監視を終了
+              await _ragSubscription?.cancel();
+              _ragSubscription = null;
+            }
           }
         });
-        // Stateが破棄されるときにリスナーも破棄するように登録できますが、
-        // 今回は単純化のため、結果を受け取った後もリスナーは有効なままにします。
       }
     } catch (e) {
       _addErrorMessage('情報の取得中にエラーが発生しました: $e');
