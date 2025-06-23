@@ -107,7 +107,7 @@ try:
 
     OLLAMA_ENDPOINT = os.environ.get('OLLAMA_ENDPOINT')
     # ★★★ ここにモデル名読み込みを追加 ★★★
-    OLLAMA_MODEL_NAME = os.environ.get('OLLAMA_MODEL_NAME', 'gemma3:7b') # ローカル実行用にデフォルト値を設定
+    OLLAMA_MODEL_NAME = os.environ.get('OLLAMA_MODEL_NAME', 'gemma3:12b') # ローカル実行用にデフォルト値を設定
 
     if OLLAMA_ENDPOINT:
         print(f"✅ Ollama service endpoint is configured: {OLLAMA_ENDPOINT}")
@@ -115,8 +115,6 @@ try:
         print(f"✅ Ollama model name is set to: {OLLAMA_MODEL_NAME}")
     else:
         print("⚠️ Ollama service endpoint is not configured. Book recommendation will use Gemini as a fallback.")
-
-
 
 except Exception as e:
     db_firestore = None
