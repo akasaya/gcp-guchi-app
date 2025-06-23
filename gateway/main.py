@@ -105,6 +105,19 @@ try:
         print("⚠️ Secret file not found. Trying to load Google Books API key from environment variable.")
         GOOGLE_BOOKS_API_KEY = os.environ.get('GOOGLE_BOOKS_API_KEY')
 
+    OLLAMA_ENDPOINT = os.environ.get('OLLAMA_ENDPOINT')
+    # ★★★ ここにモデル名読み込みを追加 ★★★
+    OLLAMA_MODEL_NAME = os.environ.get('OLLAMA_MODEL_NAME', 'gemma3:7b') # ローカル実行用にデフォルト値を設定
+
+    if OLLAMA_ENDPOINT:
+        print(f"✅ Ollama service endpoint is configured: {OLLAMA_ENDPOINT}")
+        # ★★★ ここにログを追加 ★★★
+        print(f"✅ Ollama model name is set to: {OLLAMA_MODEL_NAME}")
+    else:
+        print("⚠️ Ollama service endpoint is not configured. Book recommendation will use Gemini as a fallback.")
+
+
+
 except Exception as e:
     db_firestore = None
     print(f"❌ Error during initialization: {e}")
@@ -1184,13 +1197,62 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
 """
     for book in selected_books:
         try:
-            prompt = reason_generation_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
-            flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-            model = GenerativeModel(flash_model)
-            print(f"--- Calling Gemini to generate reason for book: {book['title']} ---")
-            response = model.generate_content(prompt)
-            reason = response.text.strip()
-            
+            reason = ""
+            # ★★★ ここからが今回の修正の核心部分です ★★★
+            # OLLAMA_ENDPOINTが設定されていれば、Gemmaを呼び出す
+            if OLLAMA_ENDPOINT:
+                print(f"--- Calling Ollama(Gemma) for book: {book['title']} ---")
+                
+                # Gemma向けのプロンプトを定義
+                gemma_prompt = f"""あなたは、ユーザーの悩みに寄り添う優秀な書店員です。
+ユーザーは今、以下のテーマについて深く考えています。
+---
+{insights_text}
+---
+このユーザーに向けて、書籍「{book['title']}」（著者: {book['author']}）を推薦します。
+この本がユーザーの今の状況にとって、なぜ読む価値があるのか、その理由を200文字程度の推薦文として生成してください。
+ユーザーの思考テーマと関連付けながら、心に響く文章を作成してください。"""
+
+                try:
+                    # requestsライブラリを使ってOllamaサービスにHTTP POSTリクエストを送信
+                    response = requests.post(
+                        f"{OLLAMA_ENDPOINT}/api/chat",  # OllamaのチャットAPIエンドポイント
+                        json={
+                            "model": OLLAMA_MODEL_NAME,  # 使用するモデルを指定
+                            "messages": [{"role": "user", "content": gemma_prompt}],
+                            "stream": False,
+                        },
+                        timeout=180,  # 応答が遅い可能性を考慮し、タイムアウトを3分に設定
+                        headers={'Content-Type': 'application/json'}
+                    )
+                    response.raise_for_status()  # エラーがあれば例外を発生させる
+                    # 応答(JSON)から、AIが生成したメッセージ部分を抽出
+                    reason = response.json().get('message', {}).get('content', '')
+                    if reason:
+                        print(f"✅ Generated reason from Ollama: {reason[:50]}...")
+                    else:
+                        print(f"⚠️ Ollama returned an empty reason for {book['title']}.")
+                
+                except requests.exceptions.RequestException as e:
+                    print(f"❌ Error calling Ollama service: {e}. Will fallback to Gemini.")
+                    reason = "" # エラーが起きたらreasonを空にして、後のGemini処理に進ませる
+
+            # Ollamaの処理が失敗した、またはOllamaが設定されていない場合は、Geminiを呼び出す
+            if not reason:
+                print(f"--- Calling Vertex AI(Gemini) for book: {book['title']} ---")
+                prompt = gemini_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
+                flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
+                model = GenerativeModel(flash_model)
+                response = model.generate_content(prompt)
+                reason = response.text.strip()
+                print(f"✅ Generated reason from Gemini: {reason[:50]}...")
+
+            if not reason:
+                print(f"⚠️ Could not generate reason for book '{book['title']}'. Skipping.")
+                continue
+
+            # ★★★ ここまでが修正の核心部分です ★★★
+
             search_query = f"{book['title']} {book['author']}"
             search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(search_query)}"
 
@@ -1205,7 +1267,7 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
                 break
         
         except Exception as e:
-            print(f"⚠️ Failed to generate reason for book '{book['title']}': {e}")
+            print(f"⚠️ Failed to process book '{book['title']}': {e}")
             continue
 
     return {"recommendations": final_recommendations}
