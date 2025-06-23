@@ -7,7 +7,7 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 
 // ★★★ 修正: Dartの命名規則に合わせて `maxTurns` に変更 ★★★
-const int maxTurns = 3;
+const int maxTurns = 5;
 
 class SessionDetailScreen extends StatefulWidget {
   final String sessionId;

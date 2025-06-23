@@ -148,7 +148,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             final insights = sessionData['latest_insights'] as String? ?? '分析結果のテキストがありません。';
             final title = sessionData['title'] as String? ?? '無題';
             final currentTurn = sessionData['turn'] as int? ?? 1;
-            final maxTurns = sessionData['max_turns'] as int? ?? 3;
+            final maxTurns = sessionData['max_turns'] as int? ?? 5;
             
             final canContinue = currentTurn < maxTurns;
             final remainingTurns = maxTurns - currentTurn;
