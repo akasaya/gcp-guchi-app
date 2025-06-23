@@ -151,7 +151,7 @@ RAG_CACHE_COLLECTION = 'rag_cache'
 RAG_CACHE_TTL_DAYS = 7 # Cache expires after 7 days
 
 # ★★★ 修正: セッションの最大ターン数を定義 ★★★
-MAX_TURNS = 3 # セッションの最大ターン数（初期ターンを含む）
+MAX_TURNS = 5 # セッションの最大ターン数（初期ターンを含む）
 
 
 # ===== JSONスキーマ定義 =====
