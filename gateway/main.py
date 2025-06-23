@@ -1240,7 +1240,7 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
             # Ollamaの処理が失敗した、またはOllamaが設定されていない場合は、Geminiを呼び出す
             if not reason:
                 print(f"--- Calling Vertex AI(Gemini) for book: {book['title']} ---")
-                prompt = gemini_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
+                prompt = reason_generation_prompt_template.format(insights=insights_text, title=book["title"], author=book["author"])
                 flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
                 model = GenerativeModel(flash_model)
                 response = model.generate_content(prompt)
