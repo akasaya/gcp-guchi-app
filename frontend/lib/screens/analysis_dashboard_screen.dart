@@ -10,6 +10,7 @@ import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
   final NodeTapResponse? proactiveSuggestion;
@@ -185,7 +186,7 @@ class _AnalysisDashboardScreenState
 
     try {
       final apiService = ref.read(apiServiceProvider);
-      final ragType = actionId == 'similar_cases' ? 'similar_cases' : 'suggestions';
+      final ragType = actionId;
 
       final historyForApi = _messages
           .whereType<types.TextMessage>()
@@ -194,14 +195,44 @@ class _AnalysisDashboardScreenState
           .reversed
           .toList();
 
-      final response = await apiService.postChatMessage(
+      // ★★★ ここからが新しい非同期処理のロジックです ★★★
+      // 1. RAGの開始を依頼し、中間応答とrequestIdを取得
+      final initialResponse = await apiService.postChatMessage(
         chatHistory: historyForApi,
         message:
             "$nodeLabel に関する${ragType == 'similar_cases' ? '類似ケース' : '改善案'}を教えてください。",
         useRag: true,
         ragType: ragType,
       );
-      _addAiTextMessage(response.response, sources: response.sources);
+
+      // 2. 中間応答をチャットに追加
+      _addAiTextMessage(initialResponse.response);
+
+      // 3. requestId を使ってFirestoreのドキュメントを監視
+      if (initialResponse.requestId != null) {
+        final docRef = FirebaseFirestore.instance
+            .collection('rag_responses')
+            .doc(initialResponse.requestId);
+        
+        // 4. ドキュメントの変更をリッスンする
+        final subscription = docRef.snapshots().listen((snapshot) {
+          if (snapshot.exists && snapshot.data()?['status'] == 'completed') {
+            final data = snapshot.data()!;
+            final finalResponse = ChatResponse.fromJson(data);
+            
+            // 5. 最終的な結果をチャットに追加
+            _addAiTextMessage(finalResponse.response, sources: finalResponse.sources);
+            
+            // 監視を終了
+            // subscription.cancel(); // ここでキャンセルすると2回目以降の更新を検知できないのでコメントアウト
+          } else if (snapshot.exists && snapshot.data()?['status'] == 'error') {
+            _addErrorMessage('情報の取得中にバックエンドでエラーが発生しました。');
+            // subscription.cancel();
+          }
+        });
+        // Stateが破棄されるときにリスナーも破棄するように登録できますが、
+        // 今回は単純化のため、結果を受け取った後もリスナーは有効なままにします。
+      }
     } catch (e) {
       _addErrorMessage('情報の取得中にエラーが発生しました: $e');
     } finally {

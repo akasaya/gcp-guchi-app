@@ -1,16 +1,19 @@
 class ChatResponse {
-  // ★★★ 修正: バックエンドのキー名 'response' に合わせる ★★★
   final String response;
   final List<String> sources;
+  final String? requestId; // ★★★ request_id を追加 ★★★
 
-  // ★★★ 修正: こちらも 'response' に合わせる ★★★
-  ChatResponse({required this.response, required this.sources});
+  ChatResponse({
+    required this.response, 
+    required this.sources,
+    this.requestId, // ★★★ request_id をコンストラクタに追加 ★★★
+  });
 
   factory ChatResponse.fromJson(Map<String, dynamic> json) {
     return ChatResponse(
-      // ★★★ 修正: キー名を 'response' に変更し、nullの場合のデフォルト値を用意 ★★★
       response: json['response'] as String? ?? 'AIからの応答がありませんでした。',
       sources: (json['sources'] as List<dynamic>?)?.cast<String>() ?? [],
+      requestId: json['request_id'] as String?, // ★★★ JSONからrequest_idを読み込む ★★★
     );
   }
 }

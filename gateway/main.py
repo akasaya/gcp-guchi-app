@@ -13,6 +13,7 @@ import urllib.parse
 from bs4 import BeautifulSoup
 import numpy as np
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from collections import Counter
 
@@ -1580,13 +1581,9 @@ def handle_node_tap():
         traceback.print_exc()
         return jsonify({"error": "Failed to handle node tap"}), 500
 
-
-
-
 @api_bp.route('/analysis/chat', methods=['POST'])
 def post_chat_message():
     user_record = _verify_token(request)
-    # ★★★ 修正: 認証成功時はdict型、失敗時はResponseオブジェクトが返るため、dict型かどうかで判定する ★★★
     if not isinstance(user_record, dict):
         return user_record
 
@@ -1597,46 +1594,106 @@ def post_chat_message():
     chat_history = data.get('chat_history', [])
     message = data.get('message')
     use_rag = data.get('use_rag', False)
-    rag_type = data.get('rag_type') # 'similar_cases' or 'suggestions'
+    rag_type = data.get('rag_type')
+    user_id = user_record['uid']
 
     if not message:
         return jsonify({"error": "Invalid request: 'message' is required"}), 400
 
     try:
-        user_id = user_record['uid']
-        print(f"--- Received chat message from user: {user_id} ---")
-        
-        # 1. ユーザーの全セッションサマリーを取得
-        session_summary_text = _get_all_insights_as_text(user_id)
-        if not session_summary_text:
-             # サマリーがない場合は、RAGを使わずに応答する
-            ai_response_text = generate_chat_response("", chat_history, message)
-            return jsonify({"response": ai_response_text, "sources": []})
-
-        # 2. RAGを使用する場合、コンテキストを取得
-        rag_context = ""
-        sources = []
         if use_rag:
-            print(f"--- Generating RAG context (type: {rag_type}) ---")
-            rag_context, sources = _generate_rag_based_advice(
-                query=f"ユーザー分析:\n{session_summary_text}\n\nユーザーの質問:\n{message}",
-                project_id=project_id,
-                similar_cases_engine_id=SIMILAR_CASES_ENGINE_ID,
-                suggestions_engine_id=SUGGESTIONS_ENGINE_ID,
-                rag_type=rag_type
-            )
-            print(f"✅ RAG context generated. Sources: {sources}")
+            # RAGを使用する場合（ボタンが押された場合）
+            print(f"--- Triggering RAG task (type: {rag_type}) for user: {user_id} ---")
+            
+            # 1. フロントエンドで結果を待つためのユニークなIDを生成
+            request_id = str(uuid.uuid4())
+            
+            # 2. バックグラウンドタスクに渡す情報を作成
+            task_payload = {
+                'user_id': user_id,
+                'request_id': request_id,
+                'chat_history': chat_history,
+                'message': message,
+                'rag_type': rag_type,
+            }
+            # 3. Cloud Tasksに処理を依頼
+            _create_cloud_task(task_payload, '/api/tasks/execute_rag')
 
-        # 3. Geminiに最終的な応答を生成させる
-        ai_response_text = generate_chat_response(session_summary_text, chat_history, message, rag_context)
-        
-        return jsonify({"response": ai_response_text, "sources": sources})
+            # 4. RAG処理の完了を待たずに、すぐに中間応答を返す
+            return jsonify({
+                "response": "承知しました。関連情報を探してきますので、少々お待ちください...",
+                "request_id": request_id, # フロントが結果を待つためのID
+                "sources": []
+            })
+        else:
+            # RAGを使用しない通常のチャット
+            print(f"--- Received chat message from user: {user_id} ---")
+            session_summary_text = _get_all_insights_as_text(user_id)
+            if not session_summary_text:
+                ai_response_text = generate_chat_response("", chat_history, message)
+            else:
+                ai_response_text = generate_chat_response(session_summary_text, chat_history, message)
+            return jsonify({"response": ai_response_text, "sources": []})
 
     except Exception as e:
         print(f"❌ Error in post_chat_message: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to process chat message"}), 500
 
+@api_bp.route('/tasks/execute_rag', methods=['POST'])
+def handle_execute_rag():
+    try:
+        data = request.get_json()
+        if not data:
+            return "No data received", 400
+
+        # タスクに必要な情報をペイロードから取得
+        user_id = data.get('user_id')
+        request_id = data.get('request_id')
+        chat_history = data.get('chat_history', [])
+        message = data.get('message')
+        rag_type = data.get('rag_type')
+
+        if not all([user_id, request_id, message, rag_type]):
+            print(f"Task handler missing required data: {data}")
+            return "Missing data", 400
+
+        print(f"--- Executing RAG task (type: {rag_type}) for request: {request_id} ---")
+        
+        # 1. RAG処理を実行して、最終的なAIの応答と情報源を取得
+        session_summary_text = _get_all_insights_as_text(user_id)
+        rag_query = f"ユーザー分析:\n{session_summary_text}\n\nユーザーの質問:\n{message}"
+        
+        ai_response_text, sources = _generate_rag_based_advice(
+            query=rag_query,
+            project_id=project_id,
+            similar_cases_engine_id=SIMILAR_CASES_ENGINE_ID,
+            suggestions_engine_id=SUGGESTIONS_ENGINE_ID,
+            rag_type=rag_type
+        )
+
+        # 2. 結果をFirestoreに保存
+        #    コレクション 'rag_responses' の中に、リクエストIDをドキュメントIDとして保存
+        result_ref = db_firestore.collection('rag_responses').document(request_id)
+        result_ref.set({
+            'user_id': user_id,
+            'response': ai_response_text,
+            'sources': sources,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'status': 'completed'
+        })
+        
+        print(f"✅ Successfully executed RAG task and saved result for request: {request_id}")
+        return "Successfully processed RAG task", 200
+
+    except Exception as e:
+        print(f"❌ Error in /tasks/execute_rag: {e}")
+        traceback.print_exc()
+        # エラーが発生したことをFirestoreに記録
+        if 'request_id' in locals() and request_id:
+             result_ref = db_firestore.collection('rag_responses').document(request_id)
+             result_ref.set({ 'status': 'error', 'error_message': str(e) }, merge=True)
+        return "Error processing task", 200
 
 @api_bp.route('/home/suggestion_v2', methods=['GET'])
 def get_home_suggestion_v2():
