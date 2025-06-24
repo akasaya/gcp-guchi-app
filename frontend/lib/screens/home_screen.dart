@@ -234,7 +234,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    // ★★★ 修正点1: ボタンが長すぎる問題を解決するため、中央寄せに変更 ★★★
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
                       _buildSuggestionSection(),
                       if (!_isLoadingSuggestions &&
@@ -290,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             foregroundColor: Colors.white,
                             disabledBackgroundColor: Colors.grey.shade300,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 50, vertical: 16),
+                                horizontal: 30, vertical: 15), // ★★★ 修正点1: ボタンのパディングを調整 ★★★
                             textStyle: const TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                             shape: RoundedRectangleBorder(
@@ -334,13 +335,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ★★★ 修正点2: 提案が1つ以上あっても、最初の1つだけを表示する ★★★
         if (_aiSuggestions.isNotEmpty) ...[
           _buildSectionHeader('AIからの今日の提案'),
-          ..._aiSuggestions.map((topic) => _buildAiSuggestionCard(topic)),
+          _buildAiSuggestionCard(_aiSuggestions.first),
           if (_proactiveSuggestion != null) const SizedBox(height: 16),
         ],
         if (_proactiveSuggestion != null) ...[
-          _buildSectionHeader('過去の対話の振り返り'),
+          // ★★★ 修正点4: セクション名を変更 ★★★
+          _buildSectionHeader('AIから今日のスワイプの話題提案'),
           _buildProactiveSuggestionCard(_proactiveSuggestion!),
         ],
       ],
@@ -392,22 +395,8 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AnalysisDashboardScreen(
-                proactiveSuggestion: NodeTapResponse(
-                  initialSummary:
-                      '「${suggestion.nodeLabel}」について、思考の深掘りを始めましょう。',
-                  actions: [],
-                  nodeLabel: suggestion.nodeLabel,
-                  nodeId: suggestion.nodeId,
-                ),
-              ),
-            ),
-          );
-        },
+        // ★★★ 修正点3: タップ時の動作を対話開始に変更 ★★★
+        onTap: () => _startSessionWithTopic(suggestion.nodeLabel),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -419,8 +408,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(suggestion.title,
-                        style: const TextStyle(
+                    // ★★★ 修正点4: カードのタイトルを変更 ★★★
+                    const Text('過去の対話を深掘りしてみませんか',
+                        style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text(
