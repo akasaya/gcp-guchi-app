@@ -215,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      // ★★★ レイアウト構造を再修正 ★★★
       body: RefreshIndicator(
         onRefresh: _fetchData,
         child: Padding(
@@ -225,7 +226,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSuggestionSection(),
               // --- 中央の対話セクション ---
               Expanded(
-                child: Center(
+                child: Container(
+                  // ★★★ Alignmentで位置を微調整 ★★★
+                  // Y値を -1.0 (上) ~ 1.0 (下) の間で調整
+                  alignment: const Alignment(0.0, -0.4), 
                   child: SingleChildScrollView(
                     child: _buildDialogueSection(),
                   ),
