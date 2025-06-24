@@ -10,7 +10,7 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
-import 'package:frontend/models/analysis_models.dart';
+// import 'package:frontend/models/analysis_models.dart'; // ★★★ 削除されたファイルなので、この行を削除します ★★★
 import 'package:frontend/models/book_recommendation.dart';
 
 /// Firebaseのネイティブ通信を偽装するクラス
@@ -58,25 +58,31 @@ class FakeApiService implements ApiService {
     return Future.value(null);
   }
 
+  // ★★★ 修正: 正しいモデル(chat_models.dart)を使って、エラーを投げないように実装します ★★★
   @override
   Future<AnalysisSummary> getAnalysisSummary() {
-    throw UnimplementedError();
+    return Future.value(AnalysisSummary(totalSessions: 0, topicCounts: []));
+  }
+  
+  // ★★★ 追加: ApiServiceに追加された新しいメソッドを、テスト用に実装します ★★★
+  @override
+  Future<List<String>> getTopicSuggestions() {
+    return Future.value(['テスト提案1', 'テスト提案2']);
   }
 
   @override
   Future<List<BookRecommendation>> getBookRecommendations() {
-    // テストが成功するように、空のおすすめリストを返すように実装します。
     return Future.value([]);
   }
 
   @override
   Future<GraphData> getAnalysisGraph() {
-    throw UnimplementedError();
+    return Future.value(GraphData(nodes: [], edges: []));
   }
 
   @override
   Future<NodeTapResponse?> getProactiveSuggestion() {
-    throw UnimplementedError();
+    return Future.value(null);
   }
 
   @override
@@ -86,17 +92,24 @@ class FakeApiService implements ApiService {
     bool useRag = false,
     String? ragType,
   }) {
-    throw UnimplementedError();
+    // 実際には使われないので、ダミーの応答を返します
+    return Future.value(ChatResponse(response: 'dummy response'));
   }
 
   @override
   Future<NodeTapResponse> handleNodeTap(String nodeLabel) {
-    throw UnimplementedError();
+    // 実際には使われないので、ダミーの応答を返します
+    return Future.value(NodeTapResponse(
+        initialSummary: 'dummy', actions: [], nodeLabel: nodeLabel));
   }
 
   @override
   Future<Map<String, dynamic>> startSession(String topic) {
-    throw UnimplementedError();
+    // 実際には使われないので、ダミーの応答を返します
+    return Future.value({
+      'session_id': 'dummy-session-id',
+      'questions': [],
+    });
   }
 
   @override
@@ -108,23 +121,21 @@ class FakeApiService implements ApiService {
     required int swipeSpeed,
     required int turn,
   }) {
-    throw UnimplementedError();
+    return Future.value();
   }
 
   @override
-  // ★★★ 修正: 本物のApiServiceに合わせて、不要な `swipes` パラメータを削除 ★★★
   Future<Map<String, dynamic>> postSummary({
     required String sessionId,
   }) {
-    throw UnimplementedError();
+    return Future.value({});
   }
 
   @override
-  // ★★★ 修正: 本物のApiServiceに合わせて、不要な `insights` パラメータを削除 ★★★
   Future<Map<String, dynamic>> continueSession({
     required String sessionId,
   }) {
-    throw UnimplementedError();
+    return Future.value({});
   }
 }
 

@@ -357,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-    Widget _buildAiSuggestionCards(List<String> suggestions) {
+  Widget _buildAiSuggestionCards(List<String> suggestions) {
     if (suggestions.isEmpty) {
       return const SizedBox.shrink(); // 提案がない場合は何も表示しない
     }
@@ -374,6 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
+        // ★★★ ".toList()" を削除して警告を解消しました ★★★
         ...suggestions.map((topic) {
           return Card(
             elevation: 2,
@@ -398,56 +399,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           );
-        }).toList(),
-        const SizedBox(height: 24),
-        const Divider(),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-    Widget _buildAiSuggestionCards(List<String> suggestions) {
-    if (suggestions.isEmpty) {
-      return const SizedBox.shrink(); // 提案がない場合は何も表示しない
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4.0, bottom: 12.0),
-          child: Text(
-            'AIからの今日の提案',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-        ),
-        ...suggestions.map((topic) {
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.only(bottom: 12),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _startSessionWithTopic(topic), // タップでセッション開始
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(Icons.auto_awesome, color: Colors.deepPurple.shade300),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(topic, style: const TextStyle(fontSize: 16)),
-                    ),
-                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }).toList(),
+        }),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 24),
