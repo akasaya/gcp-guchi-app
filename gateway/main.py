@@ -1004,7 +1004,7 @@ def continue_session(session_id):
         traceback.print_exc()
         return jsonify({"error": "Failed to continue session"}), 500
 
-@api_bp.route('/session/topic_suggestion', methods=['GET'])
+@api_bp.route('/session/topic_suggestions', methods=['GET'])
 def get_topic_suggestion():
     """過去の対話履歴に基づいて、新しいセッションのトピックを提案する"""
     user_record = _verify_token(request)
