@@ -6,6 +6,7 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
+import 'package:frontend/screens/analysis_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,7 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ApiService _apiService = ApiService();
   Future<HomeSuggestion?>? _suggestionFuture;
-
 
   final List<String> _topics = [
     '仕事のこと',
@@ -36,19 +36,15 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // ★★★ 修正: initStateでFutureを初期化 ★★★
     _fetchData();
+  }
 
-  // ★★★ 修正: データ取得ロジックを専用メソッドに集約 ★★★
   void _fetchData() {
     setState(() {
       _suggestionFuture = _apiService.getHomeSuggestionV2();
-      // ★ 変更: 使われていないため一旦コメントアウト
-      // _recommendationsFuture = _apiService.getBookRecommendations();
     });
   }
 
-  // 改善点③: ローディング表示の統一
   void _showLoadingDialog(String message) {
     showDialog(
       context: context,
@@ -67,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  message, // ★★★ 修正: 引数のメッセージを表示 ★★★
+                  message,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ],
@@ -78,8 +74,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-
-    // 改善点⑤: 「その他」選択時の処理
   Future<void> _handleTopicSelection(String topic) async {
     if (topic == 'その他') {
       final customTopic = await showDialog<String>(
@@ -110,7 +104,6 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       );
-      // ダイアログで入力があった場合のみ更新
       if (customTopic != null && customTopic.isNotEmpty) {
         setState(() {
           _selectedTopic = topic;
@@ -118,14 +111,12 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } else {
-      // 「その他」以外が選択された場合
       setState(() {
         _selectedTopic = topic;
         _finalTopic = topic;
       });
     }
   }
-
 
   void _startSession() async {
     if (_finalTopic.isEmpty) {
@@ -139,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final sessionData = await _apiService.startSession(_finalTopic);
-
       final questionsRaw = sessionData['questions'] as List;
       final questions = List<Map<String, dynamic>>.from(questionsRaw);
 
@@ -163,7 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     final user = _auth.currentUser;
@@ -179,7 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const AnalysisDashboardScreen()),
+                MaterialPageRoute(
+                    builder: (context) => const AnalysisDashboardScreen()),
               );
             },
           ),
@@ -202,11 +192,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // ★★★ 修正箇所: bodyをFutureBuilderに置き換え ★★★
       body: FutureBuilder<HomeSuggestion?>(
         future: _suggestionFuture,
         builder: (context, snapshot) {
-          // データ取得中
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: SpinKitFadingCube(
@@ -216,7 +204,6 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
-          // エラー発生
           if (snapshot.hasError) {
             return Center(
               child: Padding(
@@ -224,9 +211,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 60),
+                    const Icon(Icons.error_outline,
+                        color: Colors.red, size: 60),
                     const SizedBox(height: 16),
-                    const Text('データの取得に失敗しました', style: TextStyle(fontSize: 18)),
+                    const Text('データの取得に失敗しました',
+                        style: TextStyle(fontSize: 18)),
                     const SizedBox(height: 8),
                     Text(
                       '${snapshot.error}',
@@ -244,7 +233,6 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
-          // データ取得成功
           final suggestion = snapshot.data;
 
           return Center(
@@ -255,18 +243,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
-                    // ★★★ 修正箇所: `suggestion` を使う ★★★
                     if (suggestion != null) ...[
                       _buildSuggestionCard(suggestion),
                       const SizedBox(height: 24),
                       const Divider(),
                       const SizedBox(height: 24),
                     ],
-                    const Icon(Icons.psychology_outlined, size: 60, color: Colors.deepPurple),
+                    const Icon(Icons.psychology_outlined,
+                        size: 60, color: Colors.deepPurple),
                     const SizedBox(height: 16),
                     const Text(
                       'AIとの対話',
-                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -282,7 +271,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       alignment: WrapAlignment.center,
                       children: _topics.map((topic) {
                         return ChoiceChip(
-                          label: Text(topic, style: const TextStyle(fontSize: 15)),
+                          label:
+                              Text(topic, style: const TextStyle(fontSize: 15)),
                           selected: _selectedTopic == topic,
                           onSelected: (selected) {
                             if (selected) {
@@ -296,22 +286,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 40),
                     ElevatedButton.icon(
-                      onPressed: _finalTopic.isNotEmpty ? _startSession : null,
+                      onPressed:
+                          _finalTopic.isNotEmpty ? _startSession : null,
                       icon: const Icon(Icons.play_circle_outline),
-                            label: const Text('対話を開始する'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.deepPurple,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: Colors.grey.shade300,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 50, vertical: 16),
-                              textStyle: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              )
-                            ),
-                          ),
+                      label: const Text('対話を開始する'),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade300,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 50, vertical: 16),
+                          textStyle: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          )),
+                    ),
                   ],
                 ),
               ),
@@ -321,7 +311,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
 
   Widget _buildSuggestionCard(HomeSuggestion suggestion) {
     return Card(
@@ -338,7 +327,8 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute(
               builder: (context) => AnalysisDashboardScreen(
                 proactiveSuggestion: NodeTapResponse(
-                  initialSummary: '「${suggestion.nodeLabel}」について、思考の深掘りを始めましょう。',
+                  initialSummary:
+                      '「${suggestion.nodeLabel}」について、思考の深掘りを始めましょう。',
                   actions: [],
                   nodeLabel: suggestion.nodeLabel,
                   nodeId: suggestion.nodeId,
@@ -351,17 +341,21 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Row(
             children: [
-              Icon(Icons.lightbulb_outline, color: Colors.amber.shade700, size: 40),
+              Icon(Icons.lightbulb_outline,
+                  color: Colors.amber.shade700, size: 40),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(suggestion.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    Text(suggestion.title,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text(
                       suggestion.subtitle,
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                      style:
+                          TextStyle(fontSize: 14, color: Colors.grey.shade700),
                     ),
                   ],
                 ),
