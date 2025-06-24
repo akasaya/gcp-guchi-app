@@ -159,7 +159,7 @@ else:
         re.compile(r"http://localhost:.*"),
         re.compile(r"http://127.0.0.1:.*"),
     ]
-CORS(app, resources={r"/*": {"origins": origins}})
+CORS(api_bp, origins=origins)
 
 
 @api_bp.route('/', methods=['GET'])
