@@ -1,3 +1,4 @@
+import 'package:firebase_app_check/firebase_app_check.dart'; // ★★★ この行の追加が不可欠です ★★★
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,7 +9,10 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; 
+import 'package:flutter/foundation.dart'; // printを避けるために追加
+
+// flutter_dotenv はこのファイルでは不要になりました
+// import 'package:flutter_dotenv/flutter_dotenv.dart'; 
 
 final firebaseAuthProvider =
     Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
@@ -21,18 +25,22 @@ final sharedPreferencesProvider =
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  // await dotenv.load(fileName: ".env"); // --dart-defineを使うため不要に
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
   const siteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
   if (siteKey.isEmpty) {
+    if (kDebugMode) {
+      print('RECAPTCHA_SITE_KEY is not defined. Pass it using --dart-define');
+    }
   }
 
   await FirebaseAppCheck.instance.activate(
     webProvider: ReCaptchaV3Provider(siteKey),
   );
+
   runApp(
     const ProviderScope(
       child: MyApp(),
