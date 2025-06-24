@@ -225,72 +225,77 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildSuggestionSection(),
-              
-              // ★★★ 区切り線は提案がある時だけ表示するように変更 ★★★
-              if (!_isLoadingSuggestions && (_aiSuggestions.isNotEmpty || _proactiveSuggestion != null)) ...[
-                const SizedBox(height: 24),
-                const Divider(),
-                const SizedBox(height: 24),
-              ],
-
-              const Icon(Icons.psychology_outlined,
-                  size: 60, color: Colors.deepPurple),
-              const SizedBox(height: 16),
-              const Text(
-                'AIとの対話',
-                style:
-                    TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
-                style: TextStyle(fontSize: 16, color: Colors.black54),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              Wrap(
-                spacing: 12.0,
-                runSpacing: 12.0,
-                alignment: WrapAlignment.center,
-                children: _topics.map((topic) {
-                  return ChoiceChip(
-                    label: Text(topic, style: const TextStyle(fontSize: 15)),
-                    selected: _selectedTopic == topic,
-                    onSelected: (selected) {
-                      if (selected) {
-                        _handleTopicSelection(topic);
-                      }
-                    },
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 40),
-              ElevatedButton.icon(
-                onPressed: _finalTopic.isNotEmpty ? _startSession : null,
-                icon: const Icon(Icons.play_circle_outline),
-                label: const Text('対話を開始する'),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 50, vertical: 16),
-                    textStyle: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    )),
+        // ★★★ ここから修正 ★★★
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _buildSuggestionSection(),
+                      
+                      if (!_isLoadingSuggestions && (_aiSuggestions.isNotEmpty || _proactiveSuggestion != null)) ...[
+                        const SizedBox(height: 24),
+                        const Divider(),
+                        const SizedBox(height: 24),
+                      ],
+        
+                      const Icon(Icons.psychology_outlined,
+                          size: 60, color: Colors.deepPurple),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'AIとの対話',
+                        style:
+                            TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
+                        style: TextStyle(fontSize: 16, color: Colors.black54),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      Wrap(
+                        spacing: 12.0,
+                        runSpacing: 12.0,
+                        alignment: WrapAlignment.center,
+                        children: _topics.map((topic) {
+                          return ChoiceChip(
+                            label: Text(topic, style: const TextStyle(fontSize: 15)),
+                            selected: _selectedTopic == topic,
+                            onSelected: (selected) {
+                              if (selected) {
+                                _handleTopicSelection(topic);
+                              }
+                            },
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 40),
+                      ElevatedButton.icon(
+                        onPressed: _finalTopic.isNotEmpty ? _startSession : null,
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: const Text('対話を開始する'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepPurple,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 50, vertical: 16),
+                            textStyle: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            )),
               ),
             ],
           ),

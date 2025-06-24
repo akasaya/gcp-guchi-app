@@ -27,8 +27,8 @@ class ApiService {
             : ""; // 本番環境 (Firebase Hosting)
 
     _dio.options.baseUrl = baseUrl;
-    _dio.options.connectTimeout = const Duration(seconds: 15);
-    _dio.options.receiveTimeout = const Duration(seconds: 30); // AIの応答時間を考慮
+    _dio.options.connectTimeout = const Duration(seconds: 60);
+    _dio.options.receiveTimeout = const Duration(seconds: 60); // AIの応答時間を考慮
 
     // --- Interceptorによる認証トークンの自動付与 ---
     _dio.interceptors.add(InterceptorsWrapper(
