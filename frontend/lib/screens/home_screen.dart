@@ -6,6 +6,7 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
+import 'package:frontend/models/book_recommendation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +18,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ApiService _apiService = ApiService();
-  HomeSuggestion? _suggestion;
+  Future<HomeSuggestion?>? _suggestionFuture;
+
 
   final List<String> _topics = [
     '仕事のこと',
@@ -32,24 +34,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   User? get currentUser => _auth.currentUser;
 
-  @override
   void initState() {
     super.initState();
-    _fetchSuggestion();
+    // ★★★ 修正: initStateでFutureを初期化 ★★★
+    _fetchData();
   }
 
-  Future<void> _fetchSuggestion() async {
-    // ★★★ 呼び出すメソッドを getHomeSuggestionV2 に変更 ★★★
-    final suggestion = await _apiService.getHomeSuggestionV2();
-    if (mounted) {
-      setState(() {
-        _suggestion = suggestion;
-      });
-    }
+  // ★★★ 修正: データ取得ロジックを専用メソッドに集約 ★★★
+  void _fetchData() {
+    setState(() {
+      _suggestionFuture = _apiService.getHomeSuggestionV2();
+      // ★ 変更: 使われていないため一旦コメントアウト
+      // _recommendationsFuture = _apiService.getBookRecommendations();
+    });
   }
 
   // 改善点③: ローディング表示の統一
-  void _showLoadingDialog() {
+  void _showLoadingDialog(String message) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -61,14 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SpinKitFadingCube( // <- constを削除
+                const SpinKitFadingCube(
                   color: Colors.white,
                   size: 50.0,
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'AIが質問を考えています...',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
+                Text(
+                  message, // ★★★ 修正: 引数のメッセージを表示 ★★★
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ],
             ),
@@ -127,18 +128,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 
-void _startSession() async {
-  if (_selectedTopic == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('トピックを選択してください')),
-    );
-    return;
-  }
-  
-   _showLoadingDialog(); // 変更
+  void _startSession() async {
+    if (_finalTopic.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('トピックを選択するか、提案をタップしてください')),
+      );
+      return;
+    }
 
- try {
-      final sessionData = await _apiService.startSession(_finalTopic); // 変更
+    _showLoadingDialog('AIが質問を考えています...');
+
+    try {
+      final sessionData = await _apiService.startSession(_finalTopic);
 
       final questionsRaw = sessionData['questions'] as List;
       final questions = List<Map<String, dynamic>>.from(questionsRaw);
@@ -150,7 +151,7 @@ void _startSession() async {
           builder: (context) => SwipeScreen(
             sessionId: sessionData['session_id'],
             questions: questions,
-            turn: 1, // 追加
+            turn: 1,
           ),
         ),
       );
@@ -163,6 +164,7 @@ void _startSession() async {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     final user = _auth.currentUser;
@@ -172,9 +174,8 @@ void _startSession() async {
             ? '${user.displayName}さん、こんにちは'
             : 'ホーム'),
         actions: [
-          // --- ↓↓↓ ここからが追加箇所です ↓↓↓ ---
           IconButton(
-            icon: const Icon(Icons.insights_rounded), // 新しいアイコン
+            icon: const Icon(Icons.insights_rounded),
             tooltip: '統合分析ダッシュボード',
             onPressed: () {
               Navigator.push(
@@ -202,78 +203,126 @@ void _startSession() async {
           ),
         ],
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                // ★★★ 変更点: 提案カードを表示するロジック ★★★
-                if (_suggestion != null) ...[
-                  _buildSuggestionCard(_suggestion!),
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 24),
-                ],
-                const Icon(Icons.psychology_outlined, size: 60, color: Colors.deepPurple),
-                const SizedBox(height: 16),
-                const Text(
-                  'AIとの対話',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
+      // ★★★ 修正箇所: bodyをFutureBuilderに置き換え ★★★
+      body: FutureBuilder<HomeSuggestion?>(
+        future: _suggestionFuture,
+        builder: (context, snapshot) {
+          // データ取得中
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: SpinKitFadingCube(
+                color: Colors.deepPurple,
+                size: 50.0,
+              ),
+            );
+          }
+
+          // エラー発生
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 60),
+                    const SizedBox(height: 16),
+                    const Text('データの取得に失敗しました', style: TextStyle(fontSize: 18)),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      style: TextStyle(color: Colors.grey.shade600),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _fetchData,
+                      child: const Text('再試行'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
-                  style: TextStyle(fontSize: 16, color: Colors.black54),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 32),
-                Wrap(
-                  spacing: 12.0,
-                  runSpacing: 12.0,
-                  alignment: WrapAlignment.center,
-                  children: _topics.map((topic) {
-                    return ChoiceChip(
-                      label: Text(topic, style: const TextStyle(fontSize: 15)),
-                      selected: _selectedTopic == topic,
-                      onSelected: (selected) {
-                        if (selected) {
-                          _handleTopicSelection(topic); // 変更
-                        }
-                      },
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 40),
-                // _isLoading の三項演算子を削除
-                ElevatedButton.icon(
-                  onPressed: _startSession,
-                  icon: const Icon(Icons.play_circle_outline),
-                        label: const Text('対話を開始する'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
-                          foregroundColor: Colors.white,
+              ),
+            );
+          }
+
+          // データ取得成功
+          final suggestion = snapshot.data;
+
+          return Center(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    // ★★★ 修正箇所: `suggestion` を使う ★★★
+                    if (suggestion != null) ...[
+                      _buildSuggestionCard(suggestion),
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 24),
+                    ],
+                    const Icon(Icons.psychology_outlined, size: 60, color: Colors.deepPurple),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'AIとの対話',
+                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
+                      style: TextStyle(fontSize: 16, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    Wrap(
+                      spacing: 12.0,
+                      runSpacing: 12.0,
+                      alignment: WrapAlignment.center,
+                      children: _topics.map((topic) {
+                        return ChoiceChip(
+                          label: Text(topic, style: const TextStyle(fontSize: 15)),
+                          selected: _selectedTopic == topic,
+                          onSelected: (selected) {
+                            if (selected) {
+                              _handleTopicSelection(topic);
+                            }
+                          },
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 50, vertical: 16),
-                          textStyle: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          )
-                        ),
-                      ),
-              ],
+                              horizontal: 16, vertical: 12),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 40),
+                    ElevatedButton.icon(
+                      onPressed: _finalTopic.isNotEmpty ? _startSession : null,
+                      icon: const Icon(Icons.play_circle_outline),
+                            label: const Text('対話を開始する'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.deepPurple,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.shade300,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 50, vertical: 16),
+                              textStyle: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              )
+                            ),
+                          ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
+
 
   Widget _buildSuggestionCard(HomeSuggestion suggestion) {
     return Card(
