@@ -19,7 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final ApiService _apiService = ApiService();
 
   bool _isLoadingSuggestions = true;
-  List<String> _aiSuggestions = [];
   HomeSuggestion? _proactiveSuggestion;
   String? _fetchError;
 
@@ -43,23 +42,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchData() async {
-    if (mounted && !_isLoadingSuggestions) {
-      setState(() {
-        _isLoadingSuggestions = true;
-        _fetchError = null;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _isLoadingSuggestions = true;
+      _fetchError = null;
+    });
 
     try {
-      final results = await Future.wait([
-        _apiService.getHomeSuggestionV2(),
-        _apiService.getTopicSuggestions(),
-      ]);
-
+      // 提案を1種類に絞り、API呼び出しを簡潔化
+      final suggestion = await _apiService.getHomeSuggestionV2();
       if (mounted) {
         setState(() {
-          _proactiveSuggestion = results[0] as HomeSuggestion?;
-          _aiSuggestions = results[1] as List<String>;
+          _proactiveSuggestion = suggestion;
           _isLoadingSuggestions = false;
         });
       }
@@ -234,17 +228,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    // ★★★ 修正点1: ボタンが長すぎる問題を解決するため、中央寄せに変更 ★★★
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
                       _buildSuggestionSection(),
-                      if (!_isLoadingSuggestions &&
-                          (_aiSuggestions.isNotEmpty ||
-                              _proactiveSuggestion != null)) ...[
+                      
+                      // 提案がある場合のみ区切り線を表示するよう修正
+                      if (!_isLoadingSuggestions && _proactiveSuggestion != null) ...[
                         const SizedBox(height: 24),
                         const Divider(),
                         const SizedBox(height: 24),
+                      ] else ... [
+                        // 提案がない場合もスペースを確保し、レイアウトが大きく崩れるのを防ぐ
+                        const SizedBox(height: 48),
                       ],
+
                       const Icon(Icons.psychology_outlined,
                           size: 60, color: Colors.deepPurple),
                       const SizedBox(height: 16),
@@ -267,8 +264,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         alignment: WrapAlignment.center,
                         children: _topics.map((topic) {
                           return ChoiceChip(
-                            label:
-                                Text(topic, style: const TextStyle(fontSize: 15)),
+                            label: Text(topic,
+                                style: const TextStyle(fontSize: 15)),
                             selected: _selectedTopic == topic,
                             onSelected: (selected) {
                               if (selected) {
@@ -291,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             foregroundColor: Colors.white,
                             disabledBackgroundColor: Colors.grey.shade300,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 30, vertical: 15), // ★★★ 修正点1: ボタンのパディングを調整 ★★★
+                                horizontal: 30, vertical: 15),
                             textStyle: const TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                             shape: RoundedRectangleBorder(
@@ -309,50 +306,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // 提案セクションのUIを全面的に改善
   Widget _buildSuggestionSection() {
-    if (_isLoadingSuggestions) {
-      return const SizedBox.shrink();
-    }
-    if (_fetchError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16.0),
-          child: Column(
-            children: [
-              const Icon(Icons.cloud_off, color: Colors.grey, size: 40),
-              const SizedBox(height: 8),
-              Text(_fetchError!, style: TextStyle(color: Colors.grey.shade700)),
-              const SizedBox(height: 8),
-              TextButton(onPressed: _fetchData, child: const Text('再試行')),
-            ],
-          ),
-        ),
-      );
-    }
-    if (_aiSuggestions.isEmpty && _proactiveSuggestion == null) {
-      return const SizedBox.shrink();
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ★★★ 修正点2: 提案が1つ以上あっても、最初の1つだけを表示する ★★★
-        if (_aiSuggestions.isNotEmpty) ...[
-          _buildSectionHeader('AIからの今日の提案'),
-          _buildAiSuggestionCard(_aiSuggestions.first),
-          if (_proactiveSuggestion != null) const SizedBox(height: 16),
-        ],
-        if (_proactiveSuggestion != null) ...[
-          // ★★★ 修正点4: セクション名を変更 ★★★
-          _buildSectionHeader('AIから今日のスワイプの話題提案'),
-          _buildProactiveSuggestionCard(_proactiveSuggestion!),
-        ],
+        // ヘッダーは常に表示
+        _buildSectionHeader('AIから今日のスワイプの話題提案'),
+        const SizedBox(height: 12),
+        // ローディング、エラー、コンテンツ、データ無しの状態に応じて表示を切り替え
+        if (_isLoadingSuggestions)
+          const Center(child: CircularProgressIndicator())
+        else if (_fetchError != null)
+          Center(
+            child: Column(
+              children: [
+                const Icon(Icons.cloud_off, color: Colors.grey, size: 40),
+                const SizedBox(height: 8),
+                Text(_fetchError!,
+                    style: TextStyle(color: Colors.grey.shade700)),
+                const SizedBox(height: 8),
+                TextButton(onPressed: _fetchData, child: const Text('再試行')),
+              ],
+            ),
+          )
+        else if (_proactiveSuggestion != null)
+          _buildProactiveSuggestionCard(_proactiveSuggestion!)
+        else
+          // 提案がない場合の表示
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+              child: Text(
+                '今日はAIからの特別な提案はありませんでした。\n下のボタンから対話を開始できます。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ),
+          )
       ],
     );
   }
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4.0, bottom: 12.0, top: 8.0),
+      padding: const EdgeInsets.only(left: 4.0, bottom: 8.0),
       child: Text(
         title,
         style: Theme.of(context)
@@ -363,30 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAiSuggestionCard(String topic) {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _startSessionWithTopic(topic),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.deepPurple.shade300),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(topic, style: const TextStyle(fontSize: 16)),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade400),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // 不要になった _buildAiSuggestionCard は削除
 
   Widget _buildProactiveSuggestionCard(HomeSuggestion suggestion) {
     return Card(
@@ -395,7 +370,6 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        // ★★★ 修正点3: タップ時の動作を対話開始に変更 ★★★
         onTap: () => _startSessionWithTopic(suggestion.nodeLabel),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -408,7 +382,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ★★★ 修正点4: カードのタイトルを変更 ★★★
                     const Text('過去の対話を深掘りしてみませんか',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
