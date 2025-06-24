@@ -74,7 +74,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ... _showLoadingDialog, _handleTopicSelection, _startSession, _startSessionWithTopic は変更なし ...
   void _showLoadingDialog(String message) {
     showDialog(
       context: context,
@@ -225,7 +224,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchData,
-        // ★★★ ここから修正 ★★★
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
@@ -239,20 +237,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       _buildSuggestionSection(),
-                      
-                      if (!_isLoadingSuggestions && (_aiSuggestions.isNotEmpty || _proactiveSuggestion != null)) ...[
+                      if (!_isLoadingSuggestions &&
+                          (_aiSuggestions.isNotEmpty ||
+                              _proactiveSuggestion != null)) ...[
                         const SizedBox(height: 24),
                         const Divider(),
                         const SizedBox(height: 24),
                       ],
-        
                       const Icon(Icons.psychology_outlined,
                           size: 60, color: Colors.deepPurple),
                       const SizedBox(height: 16),
                       const Text(
                         'AIとの対話',
-                        style:
-                            TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 28, fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
@@ -268,7 +266,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         alignment: WrapAlignment.center,
                         children: _topics.map((topic) {
                           return ChoiceChip(
-                            label: Text(topic, style: const TextStyle(fontSize: 15)),
+                            label:
+                                Text(topic, style: const TextStyle(fontSize: 15)),
                             selected: _selectedTopic == topic,
                             onSelected: (selected) {
                               if (selected) {
@@ -282,7 +281,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 40),
                       ElevatedButton.icon(
-                        onPressed: _finalTopic.isNotEmpty ? _startSession : null,
+                        onPressed:
+                            _finalTopic.isNotEmpty ? _startSession : null,
                         icon: const Icon(Icons.play_circle_outline),
                         label: const Text('対話を開始する'),
                         style: ElevatedButton.styleFrom(
@@ -296,20 +296,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             )),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
   Widget _buildSuggestionSection() {
-    // ★★★ ローディング中は何も表示しないように変更 ★★★
     if (_isLoadingSuggestions) {
-      return const SizedBox.shrink(); 
+      return const SizedBox.shrink();
     }
-
     if (_fetchError != null) {
       return Center(
         child: Padding(
@@ -326,13 +328,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-
-    // データ取得成功後、提案がなければ何も表示しない
     if (_aiSuggestions.isEmpty && _proactiveSuggestion == null) {
-        return const SizedBox.shrink(); 
+      return const SizedBox.shrink();
     }
-
-    // 提案がある場合のみ、ヘッダーとカードを表示
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -361,8 +359,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // ★★★ shimmerのウィジェットは完全に削除 ★★★
 
   Widget _buildAiSuggestionCard(String topic) {
     return Card(
