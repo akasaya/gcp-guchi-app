@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/graph_data.dart';
@@ -38,11 +39,7 @@ class ApiService {
           try {
             final token = await user.getIdToken(true); // トークンを強制リフレッシュ
             options.headers['Authorization'] = 'Bearer $token';
-                if (!kIsWeb && kDebugMode) {
-               // ローカルテスト（エミュレータなど）でApp Checkをバイパスする場合
-               // デバッグプロバイダを使用しているならこの分岐は不要かもしれないが、
-               // 念の為ローカルでの実行時エラーを避けるために入れておく
-            } else {
+            if (kIsWeb || kReleaseMode) {
               final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
               if (appCheckToken != null) {
                 options.headers['X-Firebase-AppCheck'] = appCheckToken;
