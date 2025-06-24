@@ -23,6 +23,8 @@ env:
 jobs:
   gateway-test:
     runs-on: ubuntu-latest
+    env:
+      PROD_ORIGIN_URL: http://test.local
     defaults:
       run:
         working-directory: ./gateway
