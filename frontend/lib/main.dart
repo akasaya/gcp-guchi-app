@@ -25,6 +25,16 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  const siteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
+  if (siteKey.isEmpty) {
+    print('RECAPTCHA_SITE_KEY is not defined. Please pass it with --dart-define.');
+  }
+
+  await FirebaseAppCheck.instance.activate(
+    // ★★★ .envから読み込んだキーを使うように変更 ★★★
+    webProvider: ReCaptchaV3Provider(siteKey ?? ''),
+  );
   runApp(
     const ProviderScope(
       child: MyApp(),
