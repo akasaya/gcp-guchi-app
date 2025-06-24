@@ -127,8 +127,30 @@ app = Flask(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
+@api_bp.before_request
+def verify_app_check():
+    # Cloud Tasksからの内部呼び出し（/api/tasks/..）はApp Checkの検証から除外する。
+    # また、ローカル開発環境（K_SERVICE環境変数がない）でもチェックをスキップする。
+    if 'K_SERVICE' in os.environ and not request.path.startswith('/api/tasks/'):
+        app_check_token = request.headers.get('X-Firebase-AppCheck')
+
+        if app_check_token is None:
+            # トークンがない場合は401エラーを返す
+            print("App Check: Token is missing.")
+            abort(401, description="App Check token is missing.")
+
+        try:
+            # トークンを検証。無効な場合は例外が発生する。
+            app_check.verify_token(app_check_token)
+            print("✅ App Check: Token verified.")
+        except Exception as e:
+            # 検証に失敗した場合は401エラーを返す
+            print(f"❌ App Check: Token verification failed: {e}")
+            abort(401, description="Invalid App Check token.")
+
 # --- CORS設定 ---
-prod_origin = "https://guchi-app-flutter.web.app"
+prod_origin = os.getenv('PROD_ORIGIN_URL')
+
 if 'K_SERVICE' in os.environ:
     origins = [prod_origin]
 else:
