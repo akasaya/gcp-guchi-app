@@ -66,6 +66,24 @@ class ApiService {
     }
   }
 
+    Future<List<String>> getTopicSuggestions() async {
+    try {
+      final response = await _dio.get('/api/session/topic_suggestions');
+      if (response.statusCode == 200 && response.data != null) {
+        // バックエンドから返される {"suggestions": ["提案1", "提案2", ...]} を処理
+        final List<dynamic> suggestions = response.data['suggestions'];
+        // 文字列のリストに変換して返す
+        return suggestions.map((s) => s.toString()).toList();
+      }
+      return [];
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? 'トピック提案の取得に失敗しました。';
+      throw Exception(errorMessage);
+    } catch (e) {
+      throw Exception('予期せぬエラーが発生しました: $e');
+    }
+  }
+
   Future<HomeSuggestion?> getHomeSuggestion() async {
     try {
       final response = await _dio.get('/api/home/suggestion');

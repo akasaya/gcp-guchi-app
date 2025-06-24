@@ -7,6 +7,16 @@ import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
 
+class _HomeScreenData {
+  final HomeSuggestion? suggestionV2;
+  final List<String> topicSuggestions;
+
+  _HomeScreenData({
+    this.suggestionV2,
+    required this.topicSuggestions,
+  });
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,7 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ApiService _apiService = ApiService();
-  Future<HomeSuggestion?>? _suggestionFuture;
+  Future<_HomeScreenData>? _homeScreenDataFuture;
 
   final List<String> _topics = [
     '仕事のこと',
@@ -40,8 +50,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _fetchData() {
     setState(() {
-      _suggestionFuture = _apiService.getHomeSuggestionV2();
+      _homeScreenDataFuture = _loadHomeScreenData();
     });
+  }
+
+    Future<_HomeScreenData> _loadHomeScreenData() async {
+    try {
+      // 2つのAPI呼び出しを同時に開始し、両方の完了を待つ
+      final results = await Future.wait([
+        _apiService.getHomeSuggestionV2(),
+        _apiService.getTopicSuggestions(),
+      ]);
+
+      // 結果を正しい型に変換
+      final suggestionV2 = results[0] as HomeSuggestion?;
+      final topicSuggestions = results[1] as List<String>;
+
+      // 1つのオブジェクトにまとめて返す
+      return _HomeScreenData(
+        suggestionV2: suggestionV2,
+        topicSuggestions: topicSuggestions,
+      );
+    } catch (e) {
+      debugPrint("ホーム画面のデータ取得に失敗: $e");
+      // エラーが発生した場合は、FutureBuilderにそれを伝える
+      rethrow;
+    }
   }
 
   void _showLoadingDialog(String message) {
@@ -117,10 +151,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _startSession() async {
-    if (_finalTopic.isEmpty) {
+  void _startSession() {
+    // 状態変数 _finalTopic を使ってセッションを開始する（既存のボタン用）
+    _startSessionWithTopic(_finalTopic);
+  }
+
+  void _startSessionWithTopic(String topic) async {
+    if (topic.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('トピックを選択するか、提案をタップしてください')),
+        const SnackBar(content: Text('トピックが空です')),
       );
       return;
     }
@@ -128,7 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _showLoadingDialog('AIが質問を考えています...');
 
     try {
-      final sessionData = await _apiService.startSession(_finalTopic);
+      // 引数で受け取ったトピックでセッションを開始
+      final sessionData = await _apiService.startSession(topic);
       final questionsRaw = sessionData['questions'] as List;
       final questions = List<Map<String, dynamic>>.from(questionsRaw);
 
@@ -151,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -191,8 +232,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<HomeSuggestion?>(
-        future: _suggestionFuture,
+      body: FutureBuilder<_HomeScreenData>(
+        future: _homeScreenDataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -232,7 +273,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
-          final suggestion = snapshot.data;
+          final homeData = snapshot.data;
+          final suggestionV2 = homeData?.suggestionV2;
+          final topicSuggestions = homeData?.topicSuggestions ?? [];
 
           return Center(
             child: SingleChildScrollView(
@@ -242,8 +285,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
-                    if (suggestion != null) ...[
-                      _buildSuggestionCard(suggestion),
+                    // ★★★ ここからが新しいUI ★★★
+                    _buildAiSuggestionCards(topicSuggestions),
+
+                    if (suggestionV2 != null) ...[
+                      _buildSuggestionCard(suggestionV2),
                       const SizedBox(height: 24),
                       const Divider(),
                       const SizedBox(height: 24),
@@ -308,6 +354,104 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
+    );
+  }
+
+    Widget _buildAiSuggestionCards(List<String> suggestions) {
+    if (suggestions.isEmpty) {
+      return const SizedBox.shrink(); // 提案がない場合は何も表示しない
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4.0, bottom: 12.0),
+          child: Text(
+            'AIからの今日の提案',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        ...suggestions.map((topic) {
+          return Card(
+            elevation: 2,
+            margin: const EdgeInsets.only(bottom: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _startSessionWithTopic(topic), // タップでセッション開始
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.deepPurple.shade300),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(topic, style: const TextStyle(fontSize: 16)),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+    Widget _buildAiSuggestionCards(List<String> suggestions) {
+    if (suggestions.isEmpty) {
+      return const SizedBox.shrink(); // 提案がない場合は何も表示しない
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4.0, bottom: 12.0),
+          child: Text(
+            'AIからの今日の提案',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        ...suggestions.map((topic) {
+          return Card(
+            elevation: 2,
+            margin: const EdgeInsets.only(bottom: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _startSessionWithTopic(topic), // タップでセッション開始
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.deepPurple.shade300),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(topic, style: const TextStyle(fontSize: 16)),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 24),
+      ],
     );
   }
 

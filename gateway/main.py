@@ -161,14 +161,8 @@ TOPIC_SUGGESTION_SCHEMA = {
     "properties": {
         "suggestions": {
             "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string", "description": "対話のテーマ（例：新しいプロジェクトの進め方）"},
-                    "proposal_text": {"type": "string", "description": "ユーザーへの問いかけ文"}
-                },
-                "required": ["topic", "proposal_text"]
-            }
+            "description": "ユーザーへの提案となる、具体的で魅力的な対話テーマのリスト（3つ）",
+            "items": {"type": "string"}
         }
     },
     "required": ["suggestions"]
@@ -363,9 +357,9 @@ def generate_topic_suggestions(insights_text: str):
 {insights_text}
 
 # 指示
-- 提案は、ユーザーが内省を深められるような、具体的で示唆に富んだ問いかけにしてください。
-- ユーザーがまだ直接的には話していないものの、サマリーから推測される関連テーマを提案すると、より良い提案になります。
-- 必ず、指定されたJSON形式（TOPIC_SUGGESTION_SCHEMA）で出力してください。
+- 提案は、ユーザーが「これについて話してみたい！」と思えるような、具体的で魅力的な短い問いかけの形式にしてください。
+- 提案は3つ生成してください。
+- 必ず、指定されたJSON形式で出力してください。
 """
     pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
     result = _call_gemini_with_schema(prompt, TOPIC_SUGGESTION_SCHEMA, model_name=pro_model)
@@ -1036,7 +1030,6 @@ def get_topic_suggestion():
         traceback.print_exc()
         return jsonify({"error": "Failed to get topic suggestions"}), 500
 
-
 @api_bp.route('/analysis/summary', methods=['GET'])
 def get_analysis_summary():
     """ユーザーの対話履歴の統計情報を返す"""
@@ -1046,32 +1039,37 @@ def get_analysis_summary():
     user_id = user_record['uid']
 
     try:
+        # 'completed'ステータスのセッションのみを取得
         sessions_ref = db_firestore.collection('users').document(user_id).collection('sessions').where('status', '==', 'completed').stream()
         
-        topics = []
-        for session in sessions_ref:
-            session_data = session.to_dict()
-            topic = session_data.get('topic')
-            if topic:
-                topics.append(topic)
+        # セッションデータからトピックをリストに抽出
+        topics = [
+            session.to_dict().get('topic')
+            for session in sessions_ref
+            if session.to_dict().get('topic')
+        ]
 
         if not topics:
             return jsonify({
                 "total_sessions": 0,
-                "top_topics": [],
-                "most_frequent_topic": None
+                "topic_counts": [], # ★ 変更: top_topicsから変更
             }), 200
 
+        # トピックごとの回数を集計
         topic_counts = Counter(topics)
         total_sessions = len(topics)
-        # most_common() は (要素, カウント) のタプルのリストを返す
-        top_topics = [{"topic": item, "count": count} for item, count in topic_counts.most_common(3)]
-        most_frequent_topic = top_topics[0]['topic'] if top_topics else None
 
+        # ★ 変更: フロントエンドで使いやすいように、全トピックのリストを作成
+        # [{"topic": "トピック名", "count": 回数}, ...] の形式
+        topic_counts_list = [
+            {"topic": item, "count": count}
+            for item, count in topic_counts.items()
+        ]
+
+        # ★ 変更: レスポンスのキーを `topic_counts` に統一
         response_data = {
             "total_sessions": total_sessions,
-            "top_topics": top_topics,
-            "most_frequent_topic": most_frequent_topic
+            "topic_counts": topic_counts_list,
         }
         
         print(f"✅ Generated analysis summary for user {user_id}.")

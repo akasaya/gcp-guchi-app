@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:frontend/models/analysis_models.dart';
 import 'package:frontend/models/book_recommendation.dart';
 import 'package:frontend/models/graph_data.dart' as model;
 import 'package:frontend/services/api_service.dart';
@@ -12,6 +11,7 @@ import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart'; 
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
   final NodeTapResponse? proactiveSuggestion;
@@ -671,7 +671,7 @@ class _AnalysisDashboardScreenState
     );
   }
 
-  Widget _buildSummaryView() {
+    Widget _buildSummaryView() {
     return FutureBuilder<AnalysisSummary>(
       future: _summaryFuture,
       builder: (context, snapshot) {
@@ -693,12 +693,18 @@ class _AnalysisDashboardScreenState
         }
 
         final summary = snapshot.data!;
+        // APIから取得した全トピックリストを回数でソート
+        final allTopics = summary.topicCounts
+          ..sort((a, b) => b.count.compareTo(a.count));
+        // 上位3つを抽出
+        final topTopics = allTopics.take(3).toList();
 
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {
               _summaryFuture = ref.read(apiServiceProvider).getAnalysisSummary();
-              _bookRecommendationsFuture = ref.read(apiServiceProvider).getBookRecommendations();
+              _bookRecommendationsFuture =
+                  ref.read(apiServiceProvider).getBookRecommendations();
             });
           },
           child: SingleChildScrollView(
@@ -715,12 +721,32 @@ class _AnalysisDashboardScreenState
                     Colors.blue,
                   ),
                   const SizedBox(height: 24),
+
+                  // --- 棒グラフ表示エリア ---
+                  Text(
+                    'テーマ別対話回数',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 250,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        // ★★★ 新しいグラフウィジェットを呼び出し ★★★
+                        child: _buildTopicChart(allTopics),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // --- ここまで ---
+
                   Text(
                     'よく考えているテーマ Top 3',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 10),
-                  if (summary.topTopics.isEmpty)
+                  if (topTopics.isEmpty)
                     const Card(
                       child: ListTile(
                         title: Text('記録がありません'),
@@ -729,8 +755,7 @@ class _AnalysisDashboardScreenState
                   else
                     Card(
                       child: Column(
-                        children:
-                            summary.topTopics.asMap().entries.map((entry) {
+                        children: topTopics.asMap().entries.map((entry) {
                           int idx = entry.key;
                           TopicCount topic = entry.value;
                           return ListTile(
@@ -756,6 +781,113 @@ class _AnalysisDashboardScreenState
           ),
         );
       },
+    );
+  }
+
+  // ★★★ 追加: 棒グラフを構築する新しいヘルパーウィジェット ★★★
+  Widget _buildTopicChart(List<TopicCount> counts) {
+    if (counts.isEmpty) return const Center(child: Text("データがありません"));
+
+    final barGroups = counts.asMap().entries.map((entry) {
+      final index = entry.key;
+      final data = entry.value;
+      return BarChartGroupData(
+        x: index,
+        barRods: [
+          BarChartRodData(
+            toY: data.count.toDouble(),
+            color: Colors.primaries[index % Colors.primaries.length],
+            width: 16,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(4),
+              topRight: Radius.circular(4),
+            ),
+          ),
+        ],
+      );
+    }).toList();
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        barGroups: barGroups,
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              getTitlesWidget: (value, meta) {
+                if (value == 0) return const SizedBox.shrink();
+                // Y軸のラベルは整数のみ表示
+                if (value % 1 != 0) return const SizedBox.shrink();
+                return Text(
+                  value.toInt().toString(),
+                  style: const TextStyle(fontSize: 10),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 80, // ラベルの回転スペースを確保
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index >= counts.length) return const SizedBox.shrink();
+                final topic = counts[index].topic;
+                // ラベルが長い場合に備えて回転させる
+                return SideTitleWidget(
+                  axisSide: meta.axisSide,
+                  angle: -0.7, // 45度回転
+                  child: Text(
+                    topic,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: 1,
+          getDrawingHorizontalLine: (value) {
+            return const FlLine(
+              color: Colors.grey,
+              strokeWidth: 0.4,
+              dashArray: [5, 5],
+            );
+          },
+        ),
+        borderData: FlBorderData(
+          show: false,
+        ),
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final topic = counts[group.x.toInt()];
+              return BarTooltipItem(
+                '${topic.topic}\n',
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                children: <TextSpan>[
+                  TextSpan(
+                    text: '${topic.count} 回',
+                    style: const TextStyle(
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 

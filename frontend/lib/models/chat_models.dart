@@ -50,6 +50,43 @@ class NodeTapResponse {
   }
 }
 
+class TopicCount {
+  final String topic;
+  final int count;
+
+  TopicCount({required this.topic, required this.count});
+
+  factory TopicCount.fromJson(Map<String, dynamic> json) {
+    return TopicCount(
+      topic: json['topic'] as String? ?? '不明なトピック',
+      count: json['count'] as int? ?? 0,
+    );
+  }
+}
+
+class AnalysisSummary {
+  final int totalSessions;
+  final List<TopicCount> topicCounts;
+
+  AnalysisSummary({
+    required this.totalSessions,
+    required this.topicCounts,
+  });
+
+  factory AnalysisSummary.fromJson(Map<String, dynamic> json) {
+    final countsFromJson = json['topic_counts'] as List<dynamic>?;
+    final List<TopicCount> topicCountsList = countsFromJson
+            ?.map((i) => TopicCount.fromJson(i as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    return AnalysisSummary(
+      totalSessions: json['total_sessions'] as int? ?? 0,
+      topicCounts: topicCountsList,
+    );
+  }
+}
+
 // チャット内のアクションボタンを表現するクラス
 class ChatAction {
   final String id;
