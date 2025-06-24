@@ -21,6 +21,8 @@ jobs:
     
     env:
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      # ★★★ 1. envセクションにRECAPTCHA_SITE_KEYを追加 ★★★
+      RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
 
     steps:
       - name: Checkout repository
@@ -29,7 +31,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'master'
+          # Flutterのバージョンを安定版に固定することを推奨します
+          channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
@@ -38,7 +41,8 @@ jobs:
         run: flutter analyze
 
       - name: Build for Web
-        run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}"
+        # ★★★ 2. buildコマンドにRECAPTCHA_SITE_KEYの--dart-defineを追加 ★★★
+        run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}" --dart-define=RECAPTCHA_SITE_KEY="${{ env.RECAPTCHA_SITE_KEY }}"
 
       - name: Archive web build
         uses: actions/upload-artifact@v4
