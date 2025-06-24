@@ -6,7 +6,6 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
-import 'package:frontend/models/book_recommendation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
