@@ -38,6 +38,16 @@ class ApiService {
           try {
             final token = await user.getIdToken(true); // トークンを強制リフレッシュ
             options.headers['Authorization'] = 'Bearer $token';
+                if (!kIsWeb && kDebugMode) {
+               // ローカルテスト（エミュレータなど）でApp Checkをバイパスする場合
+               // デバッグプロバイダを使用しているならこの分岐は不要かもしれないが、
+               // 念の為ローカルでの実行時エラーを避けるために入れておく
+            } else {
+              final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
+              if (appCheckToken != null) {
+                options.headers['X-Firebase-AppCheck'] = appCheckToken;
+              }
+            }
           } catch (e) {
             return handler.reject(DioException(requestOptions: options, error: e));
           }
