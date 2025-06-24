@@ -807,6 +807,10 @@ class _AnalysisDashboardScreenState
       );
     }).toList();
 
+    // ラベルが重ならないように表示間隔を動的に計算
+    const double maxLabels = 10.0; 
+    final double interval = (counts.length / maxLabels).ceilToDouble();
+
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
@@ -832,17 +836,22 @@ class _AnalysisDashboardScreenState
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 80, // ラベルの回転スペースを確保
+              reservedSize: 30, // 水平表示のため、高さを調整
+              interval: interval, // 計算した間隔を適用
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index >= counts.length) return const SizedBox.shrink();
                 final topic = counts[index].topic;
-                // ラベルが長い場合に備えて回転させる
+                
+                // ラベルが長い場合は省略
+                final displayText = topic.length > 8 ? '${topic.substring(0, 6)}...' : topic;
+
                 return SideTitleWidget(
                   axisSide: meta.axisSide,
-                  angle: -0.7, // 45度回転
+                  space: 4.0,
+                  // 角度指定を削除して水平にする
                   child: Text(
-                    topic,
+                    displayText,
                     style: const TextStyle(fontSize: 10),
                   ),
                 );
@@ -890,6 +899,7 @@ class _AnalysisDashboardScreenState
       ),
     );
   }
+
 
   Widget _buildBookRecommendations() {
     return FutureBuilder<List<BookRecommendation>>(

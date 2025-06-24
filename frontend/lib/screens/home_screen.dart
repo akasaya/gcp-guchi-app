@@ -5,7 +5,7 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:frontend/screens/analysis_dashboard_screen.dart';
+import 'package.googleapis.com/package/frontend/screens/analysis_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,7 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // 提案を1種類に絞り、API呼び出しを簡潔化
       final suggestion = await _apiService.getHomeSuggestionV2();
       if (mounted) {
         setState(() {
@@ -218,103 +217,101 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchData,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      _buildSuggestionSection(),
-                      
-                      // 提案がある場合のみ区切り線を表示するよう修正
-                      if (!_isLoadingSuggestions && _proactiveSuggestion != null) ...[
-                        const SizedBox(height: 24),
-                        const Divider(),
-                        const SizedBox(height: 24),
-                      ] else ... [
-                        // 提案がない場合もスペースを確保し、レイアウトが大きく崩れるのを防ぐ
-                        const SizedBox(height: 48),
-                      ],
-
-                      const Icon(Icons.psychology_outlined,
-                          size: 60, color: Colors.deepPurple),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'AIとの対話',
-                        style: TextStyle(
-                            fontSize: 28, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
-                        style: TextStyle(fontSize: 16, color: Colors.black54),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      Wrap(
-                        spacing: 12.0,
-                        runSpacing: 12.0,
-                        alignment: WrapAlignment.center,
-                        children: _topics.map((topic) {
-                          return ChoiceChip(
-                            label: Text(topic,
-                                style: const TextStyle(fontSize: 15)),
-                            selected: _selectedTopic == topic,
-                            onSelected: (selected) {
-                              if (selected) {
-                                _handleTopicSelection(topic);
-                              }
-                            },
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 40),
-                      ElevatedButton.icon(
-                        onPressed:
-                            _finalTopic.isNotEmpty ? _startSession : null,
-                        icon: const Icon(Icons.play_circle_outline),
-                        label: const Text('対話を開始する'),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.deepPurple,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey.shade300,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 30, vertical: 15),
-                            textStyle: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            )),
-                      ),
-                    ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            children: <Widget>[
+              // --- 上部の提案セクション ---
+              _buildSuggestionSection(),
+              // --- 中央の対話セクション ---
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: _buildDialogueSection(),
                   ),
                 ),
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // 提案セクションのUIを全面的に改善
+  Widget _buildDialogueSection() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const Icon(Icons.psychology_outlined,
+            size: 60, color: Colors.deepPurple),
+        const SizedBox(height: 16),
+        const Text(
+          'AIとの対話',
+          style: TextStyle(
+              fontSize: 28, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          '今、話したいことは何ですか？\n1つ選んで対話を始めましょう。',
+          style: TextStyle(fontSize: 16, color: Colors.black54),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        Wrap(
+          spacing: 12.0,
+          runSpacing: 12.0,
+          alignment: WrapAlignment.center,
+          children: _topics.map((topic) {
+            return ChoiceChip(
+              label: Text(topic,
+                  style: const TextStyle(fontSize: 15)),
+              selected: _selectedTopic == topic,
+              onSelected: (selected) {
+                if (selected) {
+                  _handleTopicSelection(topic);
+                }
+              },
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 12),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 40),
+        ElevatedButton.icon(
+          onPressed:
+              _finalTopic.isNotEmpty ? _startSession : null,
+          icon: const Icon(Icons.play_circle_outline),
+          label: const Text('対話を開始する'),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 30, vertical: 15),
+              textStyle: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              )),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSuggestionSection() {
+    // 提案がない、かつロード中でもない場合は、余白も何も表示しない
+    if (!_isLoadingSuggestions && _proactiveSuggestion == null && _fetchError == null) {
+      return const SizedBox.shrink();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ヘッダーは常に表示
-        _buildSectionHeader('AIから今日のスワイプの話題提案'),
+        const SizedBox(height: 16), // 上部の余白
+        _buildSectionHeader('今日の話題の提案'),
         const SizedBox(height: 12),
-        // ローディング、エラー、コンテンツ、データ無しの状態に応じて表示を切り替え
         if (_isLoadingSuggestions)
           const Center(child: CircularProgressIndicator())
         else if (_fetchError != null)
@@ -331,19 +328,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           )
         else if (_proactiveSuggestion != null)
-          _buildProactiveSuggestionCard(_proactiveSuggestion!)
-        else
-          // 提案がない場合の表示
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
-              child: Text(
-                '今日はAIからの特別な提案はありませんでした。\n下のボタンから対話を開始できます。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              ),
-            ),
-          )
+          _buildProactiveSuggestionCard(_proactiveSuggestion!),
+        
+        // 提案カードの下に区切り線を追加
+        const Divider(height: 32, thickness: 1),
       ],
     );
   }
@@ -360,8 +348,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // 不要になった _buildAiSuggestionCard は削除
 
   Widget _buildProactiveSuggestionCard(HomeSuggestion suggestion) {
     return Card(
