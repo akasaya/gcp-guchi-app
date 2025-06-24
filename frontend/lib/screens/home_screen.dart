@@ -33,11 +33,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   User? get currentUser => _auth.currentUser;
 
+  @override
   void initState() {
     super.initState();
     // ★★★ 修正: initStateでFutureを初期化 ★★★
     _fetchData();
-  }
 
   // ★★★ 修正: データ取得ロジックを専用メソッドに集約 ★★★
   void _fetchData() {
