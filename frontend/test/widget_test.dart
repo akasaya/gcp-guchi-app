@@ -10,7 +10,6 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
-// import 'package:frontend/models/analysis_models.dart'; // ★★★ 削除されたファイルなので、この行を削除します ★★★
 import 'package:frontend/models/book_recommendation.dart';
 
 /// Firebaseのネイティブ通信を偽装するクラス
@@ -52,19 +51,17 @@ class FakeApiService implements ApiService {
   Future<HomeSuggestion?> getHomeSuggestion() async {
     return Future.value(null);
   }
-  
+
   @override
   Future<HomeSuggestion?> getHomeSuggestionV2() async {
     return Future.value(null);
   }
 
-  // ★★★ 修正: 正しいモデル(chat_models.dart)を使って、エラーを投げないように実装します ★★★
   @override
   Future<AnalysisSummary> getAnalysisSummary() {
     return Future.value(AnalysisSummary(totalSessions: 0, topicCounts: []));
   }
-  
-  // ★★★ 追加: ApiServiceに追加された新しいメソッドを、テスト用に実装します ★★★
+
   @override
   Future<List<String>> getTopicSuggestions() {
     return Future.value(['テスト提案1', 'テスト提案2']);
@@ -92,20 +89,18 @@ class FakeApiService implements ApiService {
     bool useRag = false,
     String? ragType,
   }) {
-    // 実際には使われないので、ダミーの応答を返します
-    return Future.value(ChatResponse(response: 'dummy response'));
+    // ★★★ ここを修正: `sources` パラメータを追加します ★★★
+    return Future.value(ChatResponse(response: 'dummy response', sources: []));
   }
 
   @override
   Future<NodeTapResponse> handleNodeTap(String nodeLabel) {
-    // 実際には使われないので、ダミーの応答を返します
     return Future.value(NodeTapResponse(
         initialSummary: 'dummy', actions: [], nodeLabel: nodeLabel));
   }
 
   @override
   Future<Map<String, dynamic>> startSession(String topic) {
-    // 実際には使われないので、ダミーの応答を返します
     return Future.value({
       'session_id': 'dummy-session-id',
       'questions': [],
@@ -141,7 +136,6 @@ class FakeApiService implements ApiService {
 
 
 void main() {
-  // すべてのテストが実行される前に、一度だけFirebaseのテスト環境をセットアップします。
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     FirebasePlatform.instance = MockFirebasePlatform();
