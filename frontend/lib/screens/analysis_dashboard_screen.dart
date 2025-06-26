@@ -38,7 +38,6 @@ class _AnalysisDashboardScreenState
   bool _isActionLoading = false;
   TabController? _tabController;
   StreamSubscription<DocumentSnapshot>? _ragSubscription;
-  late TransformationController _transformationController; 
  
 
   String? _lastActionMessageId;
@@ -47,15 +46,19 @@ class _AnalysisDashboardScreenState
     final text = titles[value.toInt()];
     return SideTitleWidget(
       axisSide: meta.axisSide,
-      space: 4,
+      // ★★★ 修正1: グラフとラベルの間のスペースを広げます ★★★
+      space: 8,
       child: Transform.rotate(
         angle: -0.785, // 45度回転
+        // ★★★ 修正2: 回転の中心を右上に設定し、ラベルが下がるようにします ★★★
+        alignment: Alignment.topRight,
         child: Text(
-          text.length > 10 ? '${text.substring(0, 8)}...' : text, // 長いラベルは省略
+          text.length > 10 ? '${text.substring(0, 8)}...' : text,
           style: const TextStyle(
             color: Colors.black54,
             fontSize: 10,
           ),
+          textAlign: TextAlign.right,
         ),
       ),
     );
@@ -71,9 +74,6 @@ class _AnalysisDashboardScreenState
     
     _tabController = TabController(length: 3, vsync: this);
 
-    _transformationController = TransformationController();
-    _transformationController.value = Matrix4.identity()..scale(0.3);
-
 
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -88,7 +88,6 @@ class _AnalysisDashboardScreenState
   void dispose() {
     _tabController?.dispose();
     _ragSubscription?.cancel(); 
-    _transformationController.dispose();
     super.dispose();
   }
 
@@ -483,39 +482,30 @@ class _AnalysisDashboardScreenState
     );
   }
 
-  Widget _buildGraphView() {
-    // ★★★ ここから修正 ★★★
-    // グラフを描画するキャンバスのサイズを固定で大きく定義します。
-    // これにより、狭い画面でもノードが重なりにくくなります。
-    const double graphCanvasSize = 1200;
+Widget _buildGraphView() {
+  const double graphCanvasSize = 1200;
 
-    return InteractiveViewer(
-      transformationController: _transformationController,
-      constrained: false,
-      boundaryMargin: const EdgeInsets.all(100),
-      minScale: 0.05,
-      maxScale: 2.5,
-      // GraphViewをSizedBoxでラップして、大きな描画領域を確保します。
-      child: SizedBox(
-        width: graphCanvasSize,
-        height: graphCanvasSize,
-        child: GraphView(
-          graph: _graph,
-          algorithm: _algorithm,
-          paint: Paint()
-            ..color = Colors.transparent
-            ..strokeWidth = 1
-            ..style = PaintingStyle.stroke,
-          builder: (Node node) {
-            String nodeId = node.key!.value as String;
-            final nodeData = _nodeDataMap[nodeId];
-            return _buildNodeWidget(nodeData);
-          },
-        ),
+  return FittedBox(
+    fit: BoxFit.contain,
+    child: SizedBox(
+      width: graphCanvasSize,
+      height: graphCanvasSize,
+      child: GraphView(
+        graph: _graph,
+        algorithm: _algorithm,
+        paint: Paint()
+          ..color = Colors.transparent
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+        builder: (Node node) {
+          String nodeId = node.key!.value as String;
+          final nodeData = _nodeDataMap[nodeId];
+          return _buildNodeWidget(nodeData);
+        },
       ),
-    );
-    // ★★★ ここまで修正 ★★★
-  }
+    ),
+  );
+}
 
   Widget _buildNodeWidget(model.NodeData? nodeData) {
     if (nodeData == null) return const SizedBox.shrink();
