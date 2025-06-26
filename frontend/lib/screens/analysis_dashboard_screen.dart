@@ -892,7 +892,6 @@ class _AnalysisDashboardScreenState
 
     for (int i = 0; i < dataForChart.length; i++) {
       final data = dataForChart[i];
-      final isTouched = false;
       const fontSize = 12.0;
       const radius = 50.0;
       final value = (data.count / totalCount * 100);
