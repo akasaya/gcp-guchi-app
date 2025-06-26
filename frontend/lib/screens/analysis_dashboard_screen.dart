@@ -138,12 +138,11 @@ class _AnalysisDashboardScreenState
   late Future<AnalysisSummary> _summaryFuture;
   late Future<List<BookRecommendation>> _bookRecommendationsFuture;
   final Graph _graph = Graph();
-  final Algorithm _algorithm = BuchheimWalkerAlgorithm(
-      BuchheimWalkerConfiguration()
-        ..siblingSeparation = (100)
-        ..levelSeparation = (150)
-        ..subtreeSeparation = (150)
-        ..orientation = (BuchheimWalkerConfiguration.ORIENTATION_TOP_BOTTOM),
+  final Algorithm _algorithm = SugiyamaAlgorithm(SugiyamaConfiguration()
+    ..levelSeparation = 150
+    ..nodeSeparation = 15
+    ..orientation = SugiyamaConfiguration.ORIENTATION_TOP_BOTTOM);
+
       TreeEdgeRenderer(BuchheimWalkerConfiguration()));
 
   Map<String, model.NodeData> _nodeDataMap = {};
