@@ -122,7 +122,7 @@ class _AnalysisDashboardScreenState
       ));
 
       if (MediaQuery.of(context).size.width <= 900) {
-        _tabController?.animateTo(2);
+        _narrowTabController.animateTo(2);
       }
     }
   }
