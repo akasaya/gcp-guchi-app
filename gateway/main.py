@@ -321,7 +321,6 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
 def generate_initial_questions(topic):
     random_seed = random.randint(0, 1000)
     prompt = f"""あなたはカウンセラーです。トピック「{topic}」について、「はい」か「いいえ」で答えられる質問を5つ生成してください。
-ただし、ありきたりな質問は避けて、ユーザーが深く内省できるような、ユニークで洞察に満ちた質問を心がけてください。
 回答の多様性を確保するためのシード値: {random_seed}"""
     flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
     return _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model).get("questions", [])
