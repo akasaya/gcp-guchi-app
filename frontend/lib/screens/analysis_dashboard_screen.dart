@@ -979,12 +979,9 @@ class _AnalysisDashboardScreenState
         }
 
         final recommendations = snapshot.data!;
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: recommendations.length,
-          itemBuilder: (context, index) {
-            final book = recommendations[index];
+        // ★★★ 修正: ListView.builderをColumnに変更し、警告を解消します ★★★
+        return Column(
+          children: recommendations.map((book) {
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: Padding(
@@ -1026,7 +1023,7 @@ class _AnalysisDashboardScreenState
                 ),
               ),
             );
-          },
+          }).toList(),
         );
       },
     );
