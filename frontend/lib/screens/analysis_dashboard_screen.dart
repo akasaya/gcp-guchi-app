@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:frontend/models/book_recommendation.dart';
@@ -12,6 +13,114 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart'; 
+
+class _KeepAliveGraphView extends StatefulWidget {
+  final Graph graph;
+  final Algorithm algorithm;
+  final Map<String, model.NodeData> nodeDataMap;
+  final Function(model.NodeData) onNodeTapped;
+  final int maxNodeSize;
+
+  const _KeepAliveGraphView({
+    required this.graph,
+    required this.algorithm,
+    required this.nodeDataMap,
+    required this.onNodeTapped,
+    required this.maxNodeSize,
+  });
+
+  @override
+  __KeepAliveGraphViewState createState() => __KeepAliveGraphViewState();
+}
+
+class __KeepAliveGraphViewState extends State<_KeepAliveGraphView>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return InteractiveViewer(
+      constrained: false,
+      boundaryMargin: const EdgeInsets.all(200),
+      minScale: 0.05,
+      maxScale: 4.0,
+      child: GraphView(
+        graph: widget.graph,
+        algorithm: widget.algorithm,
+        paint: Paint()
+          ..color = Colors.grey
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+        builder: (Node node) {
+          String nodeId = node.key!.value as String;
+          final nodeData = widget.nodeDataMap[nodeId];
+          return _buildNodeWidget(nodeData);
+        },
+      ),
+    );
+  }
+
+  Widget _buildNodeWidget(model.NodeData? nodeData) {
+    if (nodeData == null) return const SizedBox.shrink();
+
+    const double minDiameter = 60.0;
+    const double maxDiameter = 150.0;
+    final double normalizedSize = widget.maxNodeSize == 0
+        ? 0
+        : (nodeData.size / widget.maxNodeSize).clamp(0.0, 1.0);
+    final double diameter =
+        minDiameter + (maxDiameter - minDiameter) * normalizedSize;
+    final double fontSize = 12 + (6 * normalizedSize);
+
+    final Map<String, Color> colorMap = {
+      'topic': Colors.purple.shade400,
+      'issue': Colors.red.shade400,
+      'emotion': Colors.orange.shade300,
+      'keyword': Colors.blueGrey.shade400
+    };
+    final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
+
+    return GestureDetector(
+      onTap: () => widget.onNodeTapped(nodeData),
+      child: Tooltip(
+        message:
+            "${nodeData.id}\nタイプ: ${nodeData.type}\n重要度: ${nodeData.size}",
+        child: Container(
+          width: diameter,
+          height: diameter,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: nodeColor,
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withAlpha(51),
+                  blurRadius: 4,
+                  offset: const Offset(1, 1))
+            ],
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                nodeData.id,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: fontSize,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class AnalysisDashboardScreen extends ConsumerStatefulWidget {
   final NodeTapResponse? proactiveSuggestion;
@@ -29,8 +138,17 @@ class _AnalysisDashboardScreenState
   late Future<AnalysisSummary> _summaryFuture;
   late Future<List<BookRecommendation>> _bookRecommendationsFuture;
   final Graph _graph = Graph();
-  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 1);
+  final Algorithm _algorithm = BuchheimWalkerAlgorithm(
+      BuchheimWalkerConfiguration()
+        ..siblingSeparation = (100)
+        ..levelSeparation = (150)
+        ..subtreeSeparation = (150)
+        ..orientation = (BuchheimWalkerConfiguration.ORIENTATION_TOP_BOTTOM),
+      TreeEdgeRenderer(BuchheimWalkerConfiguration()));
+
   Map<String, model.NodeData> _nodeDataMap = {};
+  int _maxNodeSize = 1; // ★★★ ノードの最大サイズを保存する変数を追加します ★★★
+
   final List<types.Message> _messages = [];
   final _user = const types.User(id: 'user');
   final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
@@ -41,8 +159,6 @@ class _AnalysisDashboardScreenState
 
   StreamSubscription<DocumentSnapshot>? _ragSubscription;
   String? _lastActionMessageId;
-
-  Widget? _cachedGraphView;
 
   Widget _bottomTitles(double value, TitleMeta meta, List<String> titles) {
     final text = titles[value.toInt()];
@@ -135,6 +251,12 @@ class _AnalysisDashboardScreenState
       _graph.nodes.clear();
       _graph.edges.clear();
       _nodeDataMap = {for (var v in graphData.nodes) v.id: v};
+
+      // ★★★ 以下の4行を追加し、ノードの最大サイズを計算します ★★★
+      if (graphData.nodes.isNotEmpty) {
+        _maxNodeSize = graphData.nodes.map((n) => n.size).reduce(max);
+        if (_maxNodeSize == 0) _maxNodeSize = 1;
+      }
 
       final Map<String, Node> nodesForGraphView = {};
       for (var nodeData in graphData.nodes) {
@@ -380,9 +502,14 @@ class _AnalysisDashboardScreenState
           return const Center(child: Text('分析データがまだありません。'));
         }
 
-        // ★★★ 4. キャッシュを利用して、グラフの再描画を防ぎます ★★★
-        _cachedGraphView ??= _buildGraphView();
-        return _cachedGraphView!;
+        // ★★★ 以下の古いキャッシュの仕組みを、新しい状態保持ウィジェットに置き換えます ★★★
+        return _KeepAliveGraphView(
+          graph: _graph,
+          algorithm: _algorithm,
+          nodeDataMap: _nodeDataMap,
+          onNodeTapped: _onNodeTapped,
+          maxNodeSize: _maxNodeSize,
+        );
       },
     );
   }
@@ -445,78 +572,6 @@ class _AnalysisDashboardScreenState
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildGraphView() {
-    // ★★★ 6. InteractiveViewerでラップし、ズームと移動を可能にします ★★★
-    return InteractiveViewer(
-      constrained: false,
-      boundaryMargin: const EdgeInsets.all(200),
-      minScale: 0.1,
-      maxScale: 4.0,
-      child: GraphView(
-        graph: _graph,
-        algorithm: _algorithm,
-        paint: Paint()
-          ..color = Colors.transparent
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke,
-        builder: (Node node) {
-          String nodeId = node.key!.value as String;
-          final nodeData = _nodeDataMap[nodeId];
-          return _buildNodeWidget(nodeData);
-        },
-      ),
-    );
-  }
-
-
-  Widget _buildNodeWidget(model.NodeData? nodeData) {
-    if (nodeData == null) return const SizedBox.shrink();
-    final Map<String, Color> colorMap = {
-      'topic': Colors.purple.shade400,
-      'issue': Colors.red.shade400,
-      'emotion': Colors.orange.shade300,
-      'keyword': Colors.blueGrey.shade400
-    };
-    final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
-
-    return GestureDetector(
-      onTap: () => _onNodeTapped(nodeData),
-      child: Tooltip(
-        message: "${nodeData.id}\nタイプ: ${nodeData.type}",
-        child: Container(
-          width: 100, // 円の直径
-          height: 100, // 円の直径
-          decoration: BoxDecoration(
-            shape: BoxShape.circle, // 形を円に指定
-            color: nodeColor,
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withAlpha(51),
-                  blurRadius: 4,
-                  offset: const Offset(1, 1))
-            ],
-          ),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(8.0), // 円の中の余白
-              child: Text(
-                nodeData.id,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 3,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 
