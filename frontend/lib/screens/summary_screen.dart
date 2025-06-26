@@ -145,7 +145,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             final status = sessionData['status'] as String?;
 
             // 2. バックエンドで最初の要約を処理中のローディング画面を表示
-            if (status != 'completed' && status != 'error' && !_isContinuin) {
+            if (status != 'completed' && status != 'error' && !_isContinuing) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

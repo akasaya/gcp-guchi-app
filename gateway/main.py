@@ -318,7 +318,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
         raise
 
 def generate_initial_questions(topic):
-        random_seed = random.randint(0, 1000)
+    random_seed = random.randint(0, 1000)
     prompt = f"""あなたはカウンセラーです。トピック「{topic}」について、「はい」か「いいえ」で答えられる質問を5つ生成してください。
 ただし、ありきたりな質問は避けて、ユーザーが深く内省できるような、ユニークで洞察に満ちた質問を心がけてください。
 回答の多様性を確保するためのシード値: {random_seed}"""
