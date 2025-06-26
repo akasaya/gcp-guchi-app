@@ -29,18 +29,20 @@ class _AnalysisDashboardScreenState
   late Future<AnalysisSummary> _summaryFuture;
   late Future<List<BookRecommendation>> _bookRecommendationsFuture;
   final Graph _graph = Graph();
-  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 200);
+  final Algorithm _algorithm = FruchtermanReingoldAlgorithm(iterations: 1);
   Map<String, model.NodeData> _nodeDataMap = {};
   final List<types.Message> _messages = [];
   final _user = const types.User(id: 'user');
   final _ai = const types.User(id: 'ai', firstName: 'AIアナリスト');
   bool _isAiTyping = false;
   bool _isActionLoading = false;
-  TabController? _tabController;
-  StreamSubscription<DocumentSnapshot>? _ragSubscription;
- 
+  late TabController _narrowTabController;
+  late TabController _wideTabController;
 
+  StreamSubscription<DocumentSnapshot>? _ragSubscription;
   String? _lastActionMessageId;
+
+  Widget? _cachedGraphView;
 
   Widget _bottomTitles(double value, TitleMeta meta, List<String> titles) {
     final text = titles[value.toInt()];
@@ -67,9 +69,9 @@ class _AnalysisDashboardScreenState
     _graphDataFuture = _fetchAndBuildGraph(apiService);
     _summaryFuture = apiService.getAnalysisSummary();
     _bookRecommendationsFuture = apiService.getBookRecommendations();
-    
-    _tabController = TabController(length: 3, vsync: this);
 
+    _narrowTabController = TabController(length: 3, vsync: this);
+    _wideTabController = TabController(length: 2, vsync: this);
 
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -82,8 +84,9 @@ class _AnalysisDashboardScreenState
 
   @override
   void dispose() {
-    _tabController?.dispose();
-    _ragSubscription?.cancel(); 
+    _narrowTabController.dispose();
+    _wideTabController.dispose();
+    _ragSubscription?.cancel();
     super.dispose();
   }
 
@@ -157,15 +160,18 @@ class _AnalysisDashboardScreenState
 
   Future<void> _onNodeTapped(model.NodeData nodeData) async {
     if (_isActionLoading) return;
-    
+
     _addHumanMessage(nodeData.id);
-    
+
     setState(() => _isActionLoading = true);
 
     _disablePreviousActions();
 
+    // ★★★ 3. PC/スマホで、適切なタブコントローラーを操作して画面を切り替えます ★★★
     if (MediaQuery.of(context).size.width <= 900) {
-      _tabController?.animateTo(2);
+      _narrowTabController.animateTo(2); 
+    } else {
+      _wideTabController.animateTo(0);
     }
 
     try {
@@ -368,52 +374,15 @@ class _AnalysisDashboardScreenState
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          final error = snapshot.error.toString();
-          if (error.contains('No data available to generate graph')) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.insights,
-                      size: 80,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      '分析できる記録がまだありません。',
-                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      '対話セッションを完了すると、ここにあなたの思考のつながりが表示されます。',
-                      style: TextStyle(color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return Center(
-              child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text('分析データの取得に失敗しました。\n\nエラー詳細:\n$error',
-                      textAlign: TextAlign.center)));
+          return Center(child: Text('エラー: ${snapshot.error}'));
         }
         if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
-          return const Center(
-              child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                      '分析できるデータがまだありません。\nセッションを完了すると、ここに思考の繋がりが可視化されます。',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey))));
+          return const Center(child: Text('分析データがまだありません。'));
         }
-        return _buildGraphView();
+
+        // ★★★ 4. キャッシュを利用して、グラフの再描画を防ぎます ★★★
+        _cachedGraphView ??= _buildGraphView();
+        return _cachedGraphView!;
       },
     );
   }
@@ -425,30 +394,27 @@ class _AnalysisDashboardScreenState
         const VerticalDivider(width: 1, thickness: 1),
         Expanded(
           flex: 2,
-          child: DefaultTabController(
-            length: 2,
-            child: Column(
-              children: [
-                const TabBar(tabs: [
+          child: Column(
+            children: [
+              TabBar(
+                controller: _wideTabController,
+                tabs: const [
                   Tab(
                       text: 'チャットで深掘り',
                       icon: Icon(Icons.chat_bubble_outline)),
                   Tab(text: '統計サマリー', icon: Icon(Icons.bar_chart_outlined)),
-                ]),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    // ★★★ 5. スワイプ操作を無効にし、グラフ操作との競合を防ぎます ★★★
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildSummaryView(),
-                      _buildGraphViewFuture(),
-                      _buildChatView(),
-                    ],
-                  ),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _wideTabController,
+                  children: [
+                    _buildChatView(),
+                    _buildSummaryView(),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
@@ -459,7 +425,7 @@ class _AnalysisDashboardScreenState
     return Column(
       children: [
         TabBar(
-          controller: _tabController,
+          controller: _narrowTabController,
           tabs: const [
             Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
             Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
@@ -468,8 +434,8 @@ class _AnalysisDashboardScreenState
         ),
         Expanded(
           child: TabBarView(
-            controller: _tabController,
-            // ★★★ この一行を追加 ★★★
+            controller: _narrowTabController,
+            // ★★★ 5. スワイプ操作を無効にし、ズーム操作との競合を防ぎます ★★★
             physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildSummaryView(),
@@ -483,28 +449,24 @@ class _AnalysisDashboardScreenState
   }
 
   Widget _buildGraphView() {
-    // ★★★ 6. ここをInteractiveViewerを使った方式に書き換えます ★★★
+    // ★★★ 6. InteractiveViewerでラップし、ズームと移動を可能にします ★★★
     return InteractiveViewer(
       constrained: false,
-      boundaryMargin: const EdgeInsets.all(100),
+      boundaryMargin: const EdgeInsets.all(200),
       minScale: 0.1,
       maxScale: 4.0,
-      child: SizedBox(
-        width: 1200, // 広大なキャンバスを用意
-        height: 1200,
-        child: GraphView(
-          graph: _graph,
-          algorithm: _algorithm,
-          paint: Paint()
-            ..color = Colors.transparent
-            ..strokeWidth = 1
-            ..style = PaintingStyle.stroke,
-          builder: (Node node) {
-            String nodeId = node.key!.value as String;
-            final nodeData = _nodeDataMap[nodeId];
-            return _buildNodeWidget(nodeData);
-          },
-        ),
+      child: GraphView(
+        graph: _graph,
+        algorithm: _algorithm,
+        paint: Paint()
+          ..color = Colors.transparent
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+        builder: (Node node) {
+          String nodeId = node.key!.value as String;
+          final nodeData = _nodeDataMap[nodeId];
+          return _buildNodeWidget(nodeData);
+        },
       ),
     );
   }
@@ -519,34 +481,45 @@ class _AnalysisDashboardScreenState
       'keyword': Colors.blueGrey.shade400
     };
     final nodeColor = colorMap[nodeData.type] ?? Colors.grey.shade400;
+
     return GestureDetector(
       onTap: () => _onNodeTapped(nodeData),
       child: Tooltip(
         message: "${nodeData.id}\nタイプ: ${nodeData.type}",
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          constraints: const BoxConstraints(maxWidth: 150),
+          width: 100, // 円の直径
+          height: 100, // 円の直径
           decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: nodeColor,
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withAlpha(51),
-                    blurRadius: 4,
-                    offset: const Offset(1, 1))
-              ]),
-          child: Text(nodeData.id,
-              style: const TextStyle(
+            shape: BoxShape.circle, // 形を円に指定
+            color: nodeColor,
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withAlpha(51),
+                  blurRadius: 4,
+                  offset: const Offset(1, 1))
+            ],
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(8.0), // 円の中の余白
+              child: Text(
+                nodeData.id,
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
+
 
   Widget _buildChatView() {
     final theme = Theme.of(context);
