@@ -38,13 +38,46 @@ class _SummaryScreenState extends State<SummaryScreen> {
     }
   }
 
+    void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SpinKitFadingCube(
+                  color: Colors.white,
+                  size: 50.0,
+                ),
+                SizedBox(height: 20),
+                Text("次の質問を考えています...",
+                    style: TextStyle(color: Colors.white, fontSize: 16)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _hideLoadingDialog() {
+    if (Navigator.of(context, rootNavigator: true).canPop()) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+  
   Future<void> _continueSession() async {
-    // ★★★ 修正: UIをローディング状態に切り替える ★★★
+    if (_isContinuing) return;
+
     setState(() {
       _isContinuing = true;
     });
-    // ★★★ 修正: ダイアログ表示は不要なため削除 ★★★
-    // _showLoadingDialog('次の質問を考えています...');
+    _showLoadingDialog();
 
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -56,7 +89,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
       final newQuestions = List<Map<String, dynamic>>.from(result['questions']);
       final newTurn = result['turn'] as int;
 
-      // ★★★ 修正: ダイアログを閉じる処理は不要なため削除 ★★★
       navigator.pushReplacement(
         MaterialPageRoute(
           builder: (context) => SwipeScreen(
@@ -67,17 +99,18 @@ class _SummaryScreenState extends State<SummaryScreen> {
         ),
       );
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('エラーが発生しました: $e')),
-      );
-      // ★★★ 追加: エラー時にローディング状態を解除 ★★★
       if (mounted) {
+        _hideLoadingDialog();
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('エラーが発生しました: $e')),
+        );
         setState(() {
           _isContinuing = false;
         });
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -110,21 +143,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
             final sessionData = snapshot.data!.data() as Map<String, dynamic>;
             final status = sessionData['status'] as String?;
-
-            // ★★★ 修正: UIロジックを全面的に見直し ★★★
-            // 1.「深掘り」ボタンが押されたら、専用のローディング画面を表示
-            if (_isContinuing) {
-              return const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SpinKitFadingCube(color: Colors.deepPurple, size: 50.0),
-                    SizedBox(height: 20),
-                    Text('次の質問を考えています...'),
-                  ],
-                ),
-              );
-            }
 
             // 2. バックエンドで最初の要約を処理中のローディング画面を表示
             if (status != 'completed' && status != 'error') {
@@ -185,7 +203,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                           backgroundColor: Colors.deepPurple,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16)),
-                      onPressed: _continueSession,
+                      onPressed: _isContinuing ? null : _continueSession,
                       child: Text('さらに深掘りする (残り$remainingTurns回)'),
                     ),
                   const SizedBox(height: 12),
