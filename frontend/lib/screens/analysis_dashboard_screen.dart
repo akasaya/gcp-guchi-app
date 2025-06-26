@@ -893,8 +893,8 @@ class _AnalysisDashboardScreenState
     for (int i = 0; i < dataForChart.length; i++) {
       final data = dataForChart[i];
       final isTouched = false;
-      final fontSize = isTouched ? 16.0 : 12.0;
-      final radius = isTouched ? 60.0 : 50.0;
+      const fontSize = 12.0;
+      const radius = 50.0;
       final value = (data.count / totalCount * 100);
 
       if (value < 1) continue; // 小さすぎるデータは表示しない
