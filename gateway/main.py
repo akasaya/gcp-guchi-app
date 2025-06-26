@@ -4,7 +4,6 @@ from flask import Flask, request, jsonify, Blueprint, abort
 from flask_cors import CORS
 
 import os
-import random
 import json
 import re
 import traceback
@@ -17,6 +16,7 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from collections import Counter
+import textwrap
 
 from google.cloud import aiplatform
 from google.cloud import tasks_v2
@@ -319,14 +319,49 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
         raise
 
 def generate_initial_questions(topic):
-    random_seed = random.randint(0, 1000)
-    prompt = f"""あなたはカウンセラーです。トピック「{topic}」について、「はい」か「いいえ」で答えられる質問を5つ生成してください。ただし以下のシード値によって、質問内容に多様性を持たせてください。
-質問の多様性を確保するためのシード値: {random_seed}"""
+    """トピックと過去の対話履歴に基づいて、新しい初期質問を生成する"""
+    past_insights = _get_all_insights_as_text(user_id)
+
+    if past_insights:
+        prompt = f"""
+あなたはユーザーの思考を整理する、優秀なカウンセラーです。
+ユーザーは今回「{topic}」というテーマを選びました。
+
+以下の「過去の対話の要約」を踏まえて、今回ユーザーが取り組むべき、新しい切り口の質問を5つ生成してください。
+
+# 過去の対話の要約
+{past_insights}
+---
+
+# 質問生成のルール
+- 質問は「{topic}」に関連するものにしてください。
+- 過去の対話で既に触れられている内容や、同じようなパターンの質問は避けてください。
+- ユーザーが深く内省できるような、本質的な問いにしてください。
+- 必ず「はい」か「いいえ」で答えられるシンプルな形式にしてください。
+- 生成するのは質問リストのみとし、番号や前置き、解説は一切含めないでください。
+"""
+    else:
+        # 過去の対話がない新規ユーザー向けのフォールバック
+        prompt = f"""
+あなたはユーザーの思考を整理する、優秀なカウンセラーです。
+ユーザーは今回「{topic}」というテーマを選びました。
+このテーマについて、ユーザーが深く内省できるような、「はい」か「いいえ」で答えられる本質的な質問を5つ生成してください。
+生成するのは質問リストのみとし、番号や前置き、解説は一切含めないでください。
+"""
+    prompt = textwrap.dedent(prompt)
     flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
     return _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model).get("questions", [])
 
 def generate_follow_up_questions(insights):
-    prompt = f"あなたはカウンセラーです。以下の分析結果をさらに深める、「はい」か「いいえ」で答えられる質問を5つ生成してください。\n# 分析結果\n{insights}"
+    """対話の要約に基づいてフォローアップ質問を生成する（シンプルなバージョン）"""
+    prompt = f"""
+あなたはカウンセラーです。以下の分析結果をさらに深める、「はい」か「いいえ」で答えられるシンプルな質問を5つ生成してください。
+質問以外の余計なテキストは含めないでください。
+
+# 分析結果
+{insights}
+"""
+    prompt = textwrap.dedent(prompt)
     flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
     return _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model).get("questions", [])
 
@@ -789,9 +824,8 @@ def start_session():
             'status': 'processing', # statusを 'processing' で初期化
             'turn': 1,
         })
-
         # Geminiで最初の質問を生成
-        questions = generate_initial_questions(topic)
+        questions = generate_initial_questions(topic, user_id)
 
         # バッチ書き込みを使って質問を保存し、同時にフロントエンド用のレスポンスを作成
         batch = db_firestore.batch()
