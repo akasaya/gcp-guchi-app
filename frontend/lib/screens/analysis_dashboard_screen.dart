@@ -143,8 +143,6 @@ class _AnalysisDashboardScreenState
     ..nodeSeparation = 15
     ..orientation = SugiyamaConfiguration.ORIENTATION_TOP_BOTTOM);
 
-      TreeEdgeRenderer(BuchheimWalkerConfiguration()));
-
   Map<String, model.NodeData> _nodeDataMap = {};
   int _maxNodeSize = 1; // ★★★ ノードの最大サイズを保存する変数を追加します ★★★
 
