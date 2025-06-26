@@ -41,6 +41,24 @@ class _AnalysisDashboardScreenState
 
   String? _lastActionMessageId;
 
+  Widget _bottomTitles(double value, TitleMeta meta, List<String> titles) {
+    final text = titles[value.toInt()];
+    return SideTitleWidget(
+      axisSide: meta.axisSide,
+      space: 4,
+      child: Transform.rotate(
+        angle: -0.785, // 45度回転
+        child: Text(
+          text.length > 10 ? '${text.substring(0, 8)}...' : text, // 長いラベルは省略
+          style: const TextStyle(
+            color: Colors.black54,
+            fontSize: 10,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -457,25 +475,36 @@ class _AnalysisDashboardScreenState
   }
 
   Widget _buildGraphView() {
+    // ★★★ ここから修正 ★★★
+    // グラフを描画するキャンバスのサイズを固定で大きく定義します。
+    // これにより、狭い画面でもノードが重なりにくくなります。
+    const double graphCanvasSize = 1200;
+
     return InteractiveViewer(
       constrained: false,
       boundaryMargin: const EdgeInsets.all(100),
       minScale: 0.05,
       maxScale: 2.5,
-      child: GraphView(
-        graph: _graph,
-        algorithm: _algorithm,
-        paint: Paint()
-          ..color = Colors.transparent
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke,
-        builder: (Node node) {
-          String nodeId = node.key!.value as String;
-          final nodeData = _nodeDataMap[nodeId];
-          return _buildNodeWidget(nodeData);
-        },
+      // GraphViewをSizedBoxでラップして、大きな描画領域を確保します。
+      child: SizedBox(
+        width: graphCanvasSize,
+        height: graphCanvasSize,
+        child: GraphView(
+          graph: _graph,
+          algorithm: _algorithm,
+          paint: Paint()
+            ..color = Colors.transparent
+            ..strokeWidth = 1
+            ..style = PaintingStyle.stroke,
+          builder: (Node node) {
+            String nodeId = node.key!.value as String;
+            final nodeData = _nodeDataMap[nodeId];
+            return _buildNodeWidget(nodeData);
+          },
+        ),
       ),
     );
+    // ★★★ ここまで修正 ★★★
   }
 
   Widget _buildNodeWidget(model.NodeData? nodeData) {
@@ -807,55 +836,24 @@ class _AnalysisDashboardScreenState
       );
     }).toList();
 
-    // ラベルが重ならないように表示間隔を動的に計算
-    const double maxLabels = 10.0; 
-    final double interval = (counts.length / maxLabels).ceilToDouble();
+    final titles = counts.map((c) => c.topic).toList();
 
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
         barGroups: barGroups,
         titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          show: true,
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              getTitlesWidget: (value, meta) {
-                if (value == 0) return const SizedBox.shrink();
-                // Y軸のラベルは整数のみ表示
-                if (value % 1 != 0) return const SizedBox.shrink();
-                return Text(
-                  value.toInt().toString(),
-                  style: const TextStyle(fontSize: 10),
-                );
-              },
-            ),
-          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 30, // 水平表示のため、高さを調整
-              interval: interval, // 計算した間隔を適用
+              reservedSize: 70, // ラベル用のスペースを確保
               getTitlesWidget: (value, meta) {
-                final index = value.toInt();
-                if (index >= counts.length) return const SizedBox.shrink();
-                final topic = counts[index].topic;
-                
-                // ラベルが長い場合は省略
-                final displayText = topic.length > 8 ? '${topic.substring(0, 6)}...' : topic;
-
-                return SideTitleWidget(
-                  axisSide: meta.axisSide,
-                  space: 4.0,
-                  // 角度指定を削除して水平にする
-                  child: Text(
-                    displayText,
-                    style: const TextStyle(fontSize: 10),
-                  ),
-                );
-              },
+                if (value.toInt() >= titles.length) return const SizedBox.shrink();
+                return _bottomTitles(value, meta, titles);
+              }
             ),
           ),
         ),

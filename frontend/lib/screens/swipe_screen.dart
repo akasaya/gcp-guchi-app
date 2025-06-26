@@ -77,7 +77,9 @@ class _SwipeScreenState extends State<SwipeScreen> {
                   final screenWidth = constraints.maxWidth;
                   // 画面幅に応じてカードのサイズやパディングを調整
                   final cardWidth = screenWidth > 600 ? screenWidth * 0.5 : screenWidth * 0.9;
-                  final cardHeight = constraints.maxHeight * 0.8;
+                  // ★★★ 修正点 ★★★
+                  // 高さを幅に連動させることで、アスペクト比を固定します。
+                  final cardHeight = cardWidth * (4 / 3); // 縦横比 3:4
                   final padding = screenWidth > 600 ? 24.0 : 16.0;
                   final textStyle = screenWidth > 600
                       ? Theme.of(context).textTheme.headlineSmall
