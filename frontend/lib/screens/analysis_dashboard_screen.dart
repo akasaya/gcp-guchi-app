@@ -186,8 +186,9 @@ class _AnalysisDashboardScreenState
     _summaryFuture = apiService.getAnalysisSummary();
     _bookRecommendationsFuture = apiService.getBookRecommendations();
 
-    _narrowTabController = TabController(length: 3, vsync: this);
-    _wideTabController = TabController(length: 2, vsync: this);
+    // ★★★ ここの数字を1つずつ増やします ★★★
+    _narrowTabController = TabController(length: 4, vsync: this); // 3から4へ変更
+    _wideTabController = TabController(length: 3, vsync: this);   // 2から3へ変更
 
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -502,7 +503,7 @@ class _AnalysisDashboardScreenState
           return const Center(child: Text('分析データがまだありません。'));
         }
 
-        // ★★★ Stackを使って、グラフの上に凡例を重ねて表示します ★★★
+        // ★★★ 修正1: 凡例をボタンによるダイアログ表示に変更 ★★★
         return Stack(
           children: [
             _KeepAliveGraphView(
@@ -515,7 +516,25 @@ class _AnalysisDashboardScreenState
             Positioned(
               top: 16,
               right: 16,
-              child: _buildLegend(),
+              child: FloatingActionButton.small(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('凡例'),
+                      content: _buildLegendContent(),
+                      actions: [
+                        TextButton(
+                          child: const Text('閉じる'),
+                          onPressed: () => Navigator.of(context).pop(),
+                        )
+                      ],
+                    ),
+                  );
+                },
+                tooltip: '凡例を表示',
+                child: const Icon(Icons.help_outline),
+              ),
             ),
           ],
         );
@@ -523,8 +542,7 @@ class _AnalysisDashboardScreenState
     );
   }
 
-  // ★★★ この凡例表示用のウィジェットを新しく追加します ★★★
-  Widget _buildLegend() {
+  Widget _buildLegendContent() {
     final legendData = {
       '主要トピック': Colors.purple.shade400,
       '課題・悩み': Colors.red.shade400,
@@ -532,42 +550,30 @@ class _AnalysisDashboardScreenState
       '関連キーワード': Colors.blueGrey.shade400,
     };
 
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('凡例', style: TextStyle(fontWeight: FontWeight.bold)),
-            const Divider(),
-            ...legendData.entries.map((entry) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: entry.value,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(entry.key),
-                  ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: legendData.entries.map((entry) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: entry.value,
                 ),
-              );
-            }), // ★★★ この行の末尾にあった .toList() を削除しました ★★★
-          ],
-        ),
-      ),
+              ),
+              const SizedBox(width: 8),
+              Text(entry.key),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
-
-
 
   Widget _buildWideLayout() {
     return Row(
@@ -580,19 +586,23 @@ class _AnalysisDashboardScreenState
             children: [
               TabBar(
                 controller: _wideTabController,
+                // ★★★ ここにおすすめ書籍タブを追加します ★★★
                 tabs: const [
                   Tab(
                       text: 'チャットで深掘り',
                       icon: Icon(Icons.chat_bubble_outline)),
                   Tab(text: '統計サマリー', icon: Icon(Icons.bar_chart_outlined)),
+                  Tab(text: 'おすすめ書籍', icon: Icon(Icons.book_outlined)),
                 ],
               ),
               Expanded(
                 child: TabBarView(
                   controller: _wideTabController,
+                  // ★★★ ここにおすすめ書籍の表示エリアを追加します ★★★
                   children: [
                     _buildChatView(),
                     _buildSummaryView(),
+                    _buildBookRecommendationsView(), // 新しいメソッドを呼び出し
                   ],
                 ),
               ),
@@ -608,21 +618,23 @@ class _AnalysisDashboardScreenState
       children: [
         TabBar(
           controller: _narrowTabController,
+          // ★★★ ここにおすすめ書籍タブを追加します ★★★
           tabs: const [
             Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
             Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
             Tab(text: 'チャット', icon: Icon(Icons.chat_bubble_outline)),
+            Tab(text: '書籍', icon: Icon(Icons.book_outlined)),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _narrowTabController,
-            // ★★★ 5. スワイプ操作を無効にし、ズーム操作との競合を防ぎます ★★★
-            physics: const NeverScrollableScrollPhysics(),
+            // ★★★ ここにおすすめ書籍の表示エリアを追加します ★★★
             children: [
               _buildSummaryView(),
               _buildGraphViewFuture(),
               _buildChatView(),
+              _buildBookRecommendationsView(), // 新しいメソッドを呼び出し
             ],
           ),
         ),
@@ -837,7 +849,6 @@ class _AnalysisDashboardScreenState
                   ),
                   const SizedBox(height: 24),
 
-                  // --- 棒グラフ表示エリア ---
                   Text(
                     'テーマ別対話回数',
                     style: Theme.of(context).textTheme.titleLarge,
@@ -848,48 +859,17 @@ class _AnalysisDashboardScreenState
                     child: Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        // ★★★ 新しいグラフウィジェットを呼び出し ★★★
-                        child: _buildTopicChart(allTopics),
+                        // ★★★ ここを円グラフのメソッド呼び出しに変更します ★★★
+                        child: _buildTopicPieChart(allTopics),
                       ),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // --- ここまで ---
 
                   Text(
                     'よく考えているテーマ Top 3',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 10),
-                  if (topTopics.isEmpty)
-                    const Card(
-                      child: ListTile(
-                        title: Text('記録がありません'),
-                      ),
-                    )
-                  else
-                    Card(
-                      child: Column(
-                        children: topTopics.asMap().entries.map((entry) {
-                          int idx = entry.key;
-                          TopicCount topic = entry.value;
-                          return ListTile(
-                            leading: CircleAvatar(
-                              child: Text('${idx + 1}'),
-                            ),
-                            title: Text(topic.topic),
-                            trailing: Text('${topic.count} 回'),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'AIからのおすすめ書籍',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildBookRecommendations(),
                 ],
               ),
             ),
@@ -900,104 +880,92 @@ class _AnalysisDashboardScreenState
   }
 
   // ★★★ 追加: 棒グラフを構築する新しいヘルパーウィジェット ★★★
-  Widget _buildTopicChart(List<TopicCount> counts) {
+  Widget _buildTopicPieChart(List<TopicCount> counts) {
     if (counts.isEmpty) return const Center(child: Text("データがありません"));
 
-    // 各項目のために必要な最小幅を定義
-    const double barAreaWidth = 40.0;
-    // 全項目を表示するために必要な、グラフ全体の幅を計算
-    final double chartWidth = counts.length * barAreaWidth;
+    final List<PieChartSectionData> sections = [];
+    final List<TopicCount> dataForChart;
+    const int topN = 5;
 
-    final barGroups = counts.asMap().entries.map((entry) {
-      final index = entry.key;
-      final data = entry.value;
-      return BarChartGroupData(
-        x: index,
-        barRods: [
-          BarChartRodData(
-            toY: data.count.toDouble(),
-            color: Colors.primaries[index % Colors.primaries.length],
-            width: 16,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(4),
-              topRight: Radius.circular(4),
+    final totalCount = counts.map((c) => c.count).reduce((a, b) => a + b);
+
+    if (totalCount == 0) return const Center(child: Text("データがありません"));
+
+    if (counts.length > topN) {
+      dataForChart = counts.take(topN).toList();
+      final othersCount =
+          counts.skip(topN).map((c) => c.count).reduce((a, b) => a + b);
+      if (othersCount > 0) {
+        dataForChart.add(TopicCount(topic: 'その他', count: othersCount));
+      }
+    } else {
+      dataForChart = counts;
+    }
+
+    for (int i = 0; i < dataForChart.length; i++) {
+      final data = dataForChart[i];
+      final isTouched = false;
+      final fontSize = isTouched ? 16.0 : 12.0;
+      final radius = isTouched ? 60.0 : 50.0;
+      final value = (data.count / totalCount * 100);
+
+      if (value < 1) continue; // 小さすぎるデータは表示しない
+
+      sections.add(PieChartSectionData(
+        color: Colors.primaries[i % Colors.primaries.length],
+        value: value,
+        title: '${value.toStringAsFixed(0)}%',
+        radius: radius,
+        titleStyle: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            shadows: const [Shadow(color: Colors.black, blurRadius: 2)]),
+      ));
+    }
+
+    return Row(
+      children: <Widget>[
+        Expanded(
+          flex: 2,
+          child: PieChart(
+            PieChartData(
+              pieTouchData: null,
+              borderData: FlBorderData(show: false),
+              sectionsSpace: 2,
+              centerSpaceRadius: 40,
+              sections: sections,
             ),
           ),
-        ],
-      );
-    }).toList();
-
-    final titles = counts.map((c) => c.topic).toList();
-
-    final barChart = BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        barGroups: barGroups,
-        titlesData: FlTitlesData(
-          show: true,
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 80, // 回転したラベルのために縦のスペースを多めに確保
-                getTitlesWidget: (value, meta) {
-                  if (value.toInt() >= titles.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return _bottomTitles(value, meta, titles);
-                }),
-          ),
         ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: 1,
-          getDrawingHorizontalLine: (value) {
-            return const FlLine(
-              color: Colors.grey,
-              strokeWidth: 0.4,
-              dashArray: [5, 5],
-            );
-          },
-        ),
-        borderData: FlBorderData(
-          show: false,
-        ),
-        barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final topic = counts[group.x.toInt()];
-              return BarTooltipItem(
-                '${topic.topic}\n',
-                const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-                children: <TextSpan>[
-                  TextSpan(
-                    text: '${topic.count} 回',
-                    style: const TextStyle(
-                      color: Colors.white,
+        Expanded(
+          flex: 1,
+          child: ListView.builder(
+            itemCount: dataForChart.length,
+            itemBuilder: (context, i) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      color: Colors.primaries[i % Colors.primaries.length],
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Flexible(
+                        child: Text(
+                      dataForChart[i].topic,
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    )),
+                  ],
+                ),
               );
             },
           ),
         ),
-      ),
-    );
-
-    // グラフを横スクロール可能なウィジェットでラップします
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: chartWidth, // 計算したグラフ全体の幅を設定
-        child: barChart,
-      ),
+      ],
     );
   }
 
@@ -1105,6 +1073,24 @@ class _AnalysisDashboardScreenState
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookRecommendationsView() {
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _bookRecommendationsFuture =
+              ref.read(apiServiceProvider).getBookRecommendations();
+        });
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _buildBookRecommendations(),
         ),
       ),
     );
