@@ -318,7 +318,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
         traceback.print_exc()
         raise
 
-def generate_initial_questions(topic):
+def generate_initial_questions(topic, user_id):
     """トピックと過去の対話履歴に基づいて、新しい初期質問を生成する"""
     past_insights = _get_all_insights_as_text(user_id)
 
