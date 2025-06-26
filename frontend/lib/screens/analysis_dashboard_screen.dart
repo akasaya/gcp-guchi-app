@@ -563,10 +563,35 @@ class _AnalysisDashboardScreenState
                 controller: _wideTabController,
                 tabs: const [
                   Tab(
-                      text: 'チャットで深掘り',
-                      icon: Icon(Icons.chat_bubble_outline)),
-                  Tab(text: '統計サマリー', icon: Icon(Icons.bar_chart_outlined)),
-                  Tab(text: 'おすすめ書籍', icon: Icon(Icons.book_outlined)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline),
+                        SizedBox(width: 8),
+                        Text('チャットで深掘り'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.bar_chart_outlined),
+                        SizedBox(width: 8),
+                        Text('統計サマリー'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.book_outlined),
+                        SizedBox(width: 8),
+                        Text('おすすめ書籍'),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               Expanded(
@@ -575,7 +600,7 @@ class _AnalysisDashboardScreenState
                   children: [
                     _buildChatView(),
                     _buildSummaryView(),
-                    _buildBookRecommendationsView(), // 新しいメソッドを呼び出し
+                    _buildBookRecommendationsView(),
                   ],
                 ),
               ),
@@ -601,11 +626,12 @@ class _AnalysisDashboardScreenState
         Expanded(
           child: TabBarView(
             controller: _narrowTabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildSummaryView(),
               _buildGraphViewFuture(),
               _buildChatView(),
-              _buildBookRecommendationsView(), // 新しいメソッドを呼び出し
+              _buildBookRecommendationsView(),
             ],
           ),
         ),
@@ -925,7 +951,7 @@ class _AnalysisDashboardScreenState
             ),
           ),
         ),
-        Expanded(
+       Expanded(
           flex: 1,
           child: ListView.builder(
             itemCount: dataForChart.length,
@@ -944,7 +970,6 @@ class _AnalysisDashboardScreenState
                         child: Text(
                       dataForChart[i].topic,
                       style: const TextStyle(fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
                     )),
                   ],
                 ),
@@ -955,6 +980,7 @@ class _AnalysisDashboardScreenState
       ],
     );
   }
+
 
 
   Widget _buildBookRecommendations() {
