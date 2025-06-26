@@ -596,6 +596,7 @@ class _AnalysisDashboardScreenState
               ),
               Expanded(
                 child: TabBarView(
+                  isScrollable: true,
                   controller: _wideTabController,
                   children: [
                     _buildChatView(),
@@ -615,6 +616,7 @@ class _AnalysisDashboardScreenState
     return Column(
       children: [
         TabBar(
+          isScrollable: true,
           controller: _narrowTabController,
           tabs: const [
             Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
