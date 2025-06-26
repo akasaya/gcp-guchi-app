@@ -523,7 +523,7 @@ class _AnalysisDashboardScreenState
     );
   }
 
-    // ★★★ この凡例表示用のウィジェットを新しく追加します ★★★
+  // ★★★ この凡例表示用のウィジェットを新しく追加します ★★★
   Widget _buildLegend() {
     final legendData = {
       '主要トピック': Colors.purple.shade400,
@@ -560,7 +560,7 @@ class _AnalysisDashboardScreenState
                   ],
                 ),
               );
-            }).toList(),
+            }), // ★★★ この行の末尾にあった .toList() を削除しました ★★★
           ],
         ),
       ),
