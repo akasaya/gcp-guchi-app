@@ -46,19 +46,15 @@ class _AnalysisDashboardScreenState
     final text = titles[value.toInt()];
     return SideTitleWidget(
       axisSide: meta.axisSide,
-      // ★★★ 修正1: グラフとラベルの間のスペースを広げます ★★★
       space: 8,
       child: Transform.rotate(
         angle: -0.785, // 45度回転
-        // ★★★ 修正2: 回転の中心を右上に設定し、ラベルが下がるようにします ★★★
-        alignment: Alignment.topRight,
         child: Text(
           text.length > 10 ? '${text.substring(0, 8)}...' : text,
           style: const TextStyle(
             color: Colors.black54,
             fontSize: 10,
           ),
-          textAlign: TextAlign.right,
         ),
       ),
     );
@@ -441,9 +437,13 @@ class _AnalysisDashboardScreenState
                 ]),
                 Expanded(
                   child: TabBarView(
+                    controller: _tabController,
+                    // ★★★ 5. スワイプ操作を無効にし、グラフ操作との競合を防ぎます ★★★
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
-                      _buildChatView(),
                       _buildSummaryView(),
+                      _buildGraphViewFuture(),
+                      _buildChatView(),
                     ],
                   ),
                 ),
@@ -482,30 +482,33 @@ class _AnalysisDashboardScreenState
     );
   }
 
-Widget _buildGraphView() {
-  const double graphCanvasSize = 1200;
-
-  return FittedBox(
-    fit: BoxFit.contain,
-    child: SizedBox(
-      width: graphCanvasSize,
-      height: graphCanvasSize,
-      child: GraphView(
-        graph: _graph,
-        algorithm: _algorithm,
-        paint: Paint()
-          ..color = Colors.transparent
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke,
-        builder: (Node node) {
-          String nodeId = node.key!.value as String;
-          final nodeData = _nodeDataMap[nodeId];
-          return _buildNodeWidget(nodeData);
-        },
+  Widget _buildGraphView() {
+    // ★★★ 6. ここをInteractiveViewerを使った方式に書き換えます ★★★
+    return InteractiveViewer(
+      constrained: false,
+      boundaryMargin: const EdgeInsets.all(100),
+      minScale: 0.1,
+      maxScale: 4.0,
+      child: SizedBox(
+        width: 1200, // 広大なキャンバスを用意
+        height: 1200,
+        child: GraphView(
+          graph: _graph,
+          algorithm: _algorithm,
+          paint: Paint()
+            ..color = Colors.transparent
+            ..strokeWidth = 1
+            ..style = PaintingStyle.stroke,
+          builder: (Node node) {
+            String nodeId = node.key!.value as String;
+            final nodeData = _nodeDataMap[nodeId];
+            return _buildNodeWidget(nodeData);
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
 
   Widget _buildNodeWidget(model.NodeData? nodeData) {
     if (nodeData == null) return const SizedBox.shrink();
