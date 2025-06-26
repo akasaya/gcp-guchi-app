@@ -71,52 +71,64 @@ class _SwipeScreenState extends State<SwipeScreen> {
        body: Column(
         children: [
           Expanded(
-            // ★★★ この child: が重要です ★★★
             child: Center(
-              child: SizedBox(
-                height: MediaQuery.of(context).size.height * 0.8,
-                width: MediaQuery.of(context).size.width * 0.5,
-                child: SwipeCards(
-                  matchEngine: _matchEngine,
-                  itemBuilder: (BuildContext context, int index) {
-                    final question =
-                        _swipeItems[index].content['question_text'] as String;
-                    return Card(
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Text(
-                            question,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineSmall,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final screenWidth = constraints.maxWidth;
+                  // 画面幅に応じてカードのサイズやパディングを調整
+                  final cardWidth = screenWidth > 600 ? screenWidth * 0.5 : screenWidth * 0.9;
+                  final cardHeight = constraints.maxHeight * 0.8;
+                  final padding = screenWidth > 600 ? 24.0 : 16.0;
+                  final textStyle = screenWidth > 600
+                      ? Theme.of(context).textTheme.headlineSmall
+                      : Theme.of(context).textTheme.titleLarge;
+
+                  return SizedBox(
+                    height: cardHeight,
+                    width: cardWidth,
+                    child: SwipeCards(
+                      matchEngine: _matchEngine,
+                      itemBuilder: (BuildContext context, int index) {
+                        final question =
+                            _swipeItems[index].content['question_text'] as String;
+                        return Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(padding),
+                              child: Text(
+                                question,
+                                textAlign: TextAlign.center,
+                                style: textStyle,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                  onStackFinished: () {
-                    // ★★★ 修正: 要約APIを呼び出し、結果を待たずにサマリー画面に遷移 ★★★
-                    _apiService.postSummary(sessionId: widget.sessionId);
-                    
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (context) => SummaryScreen(
-                          sessionId: widget.sessionId,
-                        ),
-                      ),
-                    );
-                  },
-                  itemChanged: (SwipeItem item, int index) {
-                    setState(() {
-                      _currentQuestionIndex = index;
-                    });
-                    // 新しいカードが表示されたタイミングでタイマーをリセット
-                    _questionStartTime = DateTime.now();
-                  },
-                ),
+                        );
+                      },
+                      onStackFinished: () {
+                        // ★★★ 修正: 要約APIを呼び出し、結果を待たずにサマリー画面に遷移 ★★★
+                        _apiService.postSummary(sessionId: widget.sessionId);
+                        
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (context) => SummaryScreen(
+                              sessionId: widget.sessionId,
+                            ),
+                          ),
+                        );
+                      },
+                      itemChanged: (SwipeItem item, int index) {
+                        setState(() {
+                          _currentQuestionIndex = index;
+                        });
+                        // 新しいカードが表示されたタイミングでタイマーをリセット
+                        _questionStartTime = DateTime.now();
+                      },
+                    ),
+                  );
+                },
               ),
             ),
           ),
