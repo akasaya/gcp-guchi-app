@@ -144,7 +144,7 @@ class _AnalysisDashboardScreenState
     ..orientation = SugiyamaConfiguration.ORIENTATION_TOP_BOTTOM);
 
   Map<String, model.NodeData> _nodeDataMap = {};
-  int _maxNodeSize = 1; // ★★★ ノードの最大サイズを保存する変数を追加します ★★★
+  int _maxNodeSize = 1; 
 
   final List<types.Message> _messages = [];
   final _user = const types.User(id: 'user');
@@ -157,26 +157,6 @@ class _AnalysisDashboardScreenState
   StreamSubscription<DocumentSnapshot>? _ragSubscription;
   String? _lastActionMessageId;
 
-  Widget _bottomTitles(double value, TitleMeta meta, List<String> titles) {
-    final text = titles[value.toInt()];
-    return SideTitleWidget(
-      axisSide: meta.axisSide,
-      space: 4.0,
-      child: Transform.rotate(
-        angle: -1.2, // 回転角度を調整（約70度）
-        alignment: Alignment.centerRight, // 回転の基準を右端に
-        child: Text(
-          text, // 文字の省略をなくします
-          style: const TextStyle(
-            color: Colors.black54,
-            fontSize: 10,
-          ),
-          textAlign: TextAlign.right,
-        ),
-      ),
-    );
-  }
-
 
   @override
   void initState() {
@@ -186,7 +166,6 @@ class _AnalysisDashboardScreenState
     _summaryFuture = apiService.getAnalysisSummary();
     _bookRecommendationsFuture = apiService.getBookRecommendations();
 
-    // ★★★ ここの数字を1つずつ増やします ★★★
     _narrowTabController = TabController(length: 4, vsync: this); // 3から4へ変更
     _wideTabController = TabController(length: 3, vsync: this);   // 2から3へ変更
 
@@ -253,7 +232,6 @@ class _AnalysisDashboardScreenState
       _graph.edges.clear();
       _nodeDataMap = {for (var v in graphData.nodes) v.id: v};
 
-      // ★★★ 以下の4行を追加し、ノードの最大サイズを計算します ★★★
       if (graphData.nodes.isNotEmpty) {
         _maxNodeSize = graphData.nodes.map((n) => n.size).reduce(max);
         if (_maxNodeSize == 0) _maxNodeSize = 1;
@@ -290,7 +268,6 @@ class _AnalysisDashboardScreenState
 
     _disablePreviousActions();
 
-    // ★★★ 3. PC/スマホで、適切なタブコントローラーを操作して画面を切り替えます ★★★
     if (MediaQuery.of(context).size.width <= 900) {
       _narrowTabController.animateTo(2); 
     } else {
@@ -350,7 +327,6 @@ class _AnalysisDashboardScreenState
           .reversed
           .toList();
 
-      // ★★★ ここからが新しい非同期処理のロジックです ★★★
       // 1. RAGの開始を依頼し、中間応答とrequestIdを取得
       final initialResponse = await apiService.postChatMessage(
         chatHistory: historyForApi,
@@ -369,7 +345,6 @@ class _AnalysisDashboardScreenState
             .collection('rag_responses')
             .doc(initialResponse.requestId);
         
-        // ★★★ 修正2: listenの中を修正 ★★★
         _ragSubscription = docRef.snapshots().listen((snapshot) async {
           if (snapshot.exists) {
             final status = snapshot.data()?['status'];
@@ -586,7 +561,6 @@ class _AnalysisDashboardScreenState
             children: [
               TabBar(
                 controller: _wideTabController,
-                // ★★★ ここにおすすめ書籍タブを追加します ★★★
                 tabs: const [
                   Tab(
                       text: 'チャットで深掘り',
@@ -598,7 +572,6 @@ class _AnalysisDashboardScreenState
               Expanded(
                 child: TabBarView(
                   controller: _wideTabController,
-                  // ★★★ ここにおすすめ書籍の表示エリアを追加します ★★★
                   children: [
                     _buildChatView(),
                     _buildSummaryView(),
@@ -618,7 +591,6 @@ class _AnalysisDashboardScreenState
       children: [
         TabBar(
           controller: _narrowTabController,
-          // ★★★ ここにおすすめ書籍タブを追加します ★★★
           tabs: const [
             Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
             Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
@@ -629,7 +601,6 @@ class _AnalysisDashboardScreenState
         Expanded(
           child: TabBarView(
             controller: _narrowTabController,
-            // ★★★ ここにおすすめ書籍の表示エリアを追加します ★★★
             children: [
               _buildSummaryView(),
               _buildGraphViewFuture(),
@@ -798,7 +769,7 @@ class _AnalysisDashboardScreenState
     );
   }
 
-    Widget _buildSummaryView() {
+  Widget _buildSummaryView() {
     return FutureBuilder<AnalysisSummary>(
       future: _summaryFuture,
       builder: (context, snapshot) {
@@ -820,10 +791,8 @@ class _AnalysisDashboardScreenState
         }
 
         final summary = snapshot.data!;
-        // APIから取得した全トピックリストを回数でソート
         final allTopics = summary.topicCounts
           ..sort((a, b) => b.count.compareTo(a.count));
-        // 上位3つを抽出
         final topTopics = allTopics.take(3).toList();
 
         return RefreshIndicator(
@@ -848,7 +817,6 @@ class _AnalysisDashboardScreenState
                     Colors.blue,
                   ),
                   const SizedBox(height: 24),
-
                   Text(
                     'テーマ別対話回数',
                     style: Theme.of(context).textTheme.titleLarge,
@@ -859,17 +827,38 @@ class _AnalysisDashboardScreenState
                     child: Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        // ★★★ ここを円グラフのメソッド呼び出しに変更します ★★★
                         child: _buildTopicPieChart(allTopics),
                       ),
                     ),
                   ),
                   const SizedBox(height: 24),
-
                   Text(
                     'よく考えているテーマ Top 3',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
+                  const SizedBox(height: 10),
+                  if (topTopics.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        title: Text('記録がありません'),
+                      ),
+                    )
+                  else
+                    Card(
+                      child: Column(
+                        children: topTopics.asMap().entries.map((entry) {
+                          int idx = entry.key;
+                          TopicCount topic = entry.value;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              child: Text('${idx + 1}'),
+                            ),
+                            title: Text(topic.topic),
+                            trailing: Text('${topic.count} 回'),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -879,7 +868,6 @@ class _AnalysisDashboardScreenState
     );
   }
 
-  // ★★★ 追加: 棒グラフを構築する新しいヘルパーウィジェット ★★★
   Widget _buildTopicPieChart(List<TopicCount> counts) {
     if (counts.isEmpty) return const Center(child: Text("データがありません"));
 
