@@ -615,16 +615,23 @@ class _AnalysisDashboardScreenState
   Widget _buildNarrowLayout() {
     return Column(
       children: [
-        TabBar(
-          isScrollable: true,
-          controller: _narrowTabController,
-          tabs: const [
-            Tab(text: 'サマリー', icon: Icon(Icons.bar_chart_outlined)),
-            Tab(text: 'グラフ分析', icon: Icon(Icons.auto_graph)),
-            Tab(text: 'チャット', icon: Icon(Icons.chat_bubble_outline)),
-            Tab(text: '書籍', icon: Icon(Icons.book_outlined)),
-          ],
-        ),
+              TabBar(
+                controller: _wideTabController,
+                tabs: const [
+                  Tab(
+                    icon: Icon(Icons.chat_bubble_outline),
+                    text: 'チャットで深掘り',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.bar_chart_outlined),
+                    text: '統計サマリー',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.book_outlined),
+                    text: 'おすすめ書籍',
+                  ),
+                ],
+              ),
         Expanded(
           child: TabBarView(
             controller: _narrowTabController,
