@@ -161,19 +161,22 @@ class _AnalysisDashboardScreenState
     final text = titles[value.toInt()];
     return SideTitleWidget(
       axisSide: meta.axisSide,
-      space: 8,
+      space: 4.0,
       child: Transform.rotate(
-        angle: -0.785, // 45度回転
+        angle: -1.2, // 回転角度を調整（約70度）
+        alignment: Alignment.centerRight, // 回転の基準を右端に
         child: Text(
-          text.length > 10 ? '${text.substring(0, 8)}...' : text,
+          text, // 文字の省略をなくします
           style: const TextStyle(
             color: Colors.black54,
             fontSize: 10,
           ),
+          textAlign: TextAlign.right,
         ),
       ),
     );
   }
+
 
   @override
   void initState() {
@@ -499,17 +502,72 @@ class _AnalysisDashboardScreenState
           return const Center(child: Text('分析データがまだありません。'));
         }
 
-        // ★★★ 以下の古いキャッシュの仕組みを、新しい状態保持ウィジェットに置き換えます ★★★
-        return _KeepAliveGraphView(
-          graph: _graph,
-          algorithm: _algorithm,
-          nodeDataMap: _nodeDataMap,
-          onNodeTapped: _onNodeTapped,
-          maxNodeSize: _maxNodeSize,
+        // ★★★ Stackを使って、グラフの上に凡例を重ねて表示します ★★★
+        return Stack(
+          children: [
+            _KeepAliveGraphView(
+              graph: _graph,
+              algorithm: _algorithm,
+              nodeDataMap: _nodeDataMap,
+              onNodeTapped: _onNodeTapped,
+              maxNodeSize: _maxNodeSize,
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: _buildLegend(),
+            ),
+          ],
         );
       },
     );
   }
+
+    // ★★★ この凡例表示用のウィジェットを新しく追加します ★★★
+  Widget _buildLegend() {
+    final legendData = {
+      '主要トピック': Colors.purple.shade400,
+      '課題・悩み': Colors.red.shade400,
+      '感情': Colors.orange.shade300,
+      '関連キーワード': Colors.blueGrey.shade400,
+    };
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('凡例', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Divider(),
+            ...legendData.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: entry.value,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(entry.key),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+
 
   Widget _buildWideLayout() {
     return Row(
@@ -845,6 +903,11 @@ class _AnalysisDashboardScreenState
   Widget _buildTopicChart(List<TopicCount> counts) {
     if (counts.isEmpty) return const Center(child: Text("データがありません"));
 
+    // 各項目のために必要な最小幅を定義
+    const double barAreaWidth = 40.0;
+    // 全項目を表示するために必要な、グラフ全体の幅を計算
+    final double chartWidth = counts.length * barAreaWidth;
+
     final barGroups = counts.asMap().entries.map((entry) {
       final index = entry.key;
       final data = entry.value;
@@ -866,23 +929,26 @@ class _AnalysisDashboardScreenState
 
     final titles = counts.map((c) => c.topic).toList();
 
-    return BarChart(
+    final barChart = BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
         barGroups: barGroups,
         titlesData: FlTitlesData(
           show: true,
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 70, // ラベル用のスペースを確保
-              getTitlesWidget: (value, meta) {
-                if (value.toInt() >= titles.length) return const SizedBox.shrink();
-                return _bottomTitles(value, meta, titles);
-              }
-            ),
+                showTitles: true,
+                reservedSize: 80, // 回転したラベルのために縦のスペースを多めに確保
+                getTitlesWidget: (value, meta) {
+                  if (value.toInt() >= titles.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return _bottomTitles(value, meta, titles);
+                }),
           ),
         ),
         gridData: FlGridData(
@@ -922,6 +988,15 @@ class _AnalysisDashboardScreenState
             },
           ),
         ),
+      ),
+    );
+
+    // グラフを横スクロール可能なウィジェットでラップします
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(
+        width: chartWidth, // 計算したグラフ全体の幅を設定
+        child: barChart,
       ),
     );
   }
