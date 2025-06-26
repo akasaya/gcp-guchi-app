@@ -37,7 +37,9 @@ class _AnalysisDashboardScreenState
   bool _isAiTyping = false;
   bool _isActionLoading = false;
   TabController? _tabController;
-  StreamSubscription<DocumentSnapshot>? _ragSubscription; 
+  StreamSubscription<DocumentSnapshot>? _ragSubscription;
+  late TransformationController _transformationController; 
+ 
 
   String? _lastActionMessageId;
 
@@ -69,6 +71,10 @@ class _AnalysisDashboardScreenState
     
     _tabController = TabController(length: 3, vsync: this);
 
+    _transformationController = TransformationController();
+    _transformationController.value = Matrix4.identity()..scale(0.3);
+
+
     if (widget.proactiveSuggestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleProactiveSuggestion(widget.proactiveSuggestion!);
@@ -82,6 +88,7 @@ class _AnalysisDashboardScreenState
   void dispose() {
     _tabController?.dispose();
     _ragSubscription?.cancel(); 
+    _transformationController.dispose();
     super.dispose();
   }
 
@@ -463,6 +470,8 @@ class _AnalysisDashboardScreenState
         Expanded(
           child: TabBarView(
             controller: _tabController,
+            // ★★★ この一行を追加 ★★★
+            physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildSummaryView(),
               _buildGraphViewFuture(),
@@ -481,6 +490,7 @@ class _AnalysisDashboardScreenState
     const double graphCanvasSize = 1200;
 
     return InteractiveViewer(
+      transformationController: _transformationController,
       constrained: false,
       boundaryMargin: const EdgeInsets.all(100),
       minScale: 0.05,
