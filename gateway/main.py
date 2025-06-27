@@ -153,13 +153,18 @@ def verify_app_check():
 prod_origin = os.getenv('PROD_ORIGIN_URL')
 
 if 'K_SERVICE' in os.environ:
-    origins = [prod_origin]
+    # 本番環境では、設定されたオリジンのみを許可
+    origins = [prod_origin] if prod_origin else []
 else:
-    origins = [
+    # ローカル開発/テスト環境では、ローカルホストと設定されたオリジンを許可
+    local_origins = [
         prod_origin,
         re.compile(r"http://localhost:.*"),
         re.compile(r"http://127.0.0.1:.*"),
     ]
+    # Noneが含まれないようにフィルタリング
+    origins = [origin for origin in local_origins if origin]
+
 CORS(app, resources={r"/api/*": {"origins": origins}})
 
 

@@ -4,20 +4,43 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final FirebaseAuth? auth;
+  final GoogleSignIn? googleSignIn;
+  // ★ 1. GoogleのWeb Client IDを外部から注入できるように変更します
+  final String? googleWebClientId;
+
+  const LoginScreen({
+    super.key,
+    this.auth,
+    this.googleSignIn,
+    this.googleWebClientId,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final FirebaseAuth _auth;
+  // ★ 2. 状態としてGoogleSignInを持つ必要はなくなったので削除します
+  // late final GoogleSignIn _googleSignIn;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+
 
   String _email = '';
   String _password = '';
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _auth = widget.auth ?? FirebaseAuth.instance;
+    // ★ 3. initStateでのGoogleSignInの初期化も削除します
+  }
+
+
 
   // ★ 修正: エラーハンドリングを強化します
   Future<void> _signInWithGoogle() async {
@@ -27,12 +50,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // ★ 2. ハードコードされたIDを環境変数から読み込むように変更
-      const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+      // ★ 4. 環境変数からの直接読み込みをやめ、widget経由でIDを取得します
+      final webClientId = widget.googleWebClientId;
 
-
-      // ★ 3. 環境変数が設定されていない場合のエラー処理を追加
-      if (webClientId.isEmpty) {
+      // ★ 5. IDが設定されていない場合のエラー処理はそのまま活かします
+      if (webClientId == null || webClientId.isEmpty) {
         if (mounted) {
           setState(() {
             _errorMessage = 'クライアントIDがビルド時に設定されていません。';
@@ -42,8 +64,8 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      final GoogleSignIn googleSignIn = GoogleSignIn(clientId: webClientId);
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      final GoogleSignIn effectiveGoogleSignIn = widget.googleSignIn ?? GoogleSignIn(clientId: webClientId);
+      final GoogleSignInAccount? googleUser = await effectiveGoogleSignIn.signIn();
 
       if (googleUser == null) {
         // ユーザーがダイアログをキャンセルした場合

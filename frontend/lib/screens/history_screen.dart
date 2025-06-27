@@ -5,22 +5,32 @@ import 'package:intl/intl.dart';
 import 'package:frontend/screens/session_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  // テスト用にモックを注入するためのコンストラクタ引数を追加
+  final FirebaseAuth? auth;
+  final FirebaseFirestore? firestore;
+
+  const HistoryScreen({super.key, this.auth, this.firestore});
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final _auth = FirebaseAuth.instance;
+  // コンストラクタから渡されたインスタンス、またはデフォルトのインスタンスを使用
+  late final FirebaseAuth _auth;
+  late final FirebaseFirestore _firestore;
   Stream<QuerySnapshot>? _sessionsStream;
 
   @override
   void initState() {
     super.initState();
+    // widgetプロパティ経由でインスタンスを取得
+    _auth = widget.auth ?? FirebaseAuth.instance;
+    _firestore = widget.firestore ?? FirebaseFirestore.instance;
+
     final user = _auth.currentUser;
     if (user != null) {
-      _sessionsStream = FirebaseFirestore.instance
+      _sessionsStream = _firestore
           .collection('users')
           .doc(user.uid)
           .collection('sessions')

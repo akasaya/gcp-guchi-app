@@ -6,13 +6,15 @@ import 'package:swipe_cards/swipe_cards.dart';
 class SwipeScreen extends StatefulWidget {
   final String sessionId;
   final List<Map<String, dynamic>> questions;
-  final int turn; // 追加
+  final int turn;
+  final ApiService? apiService; // ★ テスト用にApiServiceを受け取れるようにする
 
   const SwipeScreen({
     super.key,
     required this.sessionId,
     required this.questions,
-    this.turn = 1, // 追加
+    this.turn = 1,
+    this.apiService, // ★ コンストラクタに追加
   });
 
   @override
@@ -20,7 +22,8 @@ class SwipeScreen extends StatefulWidget {
 }
 
 class _SwipeScreenState extends State<SwipeScreen> {
-  final ApiService _apiService = ApiService();
+  // final ApiService _apiService = ApiService(); // ← この行を削除
+  late final ApiService _apiService;           // ← この行に変更
   late final MatchEngine _matchEngine;
   final List<SwipeItem> _swipeItems = [];
 
@@ -30,6 +33,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
   @override
   void initState() {
     super.initState();
+    _apiService = widget.apiService ?? ApiService(); // ★ この行を追加して、渡されたApiServiceを使う
     for (var i = 0; i < widget.questions.length; i++) {
       final questionData = widget.questions[i];
       _swipeItems.add(

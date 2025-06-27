@@ -8,15 +8,22 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart'; // ★★★ この行を修正 ★★★
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final ApiService? apiService;
+  final FirebaseAuth? auth;
+
+  const HomeScreen({
+    super.key,
+    this.apiService,
+    this.auth,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final ApiService _apiService = ApiService();
+  late final FirebaseAuth _auth;               // ← 修正後
+  late final ApiService _apiService;           // ← 修正後
 
   bool _isLoadingSuggestions = true;
   HomeSuggestion? _proactiveSuggestion;
@@ -38,8 +45,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _auth = widget.auth ?? FirebaseAuth.instance;
+    _apiService = widget.apiService ?? ApiService();
     _fetchData();
   }
+
 
   Future<void> _fetchData() async {
     if (!mounted) return;
@@ -164,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
             sessionId: sessionData['session_id'],
             questions: questions,
             turn: 1,
+            apiService: _apiService, // ★ ここでApiServiceを渡す
           ),
         ),
       );
@@ -284,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 40),
         ElevatedButton.icon(
+          key: const Key('start_session_button'), // ★ ボタンを識別するためのキーを追加
           onPressed:
               _finalTopic.isNotEmpty ? _startSession : null,
           icon: const Icon(Icons.play_circle_outline),
@@ -327,7 +339,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(_fetchError!,
                     style: TextStyle(color: Colors.grey.shade700)),
                 const SizedBox(height: 8),
-                TextButton(onPressed: _fetchData, child: const Text('再試行')),
+                TextButton(
+                  key: const Key('retry_button'),
+                  onPressed: _fetchData,
+                  child: const Text('再試行'),
+                ),
               ],
             ),
           )

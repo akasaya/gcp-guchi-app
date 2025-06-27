@@ -103,7 +103,10 @@ class AuthWrapper extends ConsumerWidget {
             if (snapshot.hasData) {
               return const HomeScreen();
             }
-            return const LoginScreen();
+            // ★★★ ここを修正 ★★★
+            return const LoginScreen(
+              googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
+            );
           },
         );
       },

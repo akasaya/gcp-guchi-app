@@ -13,10 +13,14 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 });
 
 class ApiService {
-  final Dio _dio = Dio();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final Dio _dio;
+  late final FirebaseAuth _auth;
+  late final FirebaseAppCheck _appCheck;
 
-  ApiService() {
+  ApiService({Dio? dio, FirebaseAuth? auth, FirebaseAppCheck? appCheck}) {
+    _dio = dio ?? Dio();
+    _auth = auth ?? FirebaseAuth.instance;
+    _appCheck = appCheck ?? FirebaseAppCheck.instance;
     // --- ベースURLとタイムアウト設定 ---
 
     // ★★★ 修正点1: 本番環境のBaseURLを空にする ★★★
