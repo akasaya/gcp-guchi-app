@@ -5,17 +5,21 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:frontend/screens/analysis_dashboard_screen.dart'; // ★★★ この行を修正 ★★★
+import 'package:frontend/screens/analysis_dashboard_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ★ Firestoreをインポート
 
 class HomeScreen extends StatefulWidget {
   final ApiService? apiService;
   final FirebaseAuth? auth;
+  final FirebaseFirestore? firestore; // ★ テスト用にfirestoreを受け取る口を追加
 
   const HomeScreen({
     super.key,
     this.apiService,
     this.auth,
+    this.firestore, // ★ コンストラクタに追加
   });
+
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();

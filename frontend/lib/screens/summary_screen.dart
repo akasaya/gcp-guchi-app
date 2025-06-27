@@ -9,10 +9,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String sessionId;
+  // ★ テスト用に外部からサービスを注入できるようにする
+  final ApiService? apiService;
+  final FirebaseFirestore? firestore;
 
   const SummaryScreen({
     super.key,
     required this.sessionId,
+    this.apiService,
+    this.firestore,
   });
 
   @override
@@ -20,16 +25,23 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
-  final ApiService _apiService = ApiService();
+  // ★ final ApiService _apiService = ApiService(); // ← この行を削除
+  late final ApiService _apiService;
+  late final FirebaseFirestore _firestore;
+
   Stream<DocumentSnapshot>? _sessionStream;
   bool _isContinuing = false;
 
   @override
   void initState() {
     super.initState();
+    // ★ 注入されたインスタンス、または本物を使うように設定
+    _apiService = widget.apiService ?? ApiService();
+    _firestore = widget.firestore ?? FirebaseFirestore.instance;
+
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _sessionStream = FirebaseFirestore.instance
+      _sessionStream = _firestore // ★ ここで注入されたfirestoreインスタンスを使う
           .collection('users')
           .doc(user.uid)
           .collection('sessions')
@@ -37,7 +49,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
           .snapshots();
     }
   }
-
     void _showLoadingDialog() {
     showDialog(
       context: context,
@@ -95,6 +106,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             sessionId: widget.sessionId,
             questions: newQuestions,
             turn: newTurn,
+            apiService: _apiService, // ★ ここでApiServiceを渡す
           ),
         ),
       );

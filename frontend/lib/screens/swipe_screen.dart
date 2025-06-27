@@ -2,19 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:frontend/screens/summary_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:swipe_cards/swipe_cards.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ★ Firestoreをインポート
 
 class SwipeScreen extends StatefulWidget {
   final String sessionId;
   final List<Map<String, dynamic>> questions;
   final int turn;
-  final ApiService? apiService; // ★ テスト用にApiServiceを受け取れるようにする
+  final ApiService? apiService;
+  final FirebaseFirestore? firestore; // ★ HomeScreenからfirestoreを受け取る口を追加
 
   const SwipeScreen({
     super.key,
     required this.sessionId,
     required this.questions,
     this.turn = 1,
-    this.apiService, // ★ コンストラクタに追加
+    this.apiService,
+    this.firestore, // ★ コンストラクタに追加
   });
 
   @override
@@ -121,6 +124,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
                           MaterialPageRoute(
                             builder: (context) => SummaryScreen(
                               sessionId: widget.sessionId,
+                              apiService: _apiService, // ★ 以前の修正
+                              firestore: widget.firestore, // ★ ここでfirestoreをSummaryScreenに渡す
                             ),
                           ),
                         );

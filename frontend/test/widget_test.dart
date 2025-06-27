@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ★ SharedPreferencesのインポートを追加
 
 import 'package:frontend/main.dart';
 import 'package:frontend/models/graph_data.dart';
@@ -134,43 +135,66 @@ class FakeApiService implements ApiService {
   }
 }
 
-
 void main() {
-  setUpAll(() async {
+  // 非同期の初期化処理をまとめるヘルパー関数
+  Future<void> initializeTest() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     FirebasePlatform.instance = MockFirebasePlatform();
     await Firebase.initializeApp();
-  });
+  }
+
+  setUpAll(initializeTest);
 
   group('MyApp Authentication Flow', () {
+    // SharedPreferencesのモックを設定するためのヘルパー
+    Future<SharedPreferences> setupMockSharedPreferences() async {
+      SharedPreferences.setMockInitialValues({
+        'onboarding_completed': true, // オンボーディングは完了済みとする
+      });
+      return SharedPreferences.getInstance();
+    }
+
     testWidgets('shows LoginScreen when user is not logged in',
         (WidgetTester tester) async {
       final mockAuth = MockFirebaseAuth(signedIn: false);
+      final mockPrefs = await setupMockSharedPreferences();
+
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [firebaseAuthProvider.overrideWithValue(mockAuth)],
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            // ★ 修正: FutureProviderをoverrideWithで上書きする
+            sharedPreferencesProvider.overrideWith((ref) => Future.value(mockPrefs)),
+          ],
           child: const MyApp(),
         ),
       );
+      // 全ての非同期処理（FutureProvider, StreamProvider）が完了するのを待つ
       await tester.pumpAndSettle();
+
       expect(find.byType(LoginScreen), findsOneWidget);
       expect(find.byType(HomeScreen), findsNothing);
     });
 
     testWidgets('shows HomeScreen when user is logged in',
         (WidgetTester tester) async {
-      final mockAuth = MockFirebaseAuth(signedIn: true);
-      final fakeApiService = FakeApiService();
+      final mockAuth = MockFirebaseAuth(
+        signedIn: true,
+        mockUser: MockUser(uid: 'some_uid'),
+      );
+      final mockPrefs = await setupMockSharedPreferences();
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             firebaseAuthProvider.overrideWithValue(mockAuth),
-            apiServiceProvider.overrideWithValue(fakeApiService),
+            // ★ 修正: FutureProviderをoverrideWithで上書きする
+            sharedPreferencesProvider.overrideWith((ref) => Future.value(mockPrefs)),
           ],
           child: const MyApp(),
         ),
       );
+      // 全ての非同期処理（FutureProvider, StreamProvider）が完了するのを待つ
       await tester.pumpAndSettle();
 
       expect(find.byType(HomeScreen), findsOneWidget);
