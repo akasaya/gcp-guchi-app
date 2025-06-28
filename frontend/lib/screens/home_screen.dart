@@ -6,7 +6,6 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // ★ Firestoreをインポート
 import 'package:flutter_riverpod/flutter_riverpod.dart'; // Riverpodをインポート
 import 'package:frontend/main.dart'; // apiServiceProvider をインポート
     
