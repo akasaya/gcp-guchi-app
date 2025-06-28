@@ -53,18 +53,35 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _questionStartTime = DateTime.now();
   }
 
-  void _onSwipe(bool isYes, Map<String, dynamic> questionData, int index) {
+   void _onSwipe(bool isYes, Map<String, dynamic> questionData, int index) {
     final hesitationTime =
         DateTime.now().difference(_questionStartTime).inMilliseconds / 1000.0;
 
-  _apiService.recordSwipe(
-    sessionId: widget.sessionId,
-    questionId: questionData['question_id'],
-    answer: isYes, // isYes (bool値) をそのまま使う
-    hesitationTime: hesitationTime,
-    swipeSpeed: 0,
-    turn: widget.turn,
-  );
+    _apiService.recordSwipe(
+      sessionId: widget.sessionId,
+      questionId: questionData['question_id'],
+      answer: isYes,
+      hesitationTime: hesitationTime,
+      swipeSpeed: 0,
+      turn: index + 1,
+    );
+
+    // ★★★ 修正点 ★★★
+    // onStackFinishedが信頼できない問題への対策として、手動で最後のカードか判定する。
+    if (index >= _swipeItems.length - 1) {
+      // Future.delayed を削除し、即座にAPI呼び出しと画面遷移を実行する。
+      // これにより、テストと実装双方の複雑性を解消する。
+      _apiService.postSummary(sessionId: widget.sessionId);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => SummaryScreen(
+            sessionId: widget.sessionId,
+            apiService: _apiService,
+            firestore: widget.firestore,
+          ),
+        ),
+      );
+    }
   }
 
   @override
