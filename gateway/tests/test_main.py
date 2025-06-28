@@ -10,6 +10,7 @@ import os # ★★★ osをインポート ★★★
 import tenacity # ★★★ tenacityをインポート ★★★
 import requests # ★★★ requestsをインポート ★★★
 from gateway.main import RAG_CACHE_TTL_DAYS 
+from google.auth import credentials as auth_credentials
 
 @pytest.fixture(scope='session', autouse=True)
 def mock_gcp_auth(session_mocker):
@@ -25,7 +26,7 @@ def mock_gcp_auth(session_mocker):
         'google.auth.default',
         return_value=(mock_creds, mock_project_id)
     )
-    
+
 # --- モックデータ ---
 MOCK_USER_ID = "test_user_123"
 MOCK_ID_TOKEN = "mock_firebase_id_token"
