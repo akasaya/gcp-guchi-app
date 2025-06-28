@@ -97,7 +97,7 @@ void main() {
     }
 
     testWidgets('shows LoginScreen when user is not logged in', (WidgetTester tester) async {
-      final mockAuth = MockFirebaseAuth(signedIn: false);
+      final mockAuth = MockFirebaseAuth();
       final mockPrefs = await setupMockSharedPreferences();
 
       await tester.pumpWidget(
@@ -117,10 +117,8 @@ void main() {
     });
 
     testWidgets('shows HomeScreen when user is logged in', (WidgetTester tester) async {
-      final mockAuth = MockFirebaseAuth(
-        signedIn: true,
-        mockUser: MockUser(uid: 'some_uid'),
-      );
+      final mockUser = MockUser(uid: 'some_uid');
+      final mockAuth = MockFirebaseAuth(mockUser: mockUser);
       final mockPrefs = await setupMockSharedPreferences();
 
       await tester.pumpWidget(

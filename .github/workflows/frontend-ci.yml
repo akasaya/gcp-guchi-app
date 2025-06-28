@@ -40,6 +40,9 @@ jobs:
       - name: Run analyzer
         run: flutter analyze
 
+      - name: Run tests # ★★★ このステップを追加 ★★★
+        run: flutter test
+        
       - name: Build for Web
         # ★★★ 2. buildコマンドにRECAPTCHA_SITE_KEYの--dart-defineを追加 ★★★
         run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}" --dart-define=RECAPTCHA_SITE_KEY="${{ env.RECAPTCHA_SITE_KEY }}"

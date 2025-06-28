@@ -40,23 +40,3 @@ class FakeFirebaseAppPlatform extends Mock with MockPlatformInterfaceMixin imple
   final FirebaseOptions options;
   FakeFirebaseAppPlatform({required this.name, required this.options});
 }
-
-
-// --- Auth Mocks (for FirebaseAuth, User) ---
-// これらが、これまで欠けていたMockクラスです。
-
-class MockUser extends Mock implements User {}
-
-class MockFirebaseAuth extends Mock implements FirebaseAuth {
-  final User? _user;
-
-  MockFirebaseAuth({User? signedInUser}) : _user = signedInUser;
-
-  @override
-  User? get currentUser => _user;
-
-  @override
-  Stream<User?> authStateChanges() {
-    return Stream.value(_user);
-  }
-}
