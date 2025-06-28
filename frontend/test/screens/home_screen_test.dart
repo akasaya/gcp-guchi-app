@@ -24,7 +24,7 @@ void main() {
 
   // 全てのテストの前に一度だけ呼ばれるセットアップ
   setUpAll(() async {
-    await setupFirebaseCoreMocks();
+    setupFirebaseMocks(); // ★★★ setupFirebaseCoreMocks から修正
   });
 
   // 各テストの「直前」に毎回呼ばれるセットアップ

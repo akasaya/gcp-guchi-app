@@ -15,7 +15,7 @@ void setupFirebaseMocks() {
 }
 
 
-class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
+class FakeFirebasePlatform extends Mock with MockPlatformInterfaceMixin implements FirebasePlatform { // ★★★ FakeをMockに変更 ★★★
   @override
   Future<FirebaseAppPlatform> initializeApp({
     String? name,
@@ -33,7 +33,7 @@ class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implemen
   }
 }
 
-class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
+class FakeFirebaseAppPlatform extends Mock with MockPlatformInterfaceMixin implements FirebaseAppPlatform { // ★★★ FakeをMockに変更 ★★★
   @override
   final String name;
   @override

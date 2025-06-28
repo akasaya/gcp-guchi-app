@@ -4,7 +4,7 @@ import 'package:firebase_core_platform_interface/firebase_core_platform_interfac
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frontend/models/book_recommendation.dart';
+//import 'package:frontend/models/book_recommendation.dart';
 import 'package:frontend/screens/summary_screen.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/services/api_service.dart';

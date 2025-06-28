@@ -40,7 +40,7 @@ void main() {
     apiService = ApiService(
       dio: mockDio,
       auth: mockAuth,
-      appCheck: mockAppCheck,
+      // appCheck: mockAppCheck, // ★★★ 削除されたパラメータ
     );
     
     // その他のスタブ設定
