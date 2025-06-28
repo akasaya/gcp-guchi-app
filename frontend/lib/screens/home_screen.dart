@@ -7,27 +7,19 @@ import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // ★ Firestoreをインポート
-
-class HomeScreen extends StatefulWidget {
-  final ApiService? apiService;
-  final FirebaseAuth? auth;
-  final FirebaseFirestore? firestore; // ★ テスト用にfirestoreを受け取る口を追加
-
-  const HomeScreen({
-    super.key,
-    this.apiService,
-    this.auth,
-    this.firestore, // ★ コンストラクタに追加
-  });
-
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // Riverpodをインポート
+import 'package:frontend/main.dart'; // apiServiceProvider をインポート
+    
+class HomeScreen extends ConsumerStatefulWidget { // ConsumerStatefulWidget に変更
+  const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState(); // ConsumerState に変更
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  late final FirebaseAuth _auth;               // ← 修正後
-  late final ApiService _apiService;           // ← 修正後
+class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に変更
+  late final FirebaseAuth _auth;
+  late final ApiService _apiService;
 
   bool _isLoadingSuggestions = true;
   HomeSuggestion? _proactiveSuggestion;
@@ -49,8 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _auth = widget.auth ?? FirebaseAuth.instance;
-    _apiService = widget.apiService ?? ApiService();
+    _auth = ref.read(firebaseAuthProvider);
+    _apiService = ref.read(apiServiceProvider); 
     _fetchData();
   }
 

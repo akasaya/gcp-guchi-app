@@ -1,15 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:frontend/services/api_service.dart';
-import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/home_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:frontend/screens/swipe_screen.dart';
+import 'package:frontend/services/api_service.dart';
 
-class SummaryScreen extends StatefulWidget {
+class SummaryScreen extends ConsumerStatefulWidget {
   final String sessionId;
-  // ★ テスト用に外部からサービスを注入できるようにする
   final ApiService? apiService;
   final FirebaseFirestore? firestore;
 
@@ -21,11 +20,10 @@ class SummaryScreen extends StatefulWidget {
   });
 
   @override
-  State<SummaryScreen> createState() => _SummaryScreenState();
+  ConsumerState<SummaryScreen> createState() => _SummaryScreenState();
 }
 
-class _SummaryScreenState extends State<SummaryScreen> {
-  // ★ final ApiService _apiService = ApiService(); // ← この行を削除
+class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   late final ApiService _apiService;
   late final FirebaseFirestore _firestore;
 
@@ -35,21 +33,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
   @override
   void initState() {
     super.initState();
-    // ★ 注入されたインスタンス、または本物を使うように設定
-    _apiService = widget.apiService ?? ApiService();
+    // 注入されたインスタンス、またはRiverpodから取得したインスタンスを使うように修正
+    _apiService = widget.apiService ?? ref.read(apiServiceProvider);
     _firestore = widget.firestore ?? FirebaseFirestore.instance;
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _sessionStream = _firestore // ★ ここで注入されたfirestoreインスタンスを使う
-          .collection('users')
-          .doc(user.uid)
-          .collection('sessions')
-          .doc(widget.sessionId)
-          .snapshots();
-    }
+    // StreamBuilderでFirestoreのデータを監視
+    _sessionStream =
+        _firestore.collection('sessions').doc(widget.sessionId).snapshots();
   }
-    void _showLoadingDialog() {
+
+  void _showLoadingDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -106,7 +99,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             sessionId: widget.sessionId,
             questions: newQuestions,
             turn: newTurn,
-            apiService: _apiService, // ★ ここでApiServiceを渡す
+            apiService: _apiService,
           ),
         ),
       );
@@ -123,7 +116,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -136,7 +128,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
         body: StreamBuilder<DocumentSnapshot>(
           stream: _sessionStream,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -149,14 +142,15 @@ class _SummaryScreenState extends State<SummaryScreen> {
               );
             }
 
-            if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+            if (snapshot.hasError ||
+                !snapshot.hasData ||
+                !snapshot.data!.exists) {
               return const Center(child: Text('分析結果の取得に失敗しました。'));
             }
 
             final sessionData = snapshot.data!.data() as Map<String, dynamic>;
             final status = sessionData['status'] as String?;
 
-            // 2. バックエンドで最初の要約を処理中のローディング画面を表示
             if (status != 'completed' && status != 'error' && !_isContinuing) {
               return const Center(
                 child: Column(
@@ -169,27 +163,34 @@ class _SummaryScreenState extends State<SummaryScreen> {
                 ),
               );
             }
-            
+
             if (status == 'error') {
-              final errorMessage = sessionData['error_message'] ?? '不明なエラーが発生しました。';
-              return Center(child: Text('分析結果の取得に失敗しました: $errorMessage'));
+              final errorMessage =
+                  sessionData['error_message'] ?? '不明なエラーが発生しました。';
+              return Center(
+                  child: Text('分析結果の取得に失敗しました: $errorMessage'));
             }
 
-            final insights = sessionData['latest_insights'] as String? ?? '分析結果のテキストがありません。';
+            final insights =
+                sessionData['latest_insights'] as String? ?? '分析結果のテキストがありません。';
             final title = sessionData['title'] as String? ?? '無題';
             final currentTurn = sessionData['turn'] as int? ?? 1;
             final maxTurns = sessionData['max_turns'] as int? ?? 5;
-            
+
             final canContinue = currentTurn < maxTurns;
             final remainingTurns = maxTurns - currentTurn;
-
 
             return Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                  Text(title,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   Expanded(
                     child: Container(
@@ -201,9 +202,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
                       ),
                       child: Markdown(
                         data: insights,
-                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                          h2: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                          h3: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                            .copyWith(
+                          h2: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                          h3: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -221,11 +229,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   const SizedBox(height: 12),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16)
-                    ),
+                        padding: const EdgeInsets.symmetric(vertical: 16)),
                     onPressed: () {
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (context) => const HomeScreen()),
+                        MaterialPageRoute(builder: (context) => HomeScreen()),
                         (Route<dynamic> route) => false,
                       );
                     },

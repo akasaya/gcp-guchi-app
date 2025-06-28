@@ -1,51 +1,60 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-typedef Callback = void Function(MethodCall call);
+// --- Core Mocks (for Firebase.initializeApp) ---
 
-void setupFirebaseMocks([Callback? customHandlers]) {
-  // テスト用のBindingを確実に初期化し、インスタンスを取得します。
-  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+// このセットアップ関数は、テスト実行時にFirebaseのネイティブ初期化をバイパスするために必要です。
+Future<void> setupFirebaseCoreMocks() async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  FirebasePlatform.instance = FakeFirebasePlatform();
+}
 
-  // 取得したBinding経由で、テスト用のメッセンジャーにアクセスします。
-  // これが現在のFlutterで推奨されている方法です。
-  binding.defaultBinaryMessenger.setMockMethodCallHandler(
-    const MethodChannel('plugins.flutter.io/firebase_core'),
-    (MethodCall call) async {
-      if (call.method == 'Firebase#initializeCore') {
-        return {
-          'name': defaultFirebaseAppName,
-          'options': {
-            'apiKey': 'mock_api_key',
-            'appId': 'mock_app_id',
-            'messagingSenderId': 'mock_sender_id',
-            'projectId': 'mock_project_id',
-          },
-          'pluginConstants': <String, dynamic>{},
-        };
-      }
+class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
+  @override
+  Future<FirebaseAppPlatform> initializeApp({
+    String? name,
+    FirebaseOptions? options,
+  }) async {
+    return FakeFirebaseAppPlatform(
+      name: name ?? '[DEFAULT]',
+      options: options ?? const FirebaseOptions(
+        apiKey: 'fake',
+        appId: 'fake',
+        messagingSenderId: 'fake',
+        projectId: 'fake',
+      ),
+    );
+  }
+}
 
-      if (call.method == 'Firebase#apps') {
-        return [
-          {
-            'name': defaultFirebaseAppName,
-            'options': {
-              'apiKey': 'mock_api_key',
-              'appId': 'mock_app_id',
-              'messagingSenderId': 'mock_sender_id',
-              'projectId': 'mock_project_id',
-            },
-            'pluginConstants': <String, dynamic>{},
-          }
-        ];
-      }
+class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
+  @override
+  final String name;
+  @override
+  final FirebaseOptions options;
+  FakeFirebaseAppPlatform({required this.name, required this.options});
+}
 
-      if (customHandlers != null) {
-        customHandlers(call);
-      }
 
-      return null;
-    },
-  );
+// --- Auth Mocks (for FirebaseAuth, User) ---
+// これらが、これまで欠けていたMockクラスです。
+
+class MockUser extends Mock implements User {}
+
+class MockFirebaseAuth extends Mock implements FirebaseAuth {
+  final User? _user;
+
+  MockFirebaseAuth({User? signedInUser}) : _user = signedInUser;
+
+  @override
+  User? get currentUser => _user;
+
+  @override
+  Stream<User?> authStateChanges() {
+    return Stream.value(_user);
+  }
 }

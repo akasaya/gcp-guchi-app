@@ -3,7 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // ★ SharedPreferencesのインポートを追加
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:frontend/main.dart';
 import 'package:frontend/models/graph_data.dart';
@@ -13,149 +14,92 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/models/book_recommendation.dart';
 
-/// Firebaseのネイティブ通信を偽装するクラス
-class MockFirebasePlatform extends FirebasePlatform {
+// --- ここからswipe_screen_test.dartと共通の偽Firebase実装 ---
+class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
   @override
-  Future<FirebaseAppPlatform> initializeApp({
-    String? name,
-    FirebaseOptions? options,
-  }) async {
-    return FirebaseAppPlatform(
-      name ?? defaultFirebaseAppName,
-      options ?? const FirebaseOptions(
-        apiKey: 'mock-api-key',
-        appId: 'mock-app-id',
-        messagingSenderId: 'mock-sender-id',
-        projectId: 'mock-project-id',
-      ),
-    );
-  }
-
+  final String name;
   @override
-  FirebaseAppPlatform app([String name = defaultFirebaseAppName]) {
-    return FirebaseAppPlatform(
-      name,
-      const FirebaseOptions(
-        apiKey: 'mock-api-key',
-        appId: 'mock-app-id',
-        messagingSenderId: 'mock-sender-id',
-        projectId: 'mock-project-id',
-      ),
-    );
-  }
+  final FirebaseOptions options;
+  FakeFirebaseAppPlatform({required this.name, required this.options});
 }
 
-/// ApiServiceの偽物（フェイク）クラスを定義します。
-/// ApiServiceが持つすべてのメソッドを、正しい引数でダミーとして実装します。
+class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
+  static final Map<String, FirebaseAppPlatform> _apps = {};
+  @override
+  Future<FirebaseAppPlatform> initializeApp({String? name, FirebaseOptions? options}) async {
+    final appName = name ?? '[DEFAULT]';
+    final app = FakeFirebaseAppPlatform(name: appName, options: options!);
+    _apps[appName] = app;
+    return Future.value(app);
+  }
+  @override
+  FirebaseAppPlatform app([String name = '[DEFAULT]']) {
+    if (_apps.containsKey(name)) return _apps[name]!;
+    throw noAppExists(name);
+  }
+  @override
+  List<FirebaseAppPlatform> get apps => _apps.values.toList();
+}
+// --- ここまで偽のFirebase実装 ---
+
 class FakeApiService implements ApiService {
   @override
-  Future<HomeSuggestion?> getHomeSuggestion() async {
-    return Future.value(null);
-  }
-
+  Future<HomeSuggestion?> getHomeSuggestion() async => null;
   @override
-  Future<HomeSuggestion?> getHomeSuggestionV2() async {
-    return Future.value(null);
-  }
-
+  Future<HomeSuggestion?> getHomeSuggestionV2() async => null;
   @override
-  Future<AnalysisSummary> getAnalysisSummary() {
-    return Future.value(AnalysisSummary(totalSessions: 0, topicCounts: []));
-  }
-
+  Future<List<String>> getTopicSuggestions() async => ['テスト提案1', 'テスト提案2'];
   @override
-  Future<List<String>> getTopicSuggestions() {
-    return Future.value(['テスト提案1', 'テスト提案2']);
-  }
-
+  Future<GraphData> getAnalysisGraph() async => GraphData(nodes: [], edges: []);
   @override
-  Future<List<BookRecommendation>> getBookRecommendations() {
-    return Future.value([]);
-  }
-
+  Future<AnalysisSummary> getAnalysisSummary() async => AnalysisSummary(totalSessions: 0, topicCounts: []);
   @override
-  Future<GraphData> getAnalysisGraph() {
-    return Future.value(GraphData(nodes: [], edges: []));
-  }
-
+  Future<List<BookRecommendation>> getBookRecommendations() async => [];
   @override
-  Future<NodeTapResponse?> getProactiveSuggestion() {
-    return Future.value(null);
-  }
-
+  Future<NodeTapResponse?> getProactiveSuggestion() async => null;
   @override
   Future<ChatResponse> postChatMessage({
     required List<Map<String, String>> chatHistory,
     required String message,
     bool useRag = false,
     String? ragType,
-  }) {
-    // ★★★ ここを修正: `sources` パラメータを追加します ★★★
-    return Future.value(ChatResponse(response: 'dummy response', sources: []));
-  }
-
+  }) async => ChatResponse(response: 'dummy response', sources: []);
   @override
-  Future<NodeTapResponse> handleNodeTap(String nodeLabel) {
-    return Future.value(NodeTapResponse(
-        initialSummary: 'dummy', actions: [], nodeLabel: nodeLabel));
-  }
-
+  Future<NodeTapResponse> handleNodeTap(String nodeLabel) async => NodeTapResponse(
+        initialSummary: 'dummy', actions: [], nodeLabel: nodeLabel);
   @override
-  Future<Map<String, dynamic>> startSession(String topic) {
-    return Future.value({
+  Future<Map<String, dynamic>> startSession(String topic) async => {
       'session_id': 'dummy-session-id',
       'questions': [],
-    });
-  }
-
+    };
   @override
   Future<void> recordSwipe({
-    required String sessionId,
-    required String questionId,
-    required bool answer,
-    required double hesitationTime,
-    required int swipeSpeed,
-    required int turn,
-  }) {
-    return Future.value();
-  }
-
+    required String sessionId, required String questionId, required bool answer,
+    required double hesitationTime, required int swipeSpeed, required int turn,
+  }) async {}
   @override
-  Future<Map<String, dynamic>> postSummary({
-    required String sessionId,
-  }) {
-    return Future.value({});
-  }
-
+  Future<void> postSummary({required String sessionId}) async {}
   @override
-  Future<Map<String, dynamic>> continueSession({
-    required String sessionId,
-  }) {
-    return Future.value({});
-  }
+  Future<Map<String, dynamic>> continueSession({required String sessionId}) async => {};
 }
 
 void main() {
-  // 非同期の初期化処理をまとめるヘルパー関数
-  Future<void> initializeTest() async {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    FirebasePlatform.instance = MockFirebasePlatform();
-    await Firebase.initializeApp();
-  }
-
-  setUpAll(initializeTest);
+  setUpAll(() async {
+    FirebasePlatform.instance = FakeFirebasePlatform();
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'fake', appId: 'fake', messagingSenderId: 'fake', projectId: 'fake'),
+    );
+  });
 
   group('MyApp Authentication Flow', () {
-    // SharedPreferencesのモックを設定するためのヘルパー
     Future<SharedPreferences> setupMockSharedPreferences() async {
-      SharedPreferences.setMockInitialValues({
-        'onboarding_completed': true, // オンボーディングは完了済みとする
-      });
+      // ★★★ 全ての悲劇の元凶であった、キーの不一致を修正 ★★★
+      SharedPreferences.setMockInitialValues({'onboarding_completed': true});
       return SharedPreferences.getInstance();
     }
 
-    testWidgets('shows LoginScreen when user is not logged in',
-        (WidgetTester tester) async {
+    testWidgets('shows LoginScreen when user is not logged in', (WidgetTester tester) async {
       final mockAuth = MockFirebaseAuth(signedIn: false);
       final mockPrefs = await setupMockSharedPreferences();
 
@@ -163,21 +107,19 @@ void main() {
         ProviderScope(
           overrides: [
             firebaseAuthProvider.overrideWithValue(mockAuth),
-            // ★ 修正: FutureProviderをoverrideWithで上書きする
-            sharedPreferencesProvider.overrideWith((ref) => Future.value(mockPrefs)),
+            sharedPreferencesProvider.overrideWith((ref) => mockPrefs),
+            apiServiceProvider.overrideWithValue(FakeApiService()),
           ],
           child: const MyApp(),
         ),
       );
-      // 全ての非同期処理（FutureProvider, StreamProvider）が完了するのを待つ
       await tester.pumpAndSettle();
 
       expect(find.byType(LoginScreen), findsOneWidget);
       expect(find.byType(HomeScreen), findsNothing);
     });
 
-    testWidgets('shows HomeScreen when user is logged in',
-        (WidgetTester tester) async {
+    testWidgets('shows HomeScreen when user is logged in', (WidgetTester tester) async {
       final mockAuth = MockFirebaseAuth(
         signedIn: true,
         mockUser: MockUser(uid: 'some_uid'),
@@ -188,13 +130,12 @@ void main() {
         ProviderScope(
           overrides: [
             firebaseAuthProvider.overrideWithValue(mockAuth),
-            // ★ 修正: FutureProviderをoverrideWithで上書きする
-            sharedPreferencesProvider.overrideWith((ref) => Future.value(mockPrefs)),
+            sharedPreferencesProvider.overrideWith((ref) => mockPrefs),
+            apiServiceProvider.overrideWithValue(FakeApiService()),
           ],
           child: const MyApp(),
         ),
       );
-      // 全ての非同期処理（FutureProvider, StreamProvider）が完了するのを待つ
       await tester.pumpAndSettle();
 
       expect(find.byType(HomeScreen), findsOneWidget);

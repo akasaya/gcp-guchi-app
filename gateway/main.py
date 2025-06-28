@@ -138,7 +138,8 @@ def verify_app_check():
         if app_check_token is None:
             # トークンがない場合は401エラーを返す
             print("App Check: Token is missing.")
-            abort(401, description="App Check token is missing.")
+            # ★★★ abort -> jsonify に変更 ★★★
+            return jsonify({"error": "App Check token is missing."}), 401
 
         try:
             # トークンを検証。無効な場合は例外が発生する。
@@ -147,7 +148,9 @@ def verify_app_check():
         except Exception as e:
             # 検証に失敗した場合は401エラーを返す
             print(f"❌ App Check: Token verification failed: {e}")
-            abort(401, description="Invalid App Check token.")
+            # ★★★ abort -> jsonify に変更 ★★★
+            return jsonify({"error": f"Invalid App Check token: {e}"}), 401
+
 
 # --- CORS設定 ---
 prod_origin = os.getenv('PROD_ORIGIN_URL')
@@ -322,6 +325,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
     model = GenerativeModel(model_name)
     attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
     print(f"--- Calling Gemini ({model_name}) with schema (Attempt: {attempt_num}) ---")
+    response = None # responseを事前に初期化
     try:
         response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=schema))
         response_text = response.text.strip()
@@ -380,17 +384,30 @@ def generate_follow_up_questions(insights):
 """
     prompt = textwrap.dedent(prompt)
     flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-    return _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model).get("questions", [])
+    try:
+        result = _call_gemini_with_schema(prompt, QUESTIONS_SCHEMA, model_name=flash_model)
+        return result.get("questions", []) if result else None
+    except Exception as e:
+        print(f"❌ Failed to generate follow up questions: {e}")
+        return None
 
 def generate_summary_only(topic, swipes_text):
     prompt = SUMMARY_ONLY_PROMPT_TEMPLATE.format(topic=topic, swipes_text=swipes_text)
     flash_model = os.getenv('GEMINI_FLASH_NAME', 'gemini-1.5-flash-preview-05-20')
-    return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA, model_name=flash_model)
+    try:
+        return _call_gemini_with_schema(prompt, SUMMARY_SCHEMA, model_name=flash_model)
+    except Exception as e:
+        print(f"❌ Failed to generate summary: {e}")
+        return None
 
 def generate_graph_data(all_insights_text):
     prompt = GRAPH_ANALYSIS_PROMPT_TEMPLATE + all_insights_text
     pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
-    return _call_gemini_with_schema(prompt, GRAPH_SCHEMA, model_name=pro_model)
+    try:
+        return _call_gemini_with_schema(prompt, GRAPH_SCHEMA, model_name=pro_model)
+    except Exception as e:
+        print(f"❌ Failed to generate graph data: {e}")
+        return None
 
 def generate_chat_response(session_summary, chat_history, user_message, rag_context=""):
     history_str = "\n".join([f"{msg['author']}: {msg['text']}" for msg in chat_history])
@@ -439,8 +456,12 @@ def generate_topic_suggestions(insights_text: str):
 - 必ず、指定されたJSON形式で出力してください。
 """
     pro_model = os.getenv('GEMINI_PRO_NAME', 'gemini-1.5-pro-preview-05-20')
-    result = _call_gemini_with_schema(prompt, TOPIC_SUGGESTION_SCHEMA, model_name=pro_model)
-    return result.get("suggestions", [])
+    try:
+        result = _call_gemini_with_schema(prompt, TOPIC_SUGGESTION_SCHEMA, model_name=pro_model)
+        return result.get("suggestions", []) if result else None
+    except Exception as e:
+        print(f"❌ Failed to generate topic suggestions: {e}")
+        return None
 
 
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
@@ -506,7 +527,8 @@ def _get_embeddings(texts: list[str]) -> list[list[float]]:
     except Exception as e:
         print(f"❌ RAG: An error occurred during embedding generation: {e}")
         traceback.print_exc()
-        return []
+        # ★★★ 修正: 例外を再raiseしてretryをトリガーする ★★★
+        raise
 
 def _get_url_cache_doc_ref(url: str):
     url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
@@ -844,6 +866,12 @@ def start_session():
         # Geminiで最初の質問を生成
         questions = generate_initial_questions(topic, user_id)
 
+        # ★★★ 修正はここからです ★★★
+        # 質問が生成されなかった場合のチェックを、すぐに実行するように移動します
+        if not questions:
+            print("Failed to generate initial questions.")
+            return jsonify({"error": "Failed to generate initial questions"}), 500
+
         # バッチ書き込みを使って質問を保存し、同時にフロントエンド用のレスポンスを作成
         batch = db_firestore.batch()
         
@@ -1017,7 +1045,7 @@ def continue_session(session_id):
             new_turn = current_turn + 1
             
             if new_turn > MAX_TURNS:
-                 return None, None
+                 return None
 
             transaction.update(ref, {
                 'turn': new_turn,
@@ -1185,6 +1213,32 @@ def get_book_recommendations():
         traceback.print_exc()
         return jsonify({"error": "Failed to get book recommendations"}), 500
 
+def search_books_from_api(keyword: str, api_key: str):
+    """Google Books APIを叩いて書籍情報を検索するヘルパー関数"""
+    books_api_url = f"https://www.googleapis.com/books/v1/volumes?q={urllib.parse.quote_plus(keyword)}&key={api_key}&langRestrict=ja&maxResults=5&printType=books&orderBy=relevance"
+    books_found = []
+    try:
+        print(f"--- Calling Google Books API with keyword: {keyword} ---")
+        response = requests.get(books_api_url, timeout=10)
+        response.raise_for_status()
+        search_results = response.json()
+        
+        if 'items' in search_results:
+            for item in search_results.get('items', []):
+                volume_info = item.get('volumeInfo', {})
+                title = volume_info.get('title')
+                authors = volume_info.get('authors', ['著者不明'])
+                book_id = item.get('id')
+                if title and book_id:
+                    books_found.append({
+                        "id": book_id,
+                        "title": title,
+                        "author": ", ".join(authors)
+                    })
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Warning: Google Books API call failed for keyword '{keyword}': {e}")
+    return books_found
+
 def _generate_book_recommendations(insights_text: str, api_key: str):
     """ユーザーの思考サマリーに基づき、Google Books APIとGeminiを連携させて書籍を推薦する (堅牢版)"""
     
@@ -1221,29 +1275,12 @@ def _generate_book_recommendations(insights_text: str, api_key: str):
     unique_book_ids = set()
 
     for keyword in keywords:
-        books_api_url = f"https://www.googleapis.com/books/v1/volumes?q={urllib.parse.quote_plus(keyword)}&key={api_key}&langRestrict=ja&maxResults=5&printType=books&orderBy=relevance"
-        try:
-            print(f"--- Calling Google Books API with keyword: {keyword} ---")
-            response = requests.get(books_api_url, timeout=10)
-            response.raise_for_status()
-            search_results = response.json()
-            
-            if 'items' in search_results:
-                for item in search_results['items']:
-                    book_id = item.get('id')
-                    if book_id in unique_book_ids:
-                        continue 
-
-                    volume_info = item.get('volumeInfo', {})
-                    title = volume_info.get('title')
-                    authors = volume_info.get('authors', ['著者不明'])
-                    if title:
-                        all_books_info.append({"title": title, "author": ", ".join(authors)})
-                        unique_book_ids.add(book_id)
-
-        except requests.exceptions.RequestException as e:
-            print(f"⚠️ Warning: Google Books API call failed for keyword '{keyword}': {e}")
-            continue
+        # 新しいヘルパー関数を呼び出す
+        found_books = search_books_from_api(keyword, api_key)
+        for book in found_books:
+            if book['id'] not in unique_book_ids:
+                all_books_info.append({"title": book["title"], "author": book["author"]})
+                unique_book_ids.add(book['id'])
 
     if not all_books_info:
         print("No books found from Google Books API across all keywords.")
