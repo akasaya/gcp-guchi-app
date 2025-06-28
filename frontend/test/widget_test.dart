@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:firebase_core/firebase_core.dart';
+//import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+// import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
+// import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:frontend/main.dart';
@@ -13,34 +13,35 @@ import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/models/book_recommendation.dart';
+import 'firebase_mock.dart';
 
-// --- ここからswipe_screen_test.dartと共通の偽Firebase実装 ---
-class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
-  @override
-  final String name;
-  @override
-  final FirebaseOptions options;
-  FakeFirebaseAppPlatform({required this.name, required this.options});
-}
+// // --- ここからswipe_screen_test.dartと共通の偽Firebase実装 ---
+// class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
+//   @override
+//   final String name;
+//   @override
+//   final FirebaseOptions options;
+//   FakeFirebaseAppPlatform({required this.name, required this.options});
+// }
 
-class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
-  static final Map<String, FirebaseAppPlatform> _apps = {};
-  @override
-  Future<FirebaseAppPlatform> initializeApp({String? name, FirebaseOptions? options}) async {
-    final appName = name ?? '[DEFAULT]';
-    final app = FakeFirebaseAppPlatform(name: appName, options: options!);
-    _apps[appName] = app;
-    return Future.value(app);
-  }
-  @override
-  FirebaseAppPlatform app([String name = '[DEFAULT]']) {
-    if (_apps.containsKey(name)) return _apps[name]!;
-    throw noAppExists(name);
-  }
-  @override
-  List<FirebaseAppPlatform> get apps => _apps.values.toList();
-}
-// --- ここまで偽のFirebase実装 ---
+// class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
+//   static final Map<String, FirebaseAppPlatform> _apps = {};
+//   @override
+//   Future<FirebaseAppPlatform> initializeApp({String? name, FirebaseOptions? options}) async {
+//     final appName = name ?? '[DEFAULT]';
+//     final app = FakeFirebaseAppPlatform(name: appName, options: options!);
+//     _apps[appName] = app;
+//     return Future.value(app);
+//   }
+//   @override
+//   FirebaseAppPlatform app([String name = '[DEFAULT]']) {
+//     if (_apps.containsKey(name)) return _apps[name]!;
+//     throw noAppExists(name);
+//   }
+//   @override
+//   List<FirebaseAppPlatform> get apps => _apps.values.toList();
+// }
+// // --- ここまで偽のFirebase実装 ---
 
 class FakeApiService implements ApiService {
   @override
@@ -84,12 +85,8 @@ class FakeApiService implements ApiService {
 }
 
 void main() {
-  setUpAll(() async {
-    FirebasePlatform.instance = FakeFirebasePlatform();
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: 'fake', appId: 'fake', messagingSenderId: 'fake', projectId: 'fake'),
-    );
+  setUpAll(() { // ← async を消して、中身を書き換える
+    setupFirebaseMocks();
   });
 
   group('MyApp Authentication Flow', () {
