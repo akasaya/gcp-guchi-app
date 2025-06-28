@@ -11,21 +11,16 @@ import tenacity # ★★★ tenacityをインポート ★★★
 import requests # ★★★ requestsをインポート ★★★
 from gateway.main import RAG_CACHE_TTL_DAYS 
 
-@pytest.fixture(autouse=True)
-def mock_gcp_auth(mocker):
+@pytest.fixture(scope='session', autouse=True)
+def mock_gcp_auth(session_mocker):
     """
     CI環境で 'google.auth.default' が認証エラーになるのを防ぐための自動実行フィクスチャ。
-    Firebase Admin SDKやGoogle Cloud Clientの初期化をモックします。
-    このフィクスチャは自動的に全てのテストで実行されます。
+    このフィクスチャはテストセッションの開始時に一度だけ自動的に実行されます。
     """
     # google.auth.default() が (credentials, project_id) のタプルを返すようにモック
     mock_credentials = MagicMock()
     mock_project_id = "test-project-from-mock"
-    mocker.patch('google.auth.default', return_value=(mock_credentials, mock_project_id))
-    
-    # firebase_admin.initialize_app() が呼ばれても何もしないようにモック
-    # これにより、テストごとに cleanup_firebase_app() を呼ぶ必要がなくなります。
-    mocker.patch('firebase_admin.initialize_app', return_value=None)
+    session_mocker.patch('google.auth.default', return_value=(mock_credentials, mock_project_id))
 
 
 # --- モックデータ ---
