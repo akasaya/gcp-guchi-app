@@ -15,14 +15,17 @@ from gateway.main import RAG_CACHE_TTL_DAYS
 def mock_gcp_auth(session_mocker):
     """
     CI環境で 'google.auth.default' が認証エラーになるのを防ぐための自動実行フィクスチャ。
-    このフィクスチャはテストセッションの開始時に一度だけ自動的に実行されます。
+    テストセッションの開始時に一度だけ実行され、認証をモックします。
     """
-    # google.auth.default() が (credentials, project_id) のタプルを返すようにモック
-    mock_credentials = MagicMock()
+    # google.auth.default() が返すcredentialsオブジェクトを、
+    # 正しい型(spec)を持つようにモックする
+    mock_creds = MagicMock(spec=auth_credentials.Credentials)
     mock_project_id = "test-project-from-mock"
-    session_mocker.patch('google.auth.default', return_value=(mock_credentials, mock_project_id))
-
-
+    session_mocker.patch(
+        'google.auth.default',
+        return_value=(mock_creds, mock_project_id)
+    )
+    
 # --- モックデータ ---
 MOCK_USER_ID = "test_user_123"
 MOCK_ID_TOKEN = "mock_firebase_id_token"
