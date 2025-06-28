@@ -11,6 +11,23 @@ import tenacity # ★★★ tenacityをインポート ★★★
 import requests # ★★★ requestsをインポート ★★★
 from gateway.main import RAG_CACHE_TTL_DAYS 
 
+@pytest.fixture(autouse=True)
+def mock_gcp_auth(mocker):
+    """
+    CI環境で 'google.auth.default' が認証エラーになるのを防ぐための自動実行フィクスチャ。
+    Firebase Admin SDKやGoogle Cloud Clientの初期化をモックします。
+    このフィクスチャは自動的に全てのテストで実行されます。
+    """
+    # google.auth.default() が (credentials, project_id) のタプルを返すようにモック
+    mock_credentials = MagicMock()
+    mock_project_id = "test-project-from-mock"
+    mocker.patch('google.auth.default', return_value=(mock_credentials, mock_project_id))
+    
+    # firebase_admin.initialize_app() が呼ばれても何もしないようにモック
+    # これにより、テストごとに  () を呼ぶ必要がなくなります。
+    mocker.patch('firebase_admin.initialize_app', return_value=None)
+
+
 # --- モックデータ ---
 MOCK_USER_ID = "test_user_123"
 MOCK_ID_TOKEN = "mock_firebase_id_token"
@@ -53,17 +70,11 @@ def test_index_route(client):
     assert response.status_code == 200
     assert b"GuchiSwipe Gateway is running." in response.data
 
-def cleanup_firebase_app():
-    """既存のFirebaseアプリを削除するヘルパー関数"""
-    if firebase_admin._apps:
-        firebase_admin.delete_app(firebase_admin.get_app())
 
 def test_cloud_tasks_initialization_success(mocker):
     """
     Cloud Tasksが正常に初期化されるかのテスト（環境変数が全て設定されている場合）
     """
-    # ★★★ 既存のアプリをクリーンアップ ★★★
-    cleanup_firebase_app()
 
     # 必要な環境変数をモック
     mock_env = {
@@ -91,7 +102,7 @@ def test_cloud_tasks_initialization_exception(mocker):
     """
     Cloud Tasksの初期化が例外を発生させた場合のテスト
     """
-    cleanup_firebase_app()
+
 
     # 必要な環境変数はすべて設定
     mock_env = {
@@ -119,7 +130,7 @@ def test_google_books_api_key_loading_from_secret(mocker):
     """
     Google Books APIキーがSecret Managerから正常に読み込まれるかのテスト
     """
-    cleanup_firebase_app()
+
 
     # os.path.existsとopenをモックする
     mocker.patch('os.path.exists', return_value=True)
@@ -141,7 +152,7 @@ def test_cloud_tasks_initialization_missing_vars(mocker):
     Cloud Tasksが無効になるかのテスト（環境変数が不足している場合）
     """
     # ★★★ 既存のアプリをクリーンアップ ★★★
-    cleanup_firebase_app()
+
 
     # 一部の環境変数だけをモック
     mock_env = {
@@ -955,7 +966,6 @@ def test_initialization_with_ollama(mocker):
     """
     Ollamaが設定されている場合に正常に初期化ログが出力されるかのテスト
     """
-    cleanup_firebase_app()
     mock_env = {
         'OLLAMA_ENDPOINT': 'http://localhost:11434',
         'OLLAMA_MODEL_NAME': 'test-model'
@@ -972,7 +982,6 @@ def test_initialization_failure(mocker):
     """
     初期化中に予期せぬ例外が発生した場合のテスト
     """
-    cleanup_firebase_app()
     # Firebaseの初期化で意図的に例外を発生させる
     mocker.patch('firebase_admin.initialize_app', side_effect=ValueError("Test initialization failure"))
     mocker.patch('traceback.print_exc') # traceback.print_excをモック
@@ -1575,7 +1584,7 @@ def test_index_route(client):
     assert response.status_code == 200
     assert b"GuchiSwipe Gateway is running." in response.data
 
-def cleanup_firebase_app():
+def ():
     """既存のFirebaseアプリを削除するヘルパー関数"""
     if firebase_admin._apps:
         firebase_admin.delete_app(firebase_admin.get_app())
@@ -1585,7 +1594,7 @@ def test_cloud_tasks_initialization_success(mocker):
     Cloud Tasksが正常に初期化されるかのテスト（環境変数が全て設定されている場合）
     """
     # ★★★ 既存のアプリをクリーンアップ ★★★
-    cleanup_firebase_app()
+     ()
 
     # 必要な環境変数をモック
     mock_env = {
@@ -1613,7 +1622,7 @@ def test_cloud_tasks_initialization_exception(mocker):
     """
     Cloud Tasksの初期化が例外を発生させた場合のテスト
     """
-    cleanup_firebase_app()
+     ()
 
     # 必要な環境変数はすべて設定
     mock_env = {
@@ -1641,7 +1650,7 @@ def test_google_books_api_key_loading_from_secret(mocker):
     """
     Google Books APIキーがSecret Managerから正常に読み込まれるかのテスト
     """
-    cleanup_firebase_app()
+     ()
 
     # os.path.existsとopenをモックする
     mocker.patch('os.path.exists', return_value=True)
@@ -1663,7 +1672,7 @@ def test_cloud_tasks_initialization_missing_vars(mocker):
     Cloud Tasksが無効になるかのテスト（環境変数が不足している場合）
     """
     # ★★★ 既存のアプリをクリーンアップ ★★★
-    cleanup_firebase_app()
+     ()
 
     # 一部の環境変数だけをモック
     mock_env = {
@@ -2477,7 +2486,7 @@ def test_initialization_with_ollama(mocker):
     """
     Ollamaが設定されている場合に正常に初期化ログが出力されるかのテスト
     """
-    cleanup_firebase_app()
+     ()
     mock_env = {
         'OLLAMA_ENDPOINT': 'http://localhost:11434',
         'OLLAMA_MODEL_NAME': 'test-model'
@@ -2494,7 +2503,7 @@ def test_initialization_failure(mocker):
     """
     初期化中に予期せぬ例外が発生した場合のテスト
     """
-    cleanup_firebase_app()
+     ()
     # Firebaseの初期化で意図的に例外を発生させる
     mocker.patch('firebase_admin.initialize_app', side_effect=ValueError("Test initialization failure"))
     mocker.patch('traceback.print_exc') # traceback.print_excをモック
