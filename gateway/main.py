@@ -115,7 +115,8 @@ try:
         # ★★★ ここにログを追加 ★★★
         print(f"✅ Ollama model name is set to: {OLLAMA_MODEL_NAME}")
     else:
-        print("⚠️ Ollama service endpoint is not configured. Book recommendation will use Gemini as a fallback.")
+        # ★★★ 修正: このログメッセージを実態に合わせて変更 ★★★
+        print("⚠️ Ollama service endpoint is not configured. PII check with Gemma will be disabled.")
 
 except Exception as e:
     db_firestore = None
@@ -318,10 +319,57 @@ PROACTIVE_KEYWORDS = [
     "ストレス", "プレッシャー", "不安"
 ]
 
+def _check_pii_with_gemma(text: str) -> bool:
+    """
+    Calls a Gemma model via Ollama to check for Personally Identifiable Information (PII).
+    Returns True if PII is likely present, False otherwise.
+    """
+    if not OLLAMA_ENDPOINT or not OLLAMA_MODEL_NAME:
+        print("⚠️ Gemma PII check is disabled (Ollama endpoint not configured).")
+        return False # Fail-safe: assume no PII if the checker is down.
+
+    prompt = f"""
+Analyze the following text and determine if it contains any Personally Identifiable Information (PII) such as full names, email addresses, phone numbers, physical addresses, or any other private data.
+Respond with only 'YES' if PII is found, and 'NO' if no PII is found. Do not provide any explanation.
+
+TEXT:
+---
+{text}
+---
+
+RESPONSE:
+"""
+    try:
+        print(f"--- Checking for PII with Gemma ({OLLAMA_MODEL_NAME}) ---")
+        response = requests.post(
+            OLLAMA_ENDPOINT,
+            json={
+                "model": OLLAMA_MODEL_NAME,
+                "prompt": prompt,
+                "stream": False,
+                "options": { "temperature": 0.0 }
+            },
+            timeout=20 # タイムアウトを20秒に設定
+        )
+        response.raise_for_status()
+        gemma_response = response.json().get('response', '').strip().upper()
+        print(f"✅ Gemma PII check response: '{gemma_response}'")
+        return 'YES' in gemma_response
+    except requests.RequestException as e:
+        print(f"❌ Error calling Gemma for PII check: {e}")
+        return False # Fail-safe: assume no PII if there's an error.
+    except Exception as e:
+        print(f"❌ An unexpected error occurred during PII check: {e}")
+        return False
+
 
 # ===== Gemini ヘルパー関数群 =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
-def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict:
+def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, pii_check: bool = True) -> dict:
+    """
+    Calls a Gemini model with a specified response schema, including an optional PII check with Gemma.
+    If PII is detected, it will retry the call with a request to remove PII.
+    """
     model = GenerativeModel(model_name)
     attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
     print(f"--- Calling Gemini ({model_name}) with schema (Attempt: {attempt_num}) ---")
@@ -329,10 +377,37 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str) -> dict
     try:
         response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=schema))
         response_text = response.text.strip()
+
+        # GemmaによるPIIチェック
+        if pii_check and _check_pii_with_gemma(response_text):
+            print("⚠️ PII detected by Gemma. Retrying Gemini call with PII removal request.")
+            # 新しいプロンプトを生成
+            pii_removal_prompt = f"""
+The following text was generated, but it may contain personally identifiable information (PII).
+Please regenerate the content based on the original request, ensuring that all PII (names, addresses, contact info, etc.) is removed or replaced with generic placeholders.
+The output format MUST strictly adhere to the original JSON schema.
+
+Original Text with Potential PII:
+---
+{response_text}
+---
+
+Original Prompt:
+---
+{prompt}
+---
+
+Please provide the revised, PII-free response now:
+"""
+            # PII除去プロンプトで再帰的に自身を呼び出す（ただし、次はPIIチェックをしない）
+            return _call_gemini_with_schema(pii_removal_prompt, schema, model_name, pii_check=False)
+
+        # JSONの整形
         if response_text.startswith("```json"):
             response_text = response_text[7:-3].strip()
         elif response_text.startswith("```"):
             response_text = response_text[3:-3].strip()
+            
         return json.loads(response_text)
     except Exception as e:
         print(f"Error on attempt {attempt_num} with model {model_name}: {e}\n--- Gemini Response ---\n{getattr(response, 'text', 'Empty')}\n---")
@@ -506,6 +581,51 @@ def _summarize_internal_context(context: str, keyword: str) -> str:
     except Exception as e:
         print(f"❌ Failed to summarize internal context: {e}")
         return "過去の記録を要約中にエラーが発生しました。"
+
+def _check_pii_with_gemma(text_to_check: str) -> bool:
+    """OllamaでホストされたGemmaを使い、テキストに個人情報が含まれているかチェックする。"""
+    if not OLLAMA_ENDPOINT:
+        return False # Gemmaが設定されていなければチェックをスキップ
+
+    # Gemmaに渡すための非常にシンプルなプロンプト
+    prompt = f"""
+    以下のテキストに、氏名、住所、電話番号、メールアドレスなどの個人情報（PII）は含まれていますか？
+    回答は「はい」か「いいえ」だけにしてください。
+
+    テキスト:
+    ---
+    {text_to_check}
+    ---
+    """
+
+    try:
+        print(f"Checking PII with Gemma at {OLLAMA_ENDPOINT}...")
+        response = requests.post(
+            f"{OLLAMA_ENDPOINT}/api/generate",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({
+                "model": OLLAMA_MODEL_NAME, # 環境変数で設定されたモデル名を使用
+                "prompt": prompt,
+                "stream": False # ストリームは不要
+            }),
+            timeout=30 # タイムアウトを30秒に設定
+        )
+        response.raise_for_status()
+        
+        gemma_response_text = response.json().get('response', '').strip()
+        print(f"Gemma PII check response: '{gemma_response_text}'")
+
+        # Gemmaの応答が「はい」を含んでいたらPIIありと判断
+        return "はい" in gemma_response_text
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Could not connect to Gemma service for PII check: {e}")
+        return False # エラー時は安全側に倒し、PIIなしとして処理を続行
+    except Exception as e:
+        print(f"❌ An unexpected error occurred during PII check: {e}")
+        return False
+
+
 
 # ===== RAG (Retrieval-Augmented Generation) Helper Functions =====
 
