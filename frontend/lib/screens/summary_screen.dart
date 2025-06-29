@@ -227,9 +227,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      // ★ 修正: SingleChildScrollViewでラップ
                       child: SingleChildScrollView(
-                        child: Markdown(
+                        // ★ 修正: Markdown を MarkdownBody に変更
+                        child: MarkdownBody(
                           data: insights,
                           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
                               .copyWith(
