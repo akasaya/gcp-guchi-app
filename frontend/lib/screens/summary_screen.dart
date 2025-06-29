@@ -37,9 +37,20 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     _apiService = widget.apiService ?? ref.read(apiServiceProvider);
     _firestore = widget.firestore ?? FirebaseFirestore.instance;
 
-    // StreamBuilderでFirestoreのデータを監視
-    _sessionStream =
-        _firestore.collection('sessions').doc(widget.sessionId).snapshots();
+    // ★★★ ここからが修正箇所です ★★★
+    final user = ref.read(firebaseAuthProvider).currentUser;
+    if (user != null) {
+      _sessionStream = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('sessions')
+          .doc(widget.sessionId)
+          .snapshots();
+    } else {
+      // ユーザーが取得できない場合は、エラーを流すストリームを設定
+      _sessionStream = Stream.error('ユーザーが認証されていません。');
+    }
+    // ★★★ ここまでが修正箇所です ★★★
   }
 
   void _showLoadingDialog() {
