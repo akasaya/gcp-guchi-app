@@ -34,7 +34,9 @@ void main() {
     mockApiService = MockApiService();
     mockSharedPreferences = MockSharedPreferences();
     mockUser = MockUser();
-    mockAuth = MockFirebaseAuth(signedInUser: mockUser);
+    // ★★★ 修正: 古い signedInUser: を削除し、新しいコンストラクタの書き方に合わせる
+    mockAuth = MockFirebaseAuth(mockUser: mockUser); 
+
 
     // ★★★★★ これが最重要修正点 ★★★★★
     // 全てのテストケースで、API呼び出しに対する「デフォルトの偽の応答」を"あらかじめ"用意しておく。
