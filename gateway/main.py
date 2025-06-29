@@ -370,7 +370,7 @@ RESPONSE:
 
 # ===== Gemini ヘルパー関数群 =====
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
-def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, pii_check: bool = True) -> dict:
+def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, safety_check: bool = True) -> dict:
     """
     Calls a Gemini model with a specified response schema, including an optional PII check with Gemma.
     If PII is detected, it will retry the call with a request to remove PII.
@@ -384,7 +384,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, pii_che
         response_text = response.text.strip()
 
         # GemmaによるPIIチェック
-        if pii_check and _check_cotent_safety_with_gemma(response_text):
+        if safety_check and _check_content_safety_with_gemma(response_text):
             print("⚠️ PII detected by Gemma. Retrying Gemini call with PII removal request.")
             # 新しいプロンプトを生成
             pii_removal_prompt = f"""
