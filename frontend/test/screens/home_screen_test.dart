@@ -66,7 +66,7 @@ void main() {
     await pump(t);
     await t.pumpAndSettle();
 
-    expect(find.text('今日の話題の提案'), findsOneWidget);
+    expect(find.text('話題の提案'), findsOneWidget);
     expect(find.text('done'), findsOneWidget);
   });
 

@@ -163,7 +163,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   children: [
                     SpinKitFadingCube(color: Colors.deepPurple, size: 50.0),
                     SizedBox(height: 20),
-                    Text('AIがあなたの心を分析中...'),
+                    Text('AIがあなたの考えを分析中...'),
                   ],
                 ),
               );
@@ -185,7 +185,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   children: [
                     SpinKitFadingCube(color: Colors.deepPurple, size: 50.0),
                     SizedBox(height: 20),
-                    Text('AIがあなたの心を分析中...'),
+                    Text('AIがあなたの考えを分析中...'),
                   ],
                 ),
               );

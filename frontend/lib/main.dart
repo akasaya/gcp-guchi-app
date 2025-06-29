@@ -30,6 +30,10 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+    if (kIsWeb) {
+    await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+  }
+
   const siteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
   if (siteKey.isEmpty) {
     if (kDebugMode) {

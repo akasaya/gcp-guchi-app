@@ -127,7 +127,7 @@ void main() {
 
       // ローディングインジケータが表示される
       expect(find.byType(SpinKitFadingCube), findsOneWidget);
-      expect(find.text('AIがあなたの心を分析中...'), findsOneWidget);
+      expect(find.text('AIがあなたの考えを分析中...'), findsOneWidget);
     });
 
     testWidgets('データ取得成功時にサマリーが表示される', (tester) async {

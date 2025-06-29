@@ -306,7 +306,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 16), // 上部の余白
-        _buildSectionHeader('今日の話題の提案'),
+        _buildSectionHeader('話題の提案'),
         const SizedBox(height: 12),
         
         // 提案の状態に応じて表示を切り替える
