@@ -15,6 +15,10 @@ jobs:
   build_and_test:
     name: Build & Test
     runs-on: ubuntu-latest
+    # ★★★ 1. GCP認証のための権限を追加 ★★★
+    permissions:
+      contents: 'read'
+      id-token: 'write'
     defaults:
       run:
         working-directory: frontend
@@ -28,21 +32,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ★★★ 2. GCPへの認証ステップを追加 ★★★
+      - name: Authenticate to Google Cloud
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+    
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           # Flutterのバージョンを安定版に固定することを推奨します
           channel: 'stable'
 
+      # ★★★ ここから追加 ★★★
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Firebase Tools and FlutterFire CLI
+        run: |
+          npm install -g firebase-tools
+          dart pub global activate flutterfire_cli
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+        # ★★★ ここまで追加 ★★★
+
       - name: Install dependencies
         run: flutter pub get
+
+      # ★★★ firebase_options.dart を生成するステップ ★★★
+      # 以前のファイルコピー(cp)は不要です
+      - name: Configure Firebase
+        run: flutterfire configure --project=${{ secrets.GCP_PROJECT_ID }} --yes --out=lib/firebase_options.dart --platforms=web
 
       - name: Run analyzer
         run: flutter analyze
 
       - name: Run tests # ★★★ このステップを追加 ★★★
         run: flutter test
-        
+
       - name: Build for Web
         # ★★★ 2. buildコマンドにRECAPTCHA_SITE_KEYの--dart-defineを追加 ★★★
         run: flutter build web --release --dart-define=GOOGLE_WEB_CLIENT_ID="${{ env.GOOGLE_WEB_CLIENT_ID }}" --dart-define=RECAPTCHA_SITE_KEY="${{ env.RECAPTCHA_SITE_KEY }}"
