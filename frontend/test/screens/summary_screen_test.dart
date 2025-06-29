@@ -71,11 +71,14 @@ void main() {
   }) async {
     // Firestoreのセッションデータを設定
     if (initialSessionData != null) {
-      await fakeFirestore
-          .collection('sessions')
-          .doc(sessionId)
-          .set(initialSessionData);
-    }
+    await fakeFirestore            // ← ★ユーザ階層をそろえる
+        .collection('users')
+        .doc(fakeAuth.currentUser!.uid)
+        .collection('sessions')
+        .doc(sessionId)
+        .set(initialSessionData);
+        }
+
 
     await tester.pumpWidget(
       ProviderScope(
