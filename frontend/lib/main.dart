@@ -6,7 +6,7 @@ import 'package:frontend/screens/onboarding_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'package:frontend/screens/home_screen.dart';
-import 'package:frontend/screens/login_screen.dart';
+//import 'package:frontend/screens/login_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/foundation.dart'; // printを避けるために追加
@@ -40,6 +40,26 @@ Future<void> main() async {
   await FirebaseAppCheck.instance.activate(
     webProvider: ReCaptchaV3Provider(siteKey),
   );
+
+    // ★ 追加: アプリ起動時に匿名認証を実行
+  final auth = FirebaseAuth.instance;
+  if (auth.currentUser == null) {
+    try {
+      await auth.signInAnonymously();
+      if (kDebugMode) {
+        print("Signed in anonymously!");
+      }
+    } on FirebaseAuthException catch (e) {
+      if (kDebugMode) {
+        print("Failed to sign in anonymously: ${e.message}");
+      }
+      // ここでのエラーは、下のAuthWrapperでハンドリングされる
+    } catch (e) {
+      if (kDebugMode) {
+        print("An unknown error occurred during anonymous sign-in: $e");
+      }
+    }
+  }
 
   runApp(
     const ProviderScope(
@@ -104,9 +124,14 @@ class AuthWrapper extends ConsumerWidget {
               return const HomeScreen();
             }
             // ★★★ ここを修正 ★★★
-            return const LoginScreen(
-              googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
-            );
+            return const Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    '認証に失敗しました。アプリを再起動するか、インターネット接続を確認してください。',
+                    textAlign: TextAlign.center,
+                  ),
           },
         );
       },
