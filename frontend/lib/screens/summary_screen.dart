@@ -6,6 +6,7 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/main.dart';
 
 class SummaryScreen extends ConsumerStatefulWidget {
   final String sessionId;
