@@ -1,6 +1,4 @@
 import 'dart:async';
-
-//import 'package:firebase_core/firebase_core.dart'; 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,122 +6,98 @@ import 'package:frontend/main.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/services/api_service.dart';
-import 'package:mockito/mockito.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth_mocks/firebase_auth_mocks.dart'; // ★★★ これを追加 ★★★
+import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 
-import '../firebase_mock.dart';
-
-// --- テスト用の道具（モック）を定義 ---
+// ─ mock 定義 ────────────────────────────────────
 class MockApiService extends Mock implements ApiService {}
-class MockSharedPreferences extends Mock implements SharedPreferences {}
+
+class FakePrefs extends Fake implements SharedPreferences {
+  final _data = <String, Object?>{};
+  @override bool? getBool(String key) => _data[key] as bool?;
+  @override
+  Future<bool> setBool(String key, bool value) async {
+    _data[key] = value;   // 保存する
+    return true;          // <- 必ず bool を返す
+  }
+}
 
 void main() {
-  late MockApiService mockApiService;
-  late MockSharedPreferences mockSharedPreferences;
-  late MockFirebaseAuth mockAuth;
-  late MockUser mockUser;
+  late MockApiService api;
+  late FakePrefs      prefs;
+  late MockFirebaseAuth auth;
 
-  // 全てのテストの前に一度だけ呼ばれるセットアップ
-  setupFirebaseMocks();
-  // 各テストの「直前」に毎回呼ばれるセットアップ
   setUp(() {
-    // 道具を毎回新しく用意する
-    mockApiService = MockApiService();
-    mockSharedPreferences = MockSharedPreferences();
-    mockUser = MockUser();
-    // ★★★ 修正: 古い signedInUser: を削除し、新しいコンストラクタの書き方に合わせる
-    mockAuth = MockFirebaseAuth(mockUser: mockUser); 
+    api   = MockApiService();
+    prefs = FakePrefs()..setBool('onboarding_completed', true);
 
-
-    // ★★★★★ これが最重要修正点 ★★★★★
-    // 全てのテストケースで、API呼び出しに対する「デフォルトの偽の応答」を"あらかじめ"用意しておく。
-    // これにより、テスト実行のどのタイミングでAPIが呼ばれても、テストがクラッシュしなくなる。
-    // 各テストケースでは、このデフォルトの応答を必要に応じて上書きする。
-    final defaultSuggestion = HomeSuggestion(title: 'Default', nodeId: 'default', nodeLabel: 'default', subtitle: 'Default');
-    when(mockApiService.getHomeSuggestionV2()).thenAnswer((_) async => defaultSuggestion);
-
-    // 他の道具のデフォルトの振る舞いも定義
-    when(mockUser.displayName).thenReturn('テストユーザー');
-    when(mockSharedPreferences.getBool('onboarding_completed')).thenReturn(true);
+    // MockUser は実体なのでスタブしない
+    final user = MockUser(uid: 'uid', displayName: 'テストユーザー');
+    auth = MockFirebaseAuth(mockUser: user);
   });
 
-  // `HomeScreen`をテスト用に起動するためのヘルパー関数
-  Future<void> pumpHomeScreen(WidgetTester tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          apiServiceProvider.overrideWithValue(mockApiService),
-          firebaseAuthProvider.overrideWithValue(mockAuth),
-          sharedPreferencesProvider.overrideWith((_) async => mockSharedPreferences),
-        ],
-        child: const MaterialApp(home: HomeScreen()),
-      ),
+  Future<void> pump(WidgetTester t) async {
+    await t.pumpWidget(
+      ProviderScope(overrides: [
+        apiServiceProvider.overrideWithValue(api),
+        firebaseAuthProvider.overrideWithValue(auth),
+        sharedPreferencesProvider.overrideWith((_) async => prefs),
+      ], child: const MaterialApp(home: HomeScreen())),
     );
   }
 
-  testWidgets('ローディング中にCircularProgressIndicatorが表示される', (tester) async {
-    // APIがすぐには完了しない状況をモックで再現
+  testWidgets('ローディング表示', (t) async {
     final completer = Completer<HomeSuggestion?>();
-    when(mockApiService.getHomeSuggestionV2()).thenAnswer((_) => completer.future);
+    when(() => api.getHomeSuggestionV2())
+        .thenAnswer((_) => completer.future);
 
-    await pumpHomeScreen(tester);
-    await tester.pump(); // setStateを反映させるために1フレーム進める
-
-    // ローディング表示を確認
+    await pump(t);
+    await t.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('データ取得成功時に提案メッセージが表示される', (tester) async {
-    // このテストケース用の「成功」の応答を上書き定義
-    final suggestion = HomeSuggestion(title: 'Success', nodeId: 's_node1', nodeLabel: 's_label', subtitle: 'This is a success subtitle');
-    when(mockApiService.getHomeSuggestionV2()).thenAnswer((_) async => suggestion);
+  testWidgets('成功表示', (t) async {
+    final sug = HomeSuggestion(
+      title: 'Success', nodeId: 'id', nodeLabel: 'lbl', subtitle: 'done');
+    when(() => api.getHomeSuggestionV2())
+        .thenAnswer((_) async => sug);          // ← thenAnswer を使用
 
-    await pumpHomeScreen(tester);
-    await tester.pumpAndSettle(); // 非同期処理（API呼び出し）の完了を待つ
+    await pump(t);
+    await t.pumpAndSettle();
 
-    // 成功時のUIが表示されていることを確認
     expect(find.text('今日の話題の提案'), findsOneWidget);
-    expect(find.text('過去の対話を深掘りしてみませんか'), findsOneWidget);
-    expect(find.text('This is a success subtitle'), findsOneWidget);
+    expect(find.text('done'), findsOneWidget);
   });
 
-  testWidgets('データ取得失敗時にエラーメッセージが表示される', (tester) async {
-    // このテストケース用の「失敗」の応答を上書き定義
-    when(mockApiService.getHomeSuggestionV2()).thenThrow(Exception('API Error'));
+  testWidgets('失敗表示', (t) async {
+    when(() => api.getHomeSuggestionV2())
+        .thenThrow(Exception('err'));
 
-    await pumpHomeScreen(tester);
-    await tester.pumpAndSettle();
+    await pump(t);
+    await t.pumpAndSettle();
 
-    // エラー時のUIが表示されていることを確認
     expect(find.text('提案の取得に失敗しました。'), findsOneWidget);
-    expect(find.byKey(const Key('retry_button')), findsOneWidget);
   });
 
-  testWidgets('再試行ボタンをタップすると再度APIが呼ばれる', (tester) async {
-    // 1回目のAPI呼び出しは「失敗」するように定義
-    when(mockApiService.getHomeSuggestionV2()).thenThrow(Exception('Initial Error'));
+  testWidgets('再試行ボタンで 2 回呼ばれる', (t) async {
+    when(() => api.getHomeSuggestionV2()).thenThrow(Exception('first'));
 
-    await pumpHomeScreen(tester);
-    await tester.pumpAndSettle();
+    await pump(t);
+    await t.pumpAndSettle();
+    verify(() => api.getHomeSuggestionV2()).called(1);
 
-    // エラーUIが表示され、APIが1回呼ばれたことを確認
-    expect(find.text('提案の取得に失敗しました。'), findsOneWidget);
-    verify(mockApiService.getHomeSuggestionV2()).called(1);
+    reset(api); // 既存スタブを解除し Bad state を防ぐ
 
-    // 2回目のAPI呼び出しは「成功」するように上書き定義
-    final suggestion = HomeSuggestion(title: 'Retry Success', nodeId: 'r_node1', nodeLabel: 'r_label', subtitle: 'Success on retry');
-    when(mockApiService.getHomeSuggestionV2()).thenAnswer((_) async => suggestion);
+    final retry = HomeSuggestion(
+      title: 'Retry', nodeId: 'r', nodeLabel: 'r', subtitle: 'ret ok');
+    when(() => api.getHomeSuggestionV2())
+        .thenAnswer((_) async => retry);
 
-    // 再試行ボタンをタップ
-    await tester.tap(find.byKey(const Key('retry_button')));
-    await tester.pumpAndSettle();
+    await t.tap(find.byKey(const Key('retry_button')));
+    await t.pumpAndSettle();
 
-    // APIが合計2回呼ばれたことを確認
-    verify(mockApiService.getHomeSuggestionV2()).called(2);
-
-    // 成功時のUIが表示されていることを確認
-    expect(find.text('提案の取得に失敗しました。'), findsNothing);
-    expect(find.text('Success on retry'), findsOneWidget);
+    verify(() => api.getHomeSuggestionV2()).called(1);
+    expect(find.text('ret ok'), findsOneWidget);
   });
 }

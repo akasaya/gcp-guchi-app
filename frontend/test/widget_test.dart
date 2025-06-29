@@ -1,9 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-//import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
-// import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-// import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:frontend/main.dart';
@@ -14,34 +11,6 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/models/book_recommendation.dart';
 import 'firebase_mock.dart';
-
-// // --- ここからswipe_screen_test.dartと共通の偽Firebase実装 ---
-// class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
-//   @override
-//   final String name;
-//   @override
-//   final FirebaseOptions options;
-//   FakeFirebaseAppPlatform({required this.name, required this.options});
-// }
-
-// class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
-//   static final Map<String, FirebaseAppPlatform> _apps = {};
-//   @override
-//   Future<FirebaseAppPlatform> initializeApp({String? name, FirebaseOptions? options}) async {
-//     final appName = name ?? '[DEFAULT]';
-//     final app = FakeFirebaseAppPlatform(name: appName, options: options!);
-//     _apps[appName] = app;
-//     return Future.value(app);
-//   }
-//   @override
-//   FirebaseAppPlatform app([String name = '[DEFAULT]']) {
-//     if (_apps.containsKey(name)) return _apps[name]!;
-//     throw noAppExists(name);
-//   }
-//   @override
-//   List<FirebaseAppPlatform> get apps => _apps.values.toList();
-// }
-// // --- ここまで偽のFirebase実装 ---
 
 class FakeApiService implements ApiService {
   @override
@@ -86,20 +55,22 @@ class FakeApiService implements ApiService {
 
 
 void main() {
+  // Firebaseのモックを初期化
   setupFirebaseMocks();
 
-  group('MyApp Authentication Flow', () {
-    Future<SharedPreferences> setupMockSharedPreferences() async {
-      SharedPreferences.setMockInitialValues({'onboarding_completed': true});
-      return SharedPreferences.getInstance();
-    }
+  // SharedPreferencesのモックをセットアップするヘルパー関数
+  Future<SharedPreferences> setupMockSharedPreferences() async {
+    SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+    return SharedPreferences.getInstance();
+  }
 
+  group('MyApp Authentication Flow', () {
     testWidgets('shows LoginScreen when user is not logged in', (WidgetTester tester) async {
+      // 準備: 未ログイン状態のモックを作成
       final mockAuth = MockFirebaseAuth();
       final mockPrefs = await setupMockSharedPreferences();
 
-      // ★★★ 修正: MyApp() ではなく、test_main.dart の main() を呼び出すイメージ
-      // ただし、直接呼び出すのではなく、ProviderScopeで上書きする
+      // 実行: MyAppウィジェットをレンダリング
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -107,20 +78,22 @@ void main() {
             sharedPreferencesProvider.overrideWith((ref) => mockPrefs),
             apiServiceProvider.overrideWithValue(FakeApiService()),
           ],
-          // ★★★ 修正: child を MyApp() にする
           child: const MyApp(),
         ),
       );
+      // アサーション: UIが安定するのを待ち、LoginScreenが表示されることを確認
       await tester.pumpAndSettle();
-
       expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(HomeScreen), findsNothing);
     });
 
     testWidgets('shows HomeScreen when user is logged in', (WidgetTester tester) async {
-      final mockUser = MockUser(uid: 'some_uid');
-      final mockAuth = MockFirebaseAuth(mockUser: mockUser);
+      // 準備: ログイン済み状態のモックを作成
+      final mockUser = MockUser(uid: 'some_uid', email: 'test@test.com');
+      final mockAuth = MockFirebaseAuth(mockUser: mockUser, signedIn: true);
       final mockPrefs = await setupMockSharedPreferences();
 
+      // 実行: MyAppウィジェットをレンダリング
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -131,9 +104,15 @@ void main() {
           child: const MyApp(),
         ),
       );
-      await tester.pumpAndSettle();
 
+      // ★★★ 修正点 ★★★
+      // 非同期のauthStateChangesストリームが値を返すのを待つためにpumpを1回挟む
+      await tester.pump();
+      
+      // アサーション: UIが安定するのを待ち、HomeScreenが表示されることを確認
+      await tester.pumpAndSettle();
       expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(LoginScreen), findsNothing);
     });
   });
 }
