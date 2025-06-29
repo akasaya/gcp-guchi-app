@@ -319,18 +319,21 @@ PROACTIVE_KEYWORDS = [
     "ストレス", "プレッシャー", "不安"
 ]
 
-def _check_pii_with_gemma(text: str) -> bool:
+def _check_content_safety_with_gemma(text: str) -> bool:
     """
-    Calls a Gemma model via Ollama to check for Personally Identifiable Information (PII).
-    Returns True if PII is likely present, False otherwise.
+    Calls a Gemma model via Ollama to check for PII and harmful content.
+    Returns True if problematic content is likely present, False otherwise.
     """
     if not OLLAMA_ENDPOINT or not OLLAMA_MODEL_NAME:
-        print("⚠️ Gemma PII check is disabled (Ollama endpoint not configured).")
-        return False # Fail-safe: assume no PII if the checker is down.
+        print("⚠️ Gemma safety check is disabled (Ollama endpoint not configured).")
+        return False # Fail-safe: assume content is safe if the checker is down.
 
     prompt = f"""
-Analyze the following text and determine if it contains any Personally Identifiable Information (PII) such as full names, email addresses, phone numbers, physical addresses, or any other private data.
-Respond with only 'YES' if PII is found, and 'NO' if no PII is found. Do not provide any explanation.
+Analyze the following text for two types of issues:
+1. Personally Identifiable Information (PII): full names, email addresses, phone numbers, physical addresses, etc.
+2. Harmful or Abusive Content: slander, defamation, hate speech, or any other form of abusive language.
+
+Respond with only 'YES' if either PII or harmful content is found, and 'NO' if the text is safe. Do not provide any explanation.
 
 TEXT:
 ---
@@ -340,9 +343,10 @@ TEXT:
 RESPONSE:
 """
     try:
-        print(f"--- Checking for PII with Gemma ({OLLAMA_MODEL_NAME}) ---")
+        print(f"--- Checking for content safety with Gemma ({OLLAMA_MODEL_NAME}) ---")
+        # 修正: OllamaのエンドポイントURLに `/api/generate` を追加
         response = requests.post(
-            OLLAMA_ENDPOINT,
+            f"{OLLAMA_ENDPOINT}/api/generate",
             json={
                 "model": OLLAMA_MODEL_NAME,
                 "prompt": prompt,
@@ -353,13 +357,14 @@ RESPONSE:
         )
         response.raise_for_status()
         gemma_response = response.json().get('response', '').strip().upper()
-        print(f"✅ Gemma PII check response: '{gemma_response}'")
+        print(f"✅ Gemma safety check response: '{gemma_response}'")
         return 'YES' in gemma_response
     except requests.RequestException as e:
-        print(f"❌ Error calling Gemma for PII check: {e}")
-        return False # Fail-safe: assume no PII if there's an error.
+        # 修正: エラーログをより具体的に
+        print(f"❌ Could not connect to Gemma service for safety check: {e}")
+        return False # Fail-safe: assume content is safe if there's an error.
     except Exception as e:
-        print(f"❌ An unexpected error occurred during PII check: {e}")
+        print(f"❌ An unexpected error occurred during safety check: {e}")
         return False
 
 
@@ -379,7 +384,7 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, pii_che
         response_text = response.text.strip()
 
         # GemmaによるPIIチェック
-        if pii_check and _check_pii_with_gemma(response_text):
+        if pii_check and _check_cotent_safety_with_gemma(response_text):
             print("⚠️ PII detected by Gemma. Retrying Gemini call with PII removal request.")
             # 新しいプロンプトを生成
             pii_removal_prompt = f"""
@@ -581,50 +586,6 @@ def _summarize_internal_context(context: str, keyword: str) -> str:
     except Exception as e:
         print(f"❌ Failed to summarize internal context: {e}")
         return "過去の記録を要約中にエラーが発生しました。"
-
-def _check_pii_with_gemma(text_to_check: str) -> bool:
-    """OllamaでホストされたGemmaを使い、テキストに個人情報が含まれているかチェックする。"""
-    if not OLLAMA_ENDPOINT:
-        return False # Gemmaが設定されていなければチェックをスキップ
-
-    # Gemmaに渡すための非常にシンプルなプロンプト
-    prompt = f"""
-    以下のテキストに、氏名、住所、電話番号、メールアドレスなどの個人情報（PII）は含まれていますか？
-    回答は「はい」か「いいえ」だけにしてください。
-
-    テキスト:
-    ---
-    {text_to_check}
-    ---
-    """
-
-    try:
-        print(f"Checking PII with Gemma at {OLLAMA_ENDPOINT}...")
-        response = requests.post(
-            f"{OLLAMA_ENDPOINT}/api/generate",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({
-                "model": OLLAMA_MODEL_NAME, # 環境変数で設定されたモデル名を使用
-                "prompt": prompt,
-                "stream": False # ストリームは不要
-            }),
-            timeout=30 # タイムアウトを30秒に設定
-        )
-        response.raise_for_status()
-        
-        gemma_response_text = response.json().get('response', '').strip()
-        print(f"Gemma PII check response: '{gemma_response_text}'")
-
-        # Gemmaの応答が「はい」を含んでいたらPIIありと判断
-        return "はい" in gemma_response_text
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Could not connect to Gemma service for PII check: {e}")
-        return False # エラー時は安全側に倒し、PIIなしとして処理を続行
-    except Exception as e:
-        print(f"❌ An unexpected error occurred during PII check: {e}")
-        return False
-
 
 
 # ===== RAG (Retrieval-Augmented Generation) Helper Functions =====
