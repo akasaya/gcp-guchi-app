@@ -14,28 +14,23 @@ void setupFirebaseMocks() {
   FirebasePlatform.instance = FakeFirebasePlatform();
 }
 
-// これが、Firebase Platformの正しい偽物の作り方です。
-// `implements` ではなく `extends` を使うことで、ルール違反のエラーを回避します。
 class FakeFirebasePlatform extends FirebasePlatform {
-  // コンストラクタで、必須の引数を持つ親クラスのコンストラクタを呼び出します。
   FakeFirebasePlatform() : super();
 
-  // `initializeApp()` が呼ばれたら、何もしないで、ただ成功したことを示す
-  // `Future` を返すように「ふり」をします。
-  // これにより、テスト内の `await Firebase.initializeApp()` が正常に完了します。
+  // ★★★ 修正: 戻り値の型を、本物と同じ `Future<FirebaseAppPlatform>` に修正します。
   @override
-  Future<FirebaseApp> initializeApp({
+  Future<FirebaseAppPlatform> initializeApp({
     String? name,
     FirebaseOptions? options,
   }) async {
-    // 戻り値の型 `FirebaseApp` を満たすための、最小限の偽物クラスを返します。
-    return FakeFirebaseApp();
+    // 戻り値の型 `FirebaseAppPlatform` を満たすための、最小限の偽物クラスを返します。
+    return FakeFirebaseAppPlatform(); // ★★★ 返すクラスをこちらに変更
   }
 }
 
-// `FirebaseApp` の偽物クラスです。
-// テストのセットアップを通過するためだけに存在し、中身は空で問題ありません。
-class FakeFirebaseApp implements FirebaseApp {
+// ★★★ 修正: クラス名を `FakeFirebaseApp` から `FakeFirebaseAppPlatform` に変更し、
+// `implements` も `FirebaseAppPlatform` にします。
+class FakeFirebaseAppPlatform implements FirebaseAppPlatform {
   @override
   String get name => 'fake_app';
 
@@ -46,7 +41,7 @@ class FakeFirebaseApp implements FirebaseApp {
         messagingSenderId: 'fake_sender_id',
         projectId: 'fake_project_id',
       );
-  
+
   // テストで使われないメソッドは、とりあえず例外を投げるようにしておくのが安全です。
   @override
   Future<void> delete() async {}
