@@ -25,10 +25,7 @@ void main() {
   late MockUser mockUser;
 
   // 全てのテストの前に一度だけ呼ばれるセットアップ
-  setUpAll(() async {
-    setupFirebaseMocks();
-    await Firebase.initializeApp();
-  });
+  setupFirebaseMocks();
   // 各テストの「直前」に毎回呼ばれるセットアップ
   setUp(() {
     // 道具を毎回新しく用意する

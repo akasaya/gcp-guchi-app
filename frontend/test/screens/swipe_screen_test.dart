@@ -19,54 +19,44 @@ import 'swipe_screen_test.mocks.dart';
 // ★★★ 全ての悲劇の元凶であった、欠落していた「印」を追加 ★★★
 // プラットフォームインターフェースの偽物であることを示すための`MockPlatformInterfaceMixin`が
 // このクラスに抜けていたことが、'implements'エラーの根本原因でした。
-class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
-  @override
-  final String name;
-  @override
-  final FirebaseOptions options;
-  FakeFirebaseAppPlatform({required this.name, required this.options});
-}
+// class FakeFirebaseAppPlatform extends Fake with MockPlatformInterfaceMixin implements FirebaseAppPlatform {
+//   @override
+//   final String name;
+//   @override
+//   final FirebaseOptions options;
+//   FakeFirebaseAppPlatform({required this.name, required this.options});
+// }
 
-class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
-  static final Map<String, FirebaseAppPlatform> _apps = {};
+// class FakeFirebasePlatform extends Fake with MockPlatformInterfaceMixin implements FirebasePlatform {
+//   static final Map<String, FirebaseAppPlatform> _apps = {};
 
-  @override
-  Future<FirebaseAppPlatform> initializeApp({
-    String? name,
-    FirebaseOptions? options,
-  }) async {
-    final appName = name ?? '[DEFAULT]';
-    final app = FakeFirebaseAppPlatform(name: appName, options: options!);
-    _apps[appName] = app;
-    return Future.value(app);
-  }
+//   @override
+//   Future<FirebaseAppPlatform> initializeApp({
+//     String? name,
+//     FirebaseOptions? options,
+//   }) async {
+//     final appName = name ?? '[DEFAULT]';
+//     final app = FakeFirebaseAppPlatform(name: appName, options: options!);
+//     _apps[appName] = app;
+//     return Future.value(app);
+//   }
 
-  @override
-  FirebaseAppPlatform app([String name = '[DEFAULT]']) {
-    if (_apps.containsKey(name)) {
-      return _apps[name]!;
-    }
-    throw noAppExists(name);
-  }
+//   @override
+//   FirebaseAppPlatform app([String name = '[DEFAULT]']) {
+//     if (_apps.containsKey(name)) {
+//       return _apps[name]!;
+//     }
+//     throw noAppExists(name);
+//   }
 
-  @override
-  List<FirebaseAppPlatform> get apps => _apps.values.toList();
-}
+//   @override
+//   List<FirebaseAppPlatform> get apps => _apps.values.toList();
+// }
 // --- ここまで偽のFirebase実装 ---
 
 @GenerateNiceMocks([MockSpec<ApiService>(), MockSpec<NavigatorObserver>()])
 void main() {
-  setUpAll(() async {
-    FirebasePlatform.instance = FakeFirebasePlatform();
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: 'fake',
-        appId: 'fake',
-        messagingSenderId: 'fake',
-        projectId: 'fake',
-      ),
-    );
-  });
+  setupFirebaseMocks();
 
   const sessionId = 'test-session-id';
   final questions = [
