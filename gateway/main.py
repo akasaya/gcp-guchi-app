@@ -351,9 +351,9 @@ RESPONSE:
                 "model": OLLAMA_MODEL_NAME,
                 "prompt": prompt,
                 "stream": False,
-                "options": { "temperature": 0.0 }
+                "options": { "temperature": 0.1 }
             },
-            timeout=20 # タイムアウトを20秒に設定
+            timeout=60 # タイムアウトを60秒に設定
         )
         response.raise_for_status()
         gemma_response = response.json().get('response', '').strip().upper()
