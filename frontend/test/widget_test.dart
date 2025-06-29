@@ -85,8 +85,11 @@ class FakeApiService implements ApiService {
 }
 
 void main() {
-  setUpAll(() { // ← async を消して、中身を書き換える
+  // ★★★ 修正: async を追加
+  setUpAll(() async {
     setupFirebaseMocks();
+    // ★★★ 追加: 偽のFirebaseアプリを初期化
+    await Firebase.initializeApp();
   });
 
   group('MyApp Authentication Flow', () {

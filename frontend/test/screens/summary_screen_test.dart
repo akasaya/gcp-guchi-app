@@ -39,8 +39,11 @@ class FakeFirebaseAuth extends Mock implements FirebaseAuth {
   MockSpec<SharedPreferences>(),
 ])
 void main() {
-  setUpAll(() {
+  // ★★★ 修正: async を追加
+  setUpAll(() async {
     setupFirebaseMocks();
+    // ★★★ 追加: 偽のFirebaseアプリを初期化
+    await Firebase.initializeApp();
   });
 
   late MockApiService mockApiService;
