@@ -107,21 +107,24 @@ class ApiService {
     }
   }
 
-  Future<GraphData> getAnalysisGraph() async {
-    final originalReceiveTimeout = _dio.options.receiveTimeout;
+  Future<GraphData?> getAnalysisGraph() async {
     try {
-      _dio.options.receiveTimeout = const Duration(minutes: 2);
       final response = await _dio.get('/api/analysis/graph');
       return GraphData.fromJson(response.data);
     } on DioException catch (e) {
-      final errorMessage = e.response?.data?['error'] ?? '分析データの取得に失敗しました。';
+      // 400 or 404 (Not Found) from backend means no data to generate graph.
+      // We return null to let the UI handle this state gracefully.
+      if (e.response?.statusCode == 400 || e.response?.statusCode == 404) {
+        return null;
+      }
+      // For other errors, rethrow an exception.
+      final errorMessage = e.response?.data?['error'] ?? 'グラフデータの取得に失敗しました。';
       throw Exception(errorMessage);
     } catch (e) {
-      throw Exception('予期せぬエラーが発生しました。');
-    } finally {
-      _dio.options.receiveTimeout = originalReceiveTimeout;
+      throw Exception('予期せぬエラーが発生しました: $e');
     }
   }
+
 
   Future<AnalysisSummary> getAnalysisSummary() async {
     try {

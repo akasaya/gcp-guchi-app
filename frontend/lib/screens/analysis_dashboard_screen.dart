@@ -134,7 +134,7 @@ class AnalysisDashboardScreen extends ConsumerStatefulWidget {
 
 class _AnalysisDashboardScreenState
     extends ConsumerState<AnalysisDashboardScreen> with TickerProviderStateMixin {
-  Future<model.GraphData>? _graphDataFuture;
+  Future<model.GraphData?>? _graphDataFuture;
   late Future<AnalysisSummary> _summaryFuture;
   late Future<List<BookRecommendation>> _bookRecommendationsFuture;
   final Graph _graph = Graph();
@@ -223,9 +223,14 @@ class _AnalysisDashboardScreenState
     }
   }
 
-  Future<model.GraphData> _fetchAndBuildGraph(ApiService apiService) async {
+  Future<model.GraphData?> _fetchAndBuildGraph(ApiService apiService) async {
     try {
+      // ★ 修正: apiServiceからnullが返る可能性がある
       final graphData = await apiService.getAnalysisGraph();
+      // ★ 追加: graphDataがnullなら、そのままnullを返す
+      if (graphData == null) {
+        return null;
+      }
       if (!mounted) return graphData;
 
       _graph.nodes.clear();
@@ -465,17 +470,30 @@ class _AnalysisDashboardScreenState
   }
 
   Widget _buildGraphViewFuture() {
-    return FutureBuilder<model.GraphData>(
+    return FutureBuilder<model.GraphData?>(
       future: _graphDataFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(child: Text('エラー: ${snapshot.error}'));
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text('分析データの取得に失敗しました。\n時間をおいて再度お試しください。\n\nエラー: ${snapshot.error}', textAlign: TextAlign.center),
+          ));
         }
-        if (!snapshot.hasData || snapshot.data!.nodes.isEmpty) {
-          return const Center(child: Text('分析データがまだありません。'));
+        // ★ 修正: snapshot.data が null の場合、またはノードが空の場合の表示
+        if (snapshot.data == null || snapshot.data!.nodes.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                '分析できるデータがまだありません。\n対話セッションを完了させると、思考の繋がりがここに表示されます。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ),
+          );
         }
 
         // ★★★ 修正1: 凡例をボタンによるダイアログ表示に変更 ★★★

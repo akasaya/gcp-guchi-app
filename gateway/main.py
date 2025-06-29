@@ -129,7 +129,7 @@ app = Flask(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
-# @api_bp.before_request
+@api_bp.before_request
 def verify_app_check():
     # Cloud Tasksからの内部呼び出し（/api/tasks/..）はApp Checkの検証から除外する。
     # また、ローカル開発環境（K_SERVICE環境変数がない）でもチェックをスキップする。

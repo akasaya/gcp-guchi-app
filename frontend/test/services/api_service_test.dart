@@ -73,11 +73,32 @@ void main() {
       
       // --- Assert (検証) ---
       expect(result, isA<GraphData>());
-      expect(result.nodes.length, 2);
+      expect(result, isNotNull);
+      expect(result!.nodes.length, 2);
       expect(result.nodes[0].id, '仕事の悩み');
     });
 
-    test('getAnalysisGraphが失敗した時、Exceptionをスローすること', () async {
+        // ★ 追加: データが存在しない(404)場合にnullを返すことをテストする
+    test('getAnalysisGraphがデータなし(404)の場合、nullを返すこと', () async {
+      // --- Arrange (準備) ---
+      when(mockDio.get('/api/analysis/graph')).thenThrow(
+        DioException(
+          requestOptions: RequestOptions(path: '/api/analysis/graph'),
+          response: Response(
+            requestOptions: RequestOptions(path: '/api/analysis/graph'),
+            statusCode: 404, // データなし
+          ),
+        ),
+      );
+
+      // --- Act (実行) ---
+      final result = await apiService.getAnalysisGraph();
+
+      // --- Assert (検証) ---
+      expect(result, isNull);
+    });
+
+    test('getAnalysisGraphがサーバーエラー(500)の時、Exceptionをスローすること', () async {
       // --- Arrange (準備) ---
       when(mockDio.get('/api/analysis/graph')).thenThrow(
         DioException(
