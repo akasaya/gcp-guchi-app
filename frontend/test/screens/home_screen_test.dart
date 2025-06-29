@@ -27,7 +27,6 @@ void main() {
   // 全てのテストの前に一度だけ呼ばれるセットアップ
   setUpAll(() async {
     setupFirebaseMocks();
-    // ★★★ 追加: 偽のFirebaseアプリを初期化
     await Firebase.initializeApp();
   });
   // 各テストの「直前」に毎回呼ばれるセットアップ

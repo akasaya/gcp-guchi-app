@@ -43,7 +43,6 @@ void main() {
   // ★★★ 修正: async を追加
   setUpAll(() async {
     setupFirebaseMocks();
-    // ★★★ 追加: 偽のFirebaseアプリを初期化
     await Firebase.initializeApp();
   });
 

@@ -86,8 +86,10 @@ class FakeApiService implements ApiService {
 
 
 void main() {
-  // ★★★ 修正: setUpAll はもう不要なので、setupFirebaseMocks() の呼び出しのみにする
-  setupFirebaseMocks();
+  setUpAll(() async {
+    setupFirebaseMocks();
+    await Firebase.initializeApp();
+  });
 
   group('MyApp Authentication Flow', () {
     Future<SharedPreferences> setupMockSharedPreferences() async {
