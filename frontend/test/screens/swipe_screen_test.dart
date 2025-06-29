@@ -1,6 +1,6 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
+// import 'package:firebase_core/firebase_core.dart';
+// import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,8 +10,9 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+//import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import '../firebase_mock.dart';
 import 'swipe_screen_test.mocks.dart';
 
 // --- ここから最終修正済みの偽Firebase実装 ---
