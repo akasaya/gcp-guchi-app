@@ -123,7 +123,6 @@ class AuthWrapper extends ConsumerWidget {
             if (snapshot.hasData) {
               return const HomeScreen();
             }
-            // ★★★ ここを修正 ★★★
             return const Scaffold(
               body: Center(
                 child: Padding(
@@ -132,6 +131,9 @@ class AuthWrapper extends ConsumerWidget {
                     '認証に失敗しました。アプリを再起動するか、インターネット接続を確認してください。',
                     textAlign: TextAlign.center,
                   ),
+                ),
+              ),
+            );
           },
         );
       },

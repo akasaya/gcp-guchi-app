@@ -184,12 +184,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.currentUser;
     return Scaffold(
       appBar: AppBar(
-        title: Text(user?.displayName != null && user!.displayName!.isNotEmpty
-            ? '${user.displayName}さん、こんにちは'
-            : 'ホーム'),
+      title: const Text('マインドソート'),
         actions: [
           IconButton(
             icon: const Icon(Icons.insights_rounded),
@@ -210,13 +207,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
                 context,
                 MaterialPageRoute(builder: (context) => const HistoryScreen()),
               );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'ログアウト',
-            onPressed: () async {
-              await _auth.signOut();
             },
           ),
         ],

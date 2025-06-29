@@ -4,14 +4,16 @@ import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:frontend/main.dart';
-import 'package:frontend/models/graph_data.dart';
 import 'package:frontend/screens/home_screen.dart';
-import 'package:frontend/screens/login_screen.dart';
+import 'package:frontend/screens/onboarding_screen.dart'; // OnboardingScreenをインポート
+// import 'package:frontend/screens/login_screen.dart'; // 削除
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/models/book_recommendation.dart';
-import 'firebase_mock.dart';
+import 'package:frontend/models/graph_data.dart';
+import 'firebase_mock.dart'; // setupFirebaseMocksのため
 
+// FakeApiServiceは変更なし
 class FakeApiService implements ApiService {
   @override
   Future<HomeSuggestion?> getHomeSuggestion() async => null;
@@ -59,18 +61,20 @@ void main() {
   setupFirebaseMocks();
 
   // SharedPreferencesのモックをセットアップするヘルパー関数
-  Future<SharedPreferences> setupMockSharedPreferences() async {
-    SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+  Future<SharedPreferences> setupMockSharedPreferences({bool onboardingCompleted = false}) async {
+    SharedPreferences.setMockInitialValues({'onboarding_completed': onboardingCompleted});
     return SharedPreferences.getInstance();
   }
 
-  group('MyApp Authentication Flow', () {
-    testWidgets('shows LoginScreen when user is not logged in', (WidgetTester tester) async {
-      // 準備: 未ログイン状態のモックを作成
-      final mockAuth = MockFirebaseAuth();
-      final mockPrefs = await setupMockSharedPreferences();
+  // ★★★ テストグループを新しいアーキテクチャに合わせて修正 ★★★
+  group('MyApp Authentication and Onboarding Flow', () {
 
-      // 実行: MyAppウィジェットをレンダリング
+    testWidgets('shows OnboardingScreen when onboarding is not completed', (WidgetTester tester) async {
+      // 準備: オンボーディング未完了状態のモックを作成
+      final mockAuth = MockFirebaseAuth(); // 匿名認証なのでシンプル
+      final mockPrefs = await setupMockSharedPreferences(onboardingCompleted: false);
+
+      // 実行
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -81,19 +85,20 @@ void main() {
           child: const MyApp(),
         ),
       );
-      // アサーション: UIが安定するのを待ち、LoginScreenが表示されることを確認
+      
+      // アサーション: UIが安定するのを待ち、OnboardingScreenが表示されることを確認
       await tester.pumpAndSettle();
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(OnboardingScreen), findsOneWidget);
       expect(find.byType(HomeScreen), findsNothing);
     });
 
-    testWidgets('shows HomeScreen when user is logged in', (WidgetTester tester) async {
-      // 準備: ログイン済み状態のモックを作成
-      final mockUser = MockUser(uid: 'some_uid', email: 'test@test.com');
-      final mockAuth = MockFirebaseAuth(mockUser: mockUser, signedIn: true);
-      final mockPrefs = await setupMockSharedPreferences();
+    testWidgets('shows HomeScreen when onboarding is completed', (WidgetTester tester) async {
+      // 準備: オンボーディング完了済みのモックを作成
+      // 匿名認証はデフォルトでサインイン済みになる
+      final mockAuth = MockFirebaseAuth(signedIn: true); 
+      final mockPrefs = await setupMockSharedPreferences(onboardingCompleted: true);
 
-      // 実行: MyAppウィジェットをレンダリング
+      // 実行
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -105,14 +110,10 @@ void main() {
         ),
       );
 
-      // ★★★ 修正点 ★★★
-      // 非同期のauthStateChangesストリームが値を返すのを待つためにpumpを1回挟む
-      await tester.pump();
-      
       // アサーション: UIが安定するのを待ち、HomeScreenが表示されることを確認
       await tester.pumpAndSettle();
       expect(find.byType(HomeScreen), findsOneWidget);
-      expect(find.byType(LoginScreen), findsNothing);
+      expect(find.byType(OnboardingScreen), findsNothing);
     });
   });
 }
