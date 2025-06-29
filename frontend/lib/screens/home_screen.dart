@@ -302,40 +302,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
   }
 
   Widget _buildSuggestionSection() {
-    // 提案がない、かつロード中でもない場合は、余白も何も表示しない
-    if (!_isLoadingSuggestions && _proactiveSuggestion == null && _fetchError == null) {
-      return const SizedBox.shrink();
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 16), // 上部の余白
         _buildSectionHeader('今日の話題の提案'),
         const SizedBox(height: 12),
-        if (_isLoadingSuggestions)
-          const Center(child: CircularProgressIndicator())
-        else if (_fetchError != null)
-          Center(
-            child: Column(
-              children: [
-                const Icon(Icons.cloud_off, color: Colors.grey, size: 40),
-                const SizedBox(height: 8),
-                Text(_fetchError!,
-                    style: TextStyle(color: Colors.grey.shade700)),
-                const SizedBox(height: 8),
-                TextButton(
-                  key: const Key('retry_button'),
-                  onPressed: _fetchData,
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          )
-        else if (_proactiveSuggestion != null)
-          _buildProactiveSuggestionCard(_proactiveSuggestion!),
         
-        // 提案カードの下に区切り線を追加
+        // 提案の状態に応じて表示を切り替える
+        _isLoadingSuggestions
+            ? const Center(child: CircularProgressIndicator())
+            : _fetchError != null
+                ? Center(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.cloud_off, color: Colors.grey, size: 40),
+                        const SizedBox(height: 8),
+                        Text(_fetchError!, style: TextStyle(color: Colors.grey.shade700)),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          key: const Key('retry_button'),
+                          onPressed: _fetchData,
+                          child: const Text('再試行'),
+                        ),
+                      ],
+                    ),
+                  )
+                : _proactiveSuggestion != null
+                    ? _buildProactiveSuggestionCard(_proactiveSuggestion!)
+                    : _buildNoSuggestionCard(), // ★ 提案がない場合の表示を追加
+        
         const Divider(height: 32, thickness: 1),
       ],
     );
@@ -350,6 +346,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
             .textTheme
             .titleLarge
             ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+    // ★ 追加: 提案がない場合に表示するカード
+  Widget _buildNoSuggestionCard() {
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.grey.shade500, size: 32),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                '過去の対話が完了すると、AIがここでおすすめの話題を提案します。',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

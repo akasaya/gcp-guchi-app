@@ -1458,10 +1458,12 @@ def get_analysis_graph():
     
     user_id = user_record['uid']
     try:
-        graph_data = _get_graph_from_cache_or_generate(user_id)
-        if graph_data:
+        # ★ 修正: 常にグラフを再生成するように変更
+        graph_data = _get_graph_from_cache_or_generate(user_id, force_regenerate=True)
+        if graph_data and graph_data.get('nodes'): # ★ 修正: ノードが存在する場合のみデータを返す
             return jsonify(graph_data), 200
         else:
+            # 404を返すことで、フロントエンドが「データなし」と判断できるようにする
             return jsonify({"error": "No data available to generate graph"}), 404
     except Exception as e:
         print(f"❌ Error in get_analysis_graph: {e}")

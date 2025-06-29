@@ -30,28 +30,43 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
 
   Stream<DocumentSnapshot>? _sessionStream;
   bool _isContinuing = false;
+  
 
   @override
   void initState() {
     super.initState();
-    // 注入されたインスタンス、またはRiverpodから取得したインスタンスを使うように修正
     _apiService = widget.apiService ?? ref.read(apiServiceProvider);
     _firestore = widget.firestore ?? FirebaseFirestore.instance;
+    _initializeStream(); // ★ initStateで初期化
+  }
 
-    // ★★★ ここからが修正箇所です ★★★
+  // ★ 追加: ウィジェットが更新されたときにストリームを再設定
+  @override
+  void didUpdateWidget(covariant SummaryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.sessionId != oldWidget.sessionId) {
+      // sessionIdが変わったら、ストリームを新しいIDで再初期化
+      _initializeStream();
+    }
+  }
+
+  // ★ 追加: ストリームを初期化するロジックを別メソッドに切り出し
+  void _initializeStream() {
     final user = ref.read(firebaseAuthProvider).currentUser;
     if (user != null) {
-      _sessionStream = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('sessions')
-          .doc(widget.sessionId)
-          .snapshots();
+      setState(() { // setStateでラップしてUIを更新
+        _sessionStream = _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('sessions')
+            .doc(widget.sessionId)
+            .snapshots();
+      });
     } else {
-      // ユーザーが取得できない場合は、エラーを流すストリームを設定
-      _sessionStream = Stream.error('ユーザーが認証されていません。');
+      setState(() { // setStateでラップしてUIを更新
+        _sessionStream = Stream.error('ユーザーが認証されていません。');
+      });
     }
-    // ★★★ ここまでが修正箇所です ★★★
   }
 
   void _showLoadingDialog() {
@@ -212,18 +227,21 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Markdown(
-                        data: insights,
-                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                            .copyWith(
-                          h2: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                          h3: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                      // ★ 修正: SingleChildScrollViewでラップ
+                      child: SingleChildScrollView(
+                        child: Markdown(
+                          data: insights,
+                          styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                              .copyWith(
+                            h2: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                            h3: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ),
