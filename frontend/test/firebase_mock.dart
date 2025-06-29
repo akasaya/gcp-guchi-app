@@ -1,46 +1,51 @@
-//import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
-// import 'package:mockito/mockito.dart'; // 不要なため削除
-
-// --- Core Mocks (for Firebase.initializeApp) ---
 
 void setupFirebaseMocks() {
   TestWidgetsFlutterBinding.ensureInitialized();
   FirebasePlatform.instance = FakeFirebasePlatform();
 }
 
-// ★★★ 修正: Mockitoに依存しないシンプルなFakeクラスに戻す
 class FakeFirebasePlatform extends Fake implements FirebasePlatform {
+  // ★★★ 追加: アプリのインスタンスを保持するマップ
+  final Map<String, FirebaseAppPlatform> _apps = {};
+
+  // ★★★ 追加: アプリのリストを返すゲッター
+  @override
+  List<FirebaseAppPlatform> get apps => _apps.values.toList();
+
   @override
   Future<FirebaseAppPlatform> initializeApp({
     String? name,
     FirebaseOptions? options,
   }) async {
-    return FakeFirebaseAppPlatform(
-      name: name ?? '[DEFAULT]',
-      options: options ?? const FirebaseOptions(
-        apiKey: 'fake',
-        appId: 'fake',
-        messagingSenderId: 'fake',
-        projectId: 'fake',
-      ),
+    final appName = name ?? '[DEFAULT]';
+    final app = FakeFirebaseAppPlatform(
+      name: appName,
+      options: options ??
+          const FirebaseOptions(
+            apiKey: 'fake',
+            appId: 'fake',
+            messagingSenderId: 'fake',
+            projectId: 'fake',
+          ),
     );
+    // ★★★ 追加: 初期化したアプリをマップに保存
+    _apps[appName] = app;
+    return app;
   }
 
-  // 実際のFirebaseAppインスタンスを返すように見せかける
   @override
   FirebaseAppPlatform app([String name = '[DEFAULT]']) {
-    return FakeFirebaseAppPlatform(name: name, options: const FirebaseOptions(
-        apiKey: 'fake',
-        appId: 'fake',
-        messagingSenderId: 'fake',
-        projectId: 'fake',
-      ),);
+    // ★★★ 修正: マップからアプリを返すように変更
+    if (_apps.containsKey(name)) {
+      return _apps[name]!;
+    }
+    // もしアプリがなければ例外をスローする（実際のFirebaseの挙動に合わせる）
+    throw Exception('FirebaseApp with name $name has not been initialized');
   }
 }
 
-// ★★★ 修正: Mockitoに依存しないシンプルなFakeクラスに戻す
 class FakeFirebaseAppPlatform extends Fake implements FirebaseAppPlatform {
   @override
   final String name;
