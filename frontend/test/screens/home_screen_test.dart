@@ -9,6 +9,7 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth_mocks/firebase_auth_mocks.dart'; // ★★★ これを追加 ★★★
 
 import '../firebase_mock.dart';
 
