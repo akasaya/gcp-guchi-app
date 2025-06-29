@@ -1458,8 +1458,10 @@ def get_analysis_graph():
     
     user_id = user_record['uid']
     try:
-        # ★ 修正: 常にグラフを再生成するように変更
-        graph_data = _get_graph_from_cache_or_generate(user_id, force_regenerate=True)
+        # ★ 修正: リクエストの 'force' パラメータを読み取り、キャッシュをバイパスするか決定する
+        force_regenerate = request.args.get('force', 'false').lower() == 'true'
+        graph_data = _get_graph_from_cache_or_generate(user_id, force_regenerate=force_regenerate)
+        
         if graph_data and graph_data.get('nodes'): # ★ 修正: ノードが存在する場合のみデータを返す
             return jsonify(graph_data), 200
         else:
@@ -1469,7 +1471,6 @@ def get_analysis_graph():
         print(f"❌ Error in get_analysis_graph: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to get analysis graph"}), 500
-
 
 def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = False):
     """
@@ -1485,7 +1486,8 @@ def _get_graph_from_cache_or_generate(user_id: str, force_regenerate: bool = Fal
             # 24時間以内であればキャッシュを返す
             if datetime.now(timezone.utc) - cached_data.get('timestamp', datetime.min.replace(tzinfo=timezone.utc)) < timedelta(hours=24):
                 print(f"✅ Returning cached graph data for user: {user_id}")
-                return cached_data['graph_data']
+                # ★ 修正: 'graph_data' キーの値が存在すればそれを、なければNoneを返すように修正
+                return cached_data.get('graph_data')
 
     print(f"--- Generating new graph data for user: {user_id} (force_regenerate={force_regenerate}) ---")
     all_insights_text = _get_all_insights_as_text(user_id)
