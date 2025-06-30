@@ -318,21 +318,19 @@ PROACTIVE_KEYWORDS = [
     "ストレス", "プレッシャー", "不安"
 ]
 
-def _check_content_safety_with_gemma(text: str) -> bool:
+def _is_english_with_gemma(text: str) -> bool:
     """
-    Calls a Gemma model via Ollama to check for PII and harmful content.
-    Returns True if problematic content is likely present, False otherwise.
+    Ollama/Gemma を呼び出して、テキストが英語かどうかを判定します。
+    英語の可能性が高い場合は True を返します。
     """
     if not OLLAMA_ENDPOINT or not OLLAMA_MODEL_NAME:
-        print("⚠️ Gemma safety check is disabled (Ollama endpoint not configured).")
-        return False # Fail-safe: assume content is safe if the checker is down.
+        print("⚠️ Gemma language check is disabled (Ollama endpoint not configured).")
+        # チェッカーがダウンしている場合は、英語ではないと見なして処理を続行
+        return False
 
     prompt = f"""
-Analyze the following text for two types of issues:
-1. Personally Identifiable Information (PII): full names, email addresses, phone numbers, physical addresses, etc.
-2. Harmful or Abusive Content: slander, defamation, hate speech, or any other form of abusive language.
-
-Respond with only 'YES' if either PII or harmful content is found, and 'NO' if the text is safe. Do not provide any explanation.
+Analyze the following text. Is the primary language of the text English?
+Respond with only 'YES' if the text is predominantly English, and 'NO' if it is not (e.g., it is Japanese). Do not provide any explanation.
 
 TEXT:
 ---
@@ -342,28 +340,27 @@ TEXT:
 RESPONSE:
 """
     try:
-        print(f"--- Checking for content safety with Gemma ({OLLAMA_MODEL_NAME}) ---")
-        # 修正: OllamaのエンドポイントURLに `/api/generate` を追加
+        print(f"--- Checking for language with Gemma ({OLLAMA_MODEL_NAME}) ---")
         response = requests.post(
             f"{OLLAMA_ENDPOINT}/api/generate",
             json={
                 "model": OLLAMA_MODEL_NAME,
                 "prompt": prompt,
                 "stream": False,
-                "options": { "temperature": 0.1 }
+                # 判定なので temperature は低くする
+                "options": { "temperature": 0.0 }
             },
-            timeout=60 # タイムアウトを60秒に設定
+            timeout=60
         )
         response.raise_for_status()
         gemma_response = response.json().get('response', '').strip().upper()
-        print(f"✅ Gemma safety check response: '{gemma_response}'")
+        print(f"✅ Gemma language check response: '{gemma_response}'")
         return 'YES' in gemma_response
     except requests.RequestException as e:
-        # 修正: エラーログをより具体的に
-        print(f"❌ Could not connect to Gemma service for safety check: {e}")
-        return False # Fail-safe: assume content is safe if there's an error.
+        print(f"❌ Could not connect to Gemma service for language check: {e}")
+        return False # フェイルセーフ
     except Exception as e:
-        print(f"❌ An unexpected error occurred during safety check: {e}")
+        print(f"❌ An unexpected error occurred during language check: {e}")
         return False
 
 
@@ -371,8 +368,8 @@ RESPONSE:
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
 def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, safety_check: bool = True) -> dict:
     """
-    Calls a Gemini model with a specified response schema, including an optional PII check with Gemma.
-    If PII is detected, it will retry the call with a request to remove PII.
+    Calls a Gemini model with a specified response schema, including an optional language check with Gemma.
+    If the response is in English, it will retry the call with a request to regenerate in Japanese.
     """
     model = GenerativeModel(model_name)
     attempt_num = _call_gemini_with_schema.retry.statistics.get('attempt_number', 1)
@@ -382,16 +379,16 @@ def _call_gemini_with_schema(prompt: str, schema: dict, model_name: str, safety_
         response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json", response_schema=schema))
         response_text = response.text.strip()
 
-        # GemmaによるPIIチェック
-        if safety_check and _check_content_safety_with_gemma(response_text):
-            print("⚠️ PII detected by Gemma. Retrying Gemini call with PII removal request.")
+        # Gemmaによる言語チェック
+        if safety_check and _is_english_with_gemma(response_text):
+            print("⚠️ English response detected by Gemma. Retrying Gemini call with Japanese enforcement.")
             # 新しいプロンプトを生成
-            pii_removal_prompt = f"""
-The following text was generated, but it may contain personally identifiable information (PII).
-Please regenerate the content based on the original request, ensuring that all PII (names, addresses, contact info, etc.) is removed or replaced with generic placeholders.
+            japanese_enforcement_prompt = f"""
+The following response was generated, but it appears to be in English.
+Please regenerate the response based on the original request, ensuring that the output is entirely in **Japanese (日本語)**.
 The output format MUST strictly adhere to the original JSON schema.
 
-Original Text with Potential PII:
+Original English Response:
 ---
 {response_text}
 ---
@@ -401,10 +398,10 @@ Original Prompt:
 {prompt}
 ---
 
-Please provide the revised, PII-free response now:
+Please provide the revised, Japanese-language response now:
 """
-            # PII除去プロンプトで再帰的に自身を呼び出す（ただし、次はPIIチェックをしない）
-            return _call_gemini_with_schema(pii_removal_prompt, schema, model_name, pii_check=False)
+            # 日本語強制プロンプトで再帰的に自身を呼び出す（ただし、次はチェックをしない）
+            return _call_gemini_with_schema(japanese_enforcement_prompt, schema, model_name, safety_check=False)
 
         # JSONの整形
         if response_text.startswith("```json"):
