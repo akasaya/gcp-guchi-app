@@ -208,6 +208,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
                 MaterialPageRoute(builder: (context) => const HistoryScreen()),
               );
             },
+          ),          // ★ ログアウトボタンを追加
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () async {
+              await ref.read(authServiceProvider).signOut();
+            },
           ),
         ],
       ),

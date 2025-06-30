@@ -1,9 +1,10 @@
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:frontend/providers/auth_provider.dart'; // ★ 修正
+import 'package:frontend/providers/auth_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/screens/onboarding_screen.dart';
+import 'package:frontend/screens/login_screen.dart'; // ★ LoginScreenをインポート
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'package:frontend/screens/home_screen.dart';
@@ -23,23 +24,16 @@ Future<void> main() async {
   );
 
   if (kIsWeb) {
-    // ★ 修正: ここでの永続化設定は重要なので残します。
     await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
   }
 
+  // RECAPTCHA_SITE_KEYは--dart-defineで渡す想定
   const siteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
-  if (siteKey.isEmpty) {
-    if (kDebugMode) {
-      print('RECAPTCHA_SITE_KEY is not defined. Pass it using --dart-define');
-    }
-  }
 
   await FirebaseAppCheck.instance.activate(
     webProvider: ReCaptchaV3Provider(siteKey),
   );
 
-  // ★ 削除: アプリ起動時の匿名認証処理はすべて削除します。
-  
   runApp(
     const ProviderScope(
       child: MyApp(),
@@ -74,30 +68,18 @@ class AuthWrapper extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ★ 修正: 新しいauthNotifierProviderを監視します。
-    final authState = ref.watch(authNotifierProvider);
+    // ★ authStateChangesProviderを監視して、認証状態(Userオブジェクト)を取得
+    final authState = ref.watch(authStateChangesProvider);
     final onboardingPrefs = ref.watch(sharedPreferencesProvider);
 
-    switch (authState.status) {
-      case AuthStatus.initializing:
-        // 認証処理中はローディング画面を表示
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
-      case AuthStatus.error:
-        // エラーが発生した場合
-        return Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '認証に失敗しました。\n${authState.errorMessage}',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        );
-      case AuthStatus.signedIn:
-      case AuthStatus.signedOut: // signedOutからもオンボーディングチェックへ
-        // オンボーディングが完了しているかチェック
+    // ★ AsyncValue.when を使って、認証状態に応じた画面表示を制御
+    return authState.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (err, stack) => Scaffold(
+        body: Center(child: Text('エラーが発生しました: $err')),
+      ),
+      data: (user) {
+        // 認証状態が取得できたら、オンボーディング状態をチェック
         return onboardingPrefs.when(
           loading: () =>
               const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -108,16 +90,23 @@ class AuthWrapper extends ConsumerWidget {
                 prefs.getBool('onboarding_completed') ?? false;
 
             if (!onboardingCompleted) {
+              // オンボーディングがまだなら、認証状態にかかわらずオンボーディング画面へ
               return const OnboardingScreen();
             }
-            // オンボーディング完了済みで、サインインも成功していればホームへ
-            if (authState.status == AuthStatus.signedIn) {
+
+            // オンボーディング完了済みの場合
+            if (user != null) {
+              // ユーザーがログインしていればホーム画面へ
               return const HomeScreen();
+            } else {
+              // ユーザーがログアウトしていればログイン画面へ
+              return const LoginScreen(
+                googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
+              );
             }
-            // このケースは基本発生しないが、念のためローディング表示
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
           },
         );
-    }
+      },
+    );
   }
 }
