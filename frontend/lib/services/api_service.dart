@@ -43,12 +43,13 @@ class ApiService {
           try {
             final token = await user.getIdToken(true); // トークンを強制リフレッシュ
             options.headers['Authorization'] = 'Bearer $token';
-            if (kIsWeb || kReleaseMode) {
-              final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
-              if (appCheckToken != null) {
-                options.headers['X-Firebase-AppCheck'] = appCheckToken;
-              }
+            
+            // WebやReleaseモードの区別なく、常にApp Checkトークンを取得して付与する
+            final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
+            if (appCheckToken != null) {
+              options.headers['X-Firebase-AppCheck'] = appCheckToken;
             }
+
           } catch (e) {
             return handler.reject(DioException(requestOptions: options, error: e));
           }

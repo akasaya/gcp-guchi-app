@@ -364,7 +364,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
             const SizedBox(width: 16),
             Expanded(
               child: Text(
-                '過去の対話が完了すると、AIがここでおすすめの話題を提案します。',
+                '複数回対話が完了すると、AIがここでおすすめの話題を提案します。',
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
               ),
             ),

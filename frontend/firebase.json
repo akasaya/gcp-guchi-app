@@ -4,7 +4,7 @@
             "android": {
                 "default": {
                     "projectId": "guchi-app-flutter",
-                    "appId": "1:877175644081:android:e15456f4e15033c467a83d",
+                    "appId": "1:877175644081:android:a568a09cdfecf7e7792790",
                     "fileOutput": "android/app/google-services.json"
                 }
             },
@@ -12,11 +12,11 @@
                 "lib/firebase_options.dart": {
                     "projectId": "guchi-app-flutter",
                     "configurations": {
-                        "android": "1:877175644081:android:e15456f4e15033c467a83d",
-                        "ios": "1:877175644081:ios:a4d538cc563454b467a83d",
-                        "macos": "1:877175644081:ios:a4d538cc563454b467a83d",
-                        "web": "1:877175644081:web:e415e57463f68d9067a83d",
-                        "windows": "1:877175644081:android:e15456f4e15033c467a83d"
+                        "android": "1:877175644081:android:a568a09cdfecf7e7792790",
+                        "ios": "1:877175644081:ios:13c10e43d6ce0085792790",
+                        "macos": "1:877175644081:ios:13c10e43d6ce0085792790",
+                        "web": "1:877175644081:web:9a7a6f5dc52054bb792790",
+                        "windows": "1:877175644081:web:8059363106c94f6a792790"
                     }
                 }
             }
