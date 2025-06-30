@@ -45,25 +45,25 @@ Future<void> main() async {
     webProvider: ReCaptchaV3Provider(siteKey),
   );
 
-    // ★ 追加: アプリ起動時に匿名認証を実行
-  final auth = FirebaseAuth.instance;
-  if (auth.currentUser == null) {
-    try {
-      await auth.signInAnonymously();
-      if (kDebugMode) {
-        print("Signed in anonymously!");
-      }
-    } on FirebaseAuthException catch (e) {
-      if (kDebugMode) {
-        print("Failed to sign in anonymously: ${e.message}");
-      }
-      // ここでのエラーは、下のAuthWrapperでハンドリングされる
-    } catch (e) {
-      if (kDebugMode) {
-        print("An unknown error occurred during anonymous sign-in: $e");
-      }
-    }
-  }
+  //   // ★ 追加: アプリ起動時に匿名認証を実行
+  // final auth = FirebaseAuth.instance;
+  // if (auth.currentUser == null) {
+  //   try {
+  //     await auth.signInAnonymously();
+  //     if (kDebugMode) {
+  //       print("Signed in anonymously!");
+  //     }
+  //   } on FirebaseAuthException catch (e) {
+  //     if (kDebugMode) {
+  //       print("Failed to sign in anonymously: ${e.message}");
+  //     }
+  //     // ここでのエラーは、下のAuthWrapperでハンドリングされる
+  //   } catch (e) {
+  //     if (kDebugMode) {
+  //       print("An unknown error occurred during anonymous sign-in: $e");
+  //     }
+  //   }
+  // }
 
   runApp(
     const ProviderScope(
@@ -127,16 +127,36 @@ class AuthWrapper extends ConsumerWidget {
             if (snapshot.hasData) {
               return const HomeScreen();
             }
-            return const Scaffold(
-              body: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    '認証に失敗しました。アプリを再起動するか、インターネット接続を確認してください。',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
+            // ★ 修正: ユーザーが存在しない場合にのみ、ここで匿名認証を実行します。
+            return FutureBuilder(
+              future: auth.signInAnonymously(),
+              builder: (context, authSnapshot) {
+                // 認証処理中はローディング画面を表示し続けます。
+                // 成功するとauthStateChangesが検知して自動的にHomeScreenに遷移します。
+                if (authSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                      body: Center(child: CircularProgressIndicator()));
+                }
+                
+                // 認証に失敗した場合はエラーメッセージを表示します。
+                if (authSnapshot.hasError) {
+                   return const Scaffold(
+                    body: Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text(
+                          '認証に失敗しました。アプリを再起動するか、インターネット接続を確認してください。',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                // 認証成功後、再ビルドを待つ間の表示
+                return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()));
+              },
             );
           },
         );
