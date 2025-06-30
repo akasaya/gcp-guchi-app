@@ -1,23 +1,16 @@
-import 'package:firebase_app_check/firebase_app_check.dart'; // ★★★ この行の追加が不可欠です ★★★
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:frontend/providers/auth_provider.dart'; // ★ 修正
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:frontend/screens/onboarding_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'package:frontend/screens/home_screen.dart';
-//import 'package:frontend/screens/login_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter/foundation.dart'; // printを避けるために追加
+import 'package:flutter/foundation.dart';
 
-// flutter_dotenv はこのファイルでは不要になりました
-// import 'package:flutter_dotenv/flutter_dotenv.dart'; 
-
-final firebaseAuthProvider =
-    Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
-
-// ★ 追加: SharedPreferences のインスタンスを非同期で提供する Provider
 final sharedPreferencesProvider =
     FutureProvider<SharedPreferences>((ref) async {
   return await SharedPreferences.getInstance();
@@ -25,12 +18,12 @@ final sharedPreferencesProvider =
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // await dotenv.load(fileName: ".env"); // --dart-defineを使うため不要に
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-    if (kIsWeb) {
+  if (kIsWeb) {
+    // ★ 修正: ここでの永続化設定は重要なので残します。
     await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
   }
 
@@ -45,26 +38,8 @@ Future<void> main() async {
     webProvider: ReCaptchaV3Provider(siteKey),
   );
 
-  //   // ★ 追加: アプリ起動時に匿名認証を実行
-  // final auth = FirebaseAuth.instance;
-  // if (auth.currentUser == null) {
-  //   try {
-  //     await auth.signInAnonymously();
-  //     if (kDebugMode) {
-  //       print("Signed in anonymously!");
-  //     }
-  //   } on FirebaseAuthException catch (e) {
-  //     if (kDebugMode) {
-  //       print("Failed to sign in anonymously: ${e.message}");
-  //     }
-  //     // ここでのエラーは、下のAuthWrapperでハンドリングされる
-  //   } catch (e) {
-  //     if (kDebugMode) {
-  //       print("An unknown error occurred during anonymous sign-in: $e");
-  //     }
-  //   }
-  // }
-
+  // ★ 削除: アプリ起動時の匿名認証処理はすべて削除します。
+  
   runApp(
     const ProviderScope(
       child: MyApp(),
@@ -89,78 +64,60 @@ class MyApp extends ConsumerWidget {
           displayColor: Colors.black87,
         ),
       ),
-      // ★ 修正: AuthWrapperを呼び出すように変更
       home: const AuthWrapper(),
     );
   }
 }
 
-// ★ 追加: 認証状態とオンボーディング状態に応じて画面を振り分けるWidget
 class AuthWrapper extends ConsumerWidget {
   const AuthWrapper({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(firebaseAuthProvider);
+    // ★ 修正: 新しいauthNotifierProviderを監視します。
+    final authState = ref.watch(authNotifierProvider);
     final onboardingPrefs = ref.watch(sharedPreferencesProvider);
 
-    return onboardingPrefs.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (err, stack) =>
-          const Scaffold(body: Center(child: Text('エラーが発生しました'))),
-      data: (prefs) {
-        final onboardingCompleted =
-            prefs.getBool('onboarding_completed') ?? false;
+    switch (authState.status) {
+      case AuthStatus.initializing:
+        // 認証処理中はローディング画面を表示
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      case AuthStatus.error:
+        // エラーが発生した場合
+        return Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                '認証に失敗しました。\n${authState.errorMessage}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        );
+      case AuthStatus.signedIn:
+      case AuthStatus.signedOut: // signedOutからもオンボーディングチェックへ
+        // オンボーディングが完了しているかチェック
+        return onboardingPrefs.when(
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (err, stack) =>
+              const Scaffold(body: Center(child: Text('設定の読み込みに失敗しました'))),
+          data: (prefs) {
+            final onboardingCompleted =
+                prefs.getBool('onboarding_completed') ?? false;
 
-        if (!onboardingCompleted) {
-          return const OnboardingScreen();
-        }
-
-        return StreamBuilder<User?>(
-          stream: auth.authStateChanges(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()));
+            if (!onboardingCompleted) {
+              return const OnboardingScreen();
             }
-            if (snapshot.hasData) {
+            // オンボーディング完了済みで、サインインも成功していればホームへ
+            if (authState.status == AuthStatus.signedIn) {
               return const HomeScreen();
             }
-            // ★ 修正: ユーザーが存在しない場合にのみ、ここで匿名認証を実行します。
-            return FutureBuilder(
-              future: auth.signInAnonymously(),
-              builder: (context, authSnapshot) {
-                // 認証処理中はローディング画面を表示し続けます。
-                // 成功するとauthStateChangesが検知して自動的にHomeScreenに遷移します。
-                if (authSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(
-                      body: Center(child: CircularProgressIndicator()));
-                }
-                
-                // 認証に失敗した場合はエラーメッセージを表示します。
-                if (authSnapshot.hasError) {
-                   return const Scaffold(
-                    body: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text(
-                          '認証に失敗しました。アプリを再起動するか、インターネット接続を確認してください。',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                // 認証成功後、再ビルドを待つ間の表示
-                return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()));
-              },
-            );
+            // このケースは基本発生しないが、念のためローディング表示
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
           },
         );
-      },
-    );
+    }
   }
 }

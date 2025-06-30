@@ -6,6 +6,7 @@ import 'package:frontend/main.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/providers/auth_provider.dart'; 
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/screens/swipe_screen.dart';
@@ -7,7 +8,6 @@ import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; // Riverpodをインポート
-import 'package:frontend/main.dart'; // apiServiceProvider をインポート
     
 class HomeScreen extends ConsumerStatefulWidget { // ConsumerStatefulWidget に変更
   const HomeScreen({super.key});

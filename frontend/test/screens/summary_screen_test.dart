@@ -11,6 +11,7 @@ import 'package:frontend/models/chat_models.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/summary_screen.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/providers/auth_provider.dart'; 
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';

@@ -2,11 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:frontend/providers/auth_provider.dart'; 
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/services/api_service.dart';
-import 'package:frontend/main.dart';
 
 class SummaryScreen extends ConsumerStatefulWidget {
   final String sessionId;
