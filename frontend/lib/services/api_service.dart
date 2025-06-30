@@ -39,22 +39,35 @@ class ApiService {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final user = _auth.currentUser;
-        if (user != null) {
-          try {
-            final token = await user.getIdToken(true); // トークンを強制リフレッシュ
-            options.headers['Authorization'] = 'Bearer $token';
-            
-            // WebやReleaseモードの区別なく、常にApp Checkトークンを取得して付与する
-            final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
-            if (appCheckToken != null) {
-              options.headers['X-Firebase-AppCheck'] = appCheckToken;
-            }
-
-          } catch (e) {
-            return handler.reject(DioException(requestOptions: options, error: e));
-          }
+        // ★★★ 修正点 ★★★
+        // ユーザーが null の場合、リクエストを送信せずに即座にエラーとして処理する。
+        // これにより、ヘッダーなしのリクエストがバックエンドに送られるのを防ぐ。
+        if (user == null) {
+          return handler.reject(
+            DioException(
+              requestOptions: options,
+              error: 'ApiService: User is not authenticated. Rejecting request.',
+            ),
+          );
         }
-        return handler.next(options);
+
+        // ユーザーが存在する場合のみ、トークンを取得してヘッダーに付与する
+        try {
+          final idToken = await user.getIdToken(true);
+          options.headers['Authorization'] = 'Bearer $idToken';
+
+          final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
+          if (appCheckToken != null) {
+            options.headers['X-Firebase-AppCheck'] = appCheckToken;
+          }
+          
+          // ヘッダーの付与が完了したら、リクエストを次に進める
+          return handler.next(options);
+
+        } catch (e) {
+          // トークン取得でエラーが発生した場合もリクエストを中止する
+          return handler.reject(DioException(requestOptions: options, error: e));
+        }
       },
       onError: (DioException e, handler) {
         return handler.next(e);

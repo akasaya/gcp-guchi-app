@@ -183,7 +183,6 @@ RAG_CACHE_TTL_DAYS = 7 # Cache expires after 7 days
 # ★★★ 修正: セッションの最大ターン数を定義 ★★★
 MAX_TURNS = 5 # セッションの最大ターン数（初期ターンを含む）
 
-
 # ===== JSONスキーマ定義 =====
 QUESTIONS_SCHEMA = {"type": "object","properties": {"questions": {"type": "array","items": {"type": "object","properties": {"question_text": {"type": "string"}},"required": ["question_text"]}}},"required": ["questions"]}
 SUMMARY_SCHEMA = {"type": "object","properties": {"title": {"type": "string", "description": "このセッション全体を要約する15文字程度の短いタイトル"},"insights": {"type": "string", "description": "指定されたMarkdown形式でのユーザーの心理分析レポート"}},"required": ["title", "insights"]}
