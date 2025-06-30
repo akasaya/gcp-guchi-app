@@ -35,38 +35,54 @@ class ApiService {
     _dio.options.connectTimeout = const Duration(seconds: 60);
     _dio.options.receiveTimeout = const Duration(seconds: 60); // AIの応答時間を考慮
 
+       _dio.options.connectTimeout = const Duration(seconds: 60);
+    _dio.options.receiveTimeout = const Duration(seconds: 60); // AIの応答時間を考慮
+
     // --- Interceptorによる認証トークンの自動付与 ---
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final user = _auth.currentUser;
-        // ★★★ 修正点 ★★★
-        // ユーザーが null の場合、リクエストを送信せずに即座にエラーとして処理する。
-        // これにより、ヘッダーなしのリクエストがバックエンドに送られるのを防ぐ。
-        if (user == null) {
-          return handler.reject(
-            DioException(
-              requestOptions: options,
-              error: 'ApiService: User is not authenticated. Rejecting request.',
-            ),
-          );
-        }
-
-        // ユーザーが存在する場合のみ、トークンを取得してヘッダーに付与する
+        // ★★★ 修正箇所 ★★★
+        // 処理全体をtry-catchで囲み、トークン取得中のログアウトでもクラッシュしないようにする
         try {
+          final user = _auth.currentUser;
+          // ユーザーが null の場合、リクエストを送信せずに即座にエラーとして処理する。
+          if (user == null) {
+            return handler.reject(
+              DioException(
+                requestOptions: options,
+                error: 'User is not authenticated. Rejecting request.',
+                type: DioExceptionType.cancel, // キャンセルとして扱う
+              ),
+            );
+          }
           final idToken = await user.getIdToken(true);
-          options.headers['Authorization'] = 'Bearer $idToken';
-
           final appCheckToken = await FirebaseAppCheck.instance.getToken(true);
+
+          options.headers['Authorization'] = 'Bearer $idToken';
           if (appCheckToken != null) {
             options.headers['X-Firebase-AppCheck'] = appCheckToken;
           }
           
-          // ヘッダーの付与が完了したら、リクエストを次に進める
           return handler.next(options);
-
+          
+        } on FirebaseAuthException catch (e) {
+          // getIdToken() 中にログアウトした場合などにここに到達する
+          return handler.reject(
+            DioException(
+              requestOptions: options,
+              error: 'Failed to get auth token, possibly due to logout: ${e.code}', // エラーコードを含める
+              type: DioExceptionType.cancel, // キャンセルとして扱う
+            ),
+          );
         } catch (e) {
-          // トークン取得でエラーが発生した場合もリクエストを中止する
-          return handler.reject(DioException(requestOptions: options, error: e));
+          // その他の予期せぬエラー
+          return handler.reject(
+            DioException(
+              requestOptions: options,
+              error: 'An unexpected error occurred during request preparation: $e',
+              type: DioExceptionType.unknown, // 不明なエラーとして扱う
+            ),
+          );
         }
       },
       onError: (DioException e, handler) {
