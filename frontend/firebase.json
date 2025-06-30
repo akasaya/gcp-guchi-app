@@ -38,7 +38,7 @@
                 }
             },
             {
-                "source": "**",
+                "source": "!{/api/**,/__/*}",
                 "destination": "/index.html"
             }
         ]
