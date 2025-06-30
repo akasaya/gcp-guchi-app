@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/screens/home_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // ★ Riverpodをインポート
+import 'package:frontend/main.dart'; // ★ sharedPreferencesProvider を使うためにインポート
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class OnboardingScreen extends StatefulWidget {
+// ★ ConsumerStatefulWidget に変更
+class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
   @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
+  // ★ ConsumerState に変更
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+// ★ ConsumerState に変更
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
@@ -149,11 +153,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_completed', true);
+    
+    // ★★★ 修正 ★★★
+    // Providerを無効化してAuthWrapperに再評価を促す。
+    // これにより、AuthWrapperが自動的にログイン画面に遷移させる。
+    // 直接画面遷移は行わない。
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        // ★ 修正: 遷移先をHomeScreenに変更
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      ref.invalidate(sharedPreferencesProvider);
     }
   }
 
