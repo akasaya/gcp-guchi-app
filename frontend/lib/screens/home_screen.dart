@@ -7,18 +7,19 @@ import 'package:frontend/screens/swipe_screen.dart';
 import 'package:frontend/screens/history_screen.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:frontend/screens/analysis_dashboard_screen.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // Riverpodをインポート
-    
-class HomeScreen extends ConsumerStatefulWidget { // ConsumerStatefulWidget に変更
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState(); // ConsumerState に変更
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に変更
-  late final FirebaseAuth _auth;
-  late final ApiService _apiService;
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  // ★ _auth と _apiService の late final を削除
+  // late final FirebaseAuth _auth;
+  // late final ApiService _apiService;
 
   bool _isLoadingSuggestions = true;
   HomeSuggestion? _proactiveSuggestion;
@@ -35,26 +36,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
   String? _selectedTopic;
   String _finalTopic = '';
 
-  User? get currentUser => _auth.currentUser;
+  // ★ currentUser の取得方法を ref を使うように変更
+  User? get currentUser => ref.read(firebaseAuthProvider).currentUser;
 
   @override
   void initState() {
     super.initState();
-    _auth = ref.read(firebaseAuthProvider);
-    _apiService = ref.read(apiServiceProvider); 
-    _fetchData();
+    // ★ initStateからref.readを削除し、最初のフレームが描画された後にデータ取得を実行
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _fetchData();
+      }
+    });
   }
 
-
   Future<void> _fetchData() async {
+    // ★ メソッド内でapiServiceProviderを読み込む
+    final apiService = ref.read(apiServiceProvider);
     if (!mounted) return;
+
     setState(() {
       _isLoadingSuggestions = true;
       _fetchError = null;
     });
 
     try {
-      final suggestion = await _apiService.getHomeSuggestionV2();
+      final suggestion = await apiService.getHomeSuggestionV2();
       if (mounted) {
         setState(() {
           _proactiveSuggestion = suggestion;
@@ -63,10 +70,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _fetchError = '提案の取得に失敗しました。';
-          _isLoadingSuggestions = false;
-        });
+        // ★ ログアウト時にAPI呼び出しが失敗した場合、エラー表示しないようにする
+
+          setState(() {
+            _fetchError = '提案の取得に失敗しました。';
+            _isLoadingSuggestions = false;
+          });
       }
       debugPrint("ホーム画面のデータ取得に失敗: $e");
     }
@@ -150,6 +159,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
   }
 
   void _startSessionWithTopic(String topic) async {
+    // ★ メソッド内でapiServiceProviderを読み込む
+    final apiService = ref.read(apiServiceProvider);
+
     if (topic.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('トピックが空です')),
@@ -158,7 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
     }
     _showLoadingDialog('AIが質問を考えています...');
     try {
-      final sessionData = await _apiService.startSession(topic);
+      final sessionData = await apiService.startSession(topic);
       final questionsRaw = sessionData['questions'] as List;
       final questions = List<Map<String, dynamic>>.from(questionsRaw);
       if (!mounted) return;
@@ -169,7 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
             sessionId: sessionData['session_id'],
             questions: questions,
             turn: 1,
-            apiService: _apiService, // ★ ここでApiServiceを渡す
+            apiService: apiService, // ★ ここでApiServiceを渡す
           ),
         ),
       );
@@ -208,7 +220,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
                 MaterialPageRoute(builder: (context) => const HistoryScreen()),
               );
             },
-          ),          // ★ ログアウトボタンを追加
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'ログアウト',
@@ -218,7 +230,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
           ),
         ],
       ),
-      // ★★★ レイアウト構造を再修正 ★★★
       body: RefreshIndicator(
         onRefresh: _fetchData,
         child: Padding(
@@ -230,8 +241,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
               // --- 中央の対話セクション ---
               Expanded(
                 child: Container(
-                  // ★★★ Alignmentで位置を微調整 ★★★
-                  // Y値を -1.0 (上) ~ 1.0 (下) の間で調整
                   alignment: const Alignment(0.0, -0.4), 
                   child: SingleChildScrollView(
                     child: _buildDialogueSection(),
@@ -287,7 +296,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
         ),
         const SizedBox(height: 40),
         ElevatedButton.icon(
-          key: const Key('start_session_button'), // ★ ボタンを識別するためのキーを追加
+          key: const Key('start_session_button'),
           onPressed:
               _finalTopic.isNotEmpty ? _startSession : null,
           icon: const Icon(Icons.play_circle_outline),
@@ -312,11 +321,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16), // 上部の余白
+        const SizedBox(height: 16),
         _buildSectionHeader('話題の提案'),
         const SizedBox(height: 12),
         
-        // 提案の状態に応じて表示を切り替える
         _isLoadingSuggestions
             ? const Center(child: CircularProgressIndicator())
             : _fetchError != null
@@ -337,7 +345,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
                   )
                 : _proactiveSuggestion != null
                     ? _buildProactiveSuggestionCard(_proactiveSuggestion!)
-                    : _buildNoSuggestionCard(), // ★ 提案がない場合の表示を追加
+                    : _buildNoSuggestionCard(),
         
         const Divider(height: 32, thickness: 1),
       ],
@@ -357,7 +365,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> { // ConsumerState に�
     );
   }
 
-    // ★ 追加: 提案がない場合に表示するカード
   Widget _buildNoSuggestionCard() {
     return Card(
       elevation: 0,
